@@ -18,7 +18,7 @@ func init() {
 
 func NewGetCmd() *cobra.Command {
 	var getOpt action.GetOptions
-	opts := newCmdContext(ParseLocalFileAndS3Path)
+	opts := newCmdContext(ParseS3PathAndLocalFile)
 	cmd := &cobra.Command{
 		Use:   "get [alias:bucket/path] [local-path]",
 		Short: "Download object(s) from S3",
@@ -26,6 +26,7 @@ func NewGetCmd() *cobra.Command {
 		RunE: NewRunE(ActionFunc(func(S3 action.S3Client, opts *CmdContext, s3path *utils.S3Path) error {
 			g := getOpt
 			g.ScrollMax = ScrollMax
+			g.Recursive = opts.Global.Recursive
 			return S3.GetObject(g, s3path.Bucket, s3path.Key, opts.Global.LocalFile)
 		}), &opts),
 	}
@@ -40,12 +41,13 @@ func NewPutCmd() *cobra.Command {
 	var putOpt action.PutOptions
 	opts := newCmdContext(ParseLocalFileAndS3Path)
 	cmd := &cobra.Command{
-		Use:   "put [local-path] [s3://bucket/path]",
+		Use:   "put [local-path] [alias:bucket/path]",
 		Short: "Upload file(s) to S3",
 		Args:  cobra.ExactArgs(2),
 		RunE: NewRunE(ActionFunc(func(S3 action.S3Client, opts *CmdContext, s3path *utils.S3Path) error {
 			p := putOpt
 			p.ScrollMax = ScrollMax
+			p.Recursive = opts.Global.Recursive
 			if cfg, ok := config.G.S[S3.Alias]; ok && cfg.DefaultMimeType != "" {
 				p.DefaultMimeType = cfg.DefaultMimeType
 			}
