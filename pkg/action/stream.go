@@ -1,0 +1,81 @@
+package action
+
+import (
+	"context"
+	"fmt"
+	"sync"
+
+	myprint "s3cli/pkg/fmtutil"
+)
+
+// StreamJob 流式操作中的一个任务。
+type StreamJob struct {
+	Src  string // 源路径（本地或 S3）
+	Dst  string // 目标路径
+	Size int64  // 文件大小（字节）
+}
+
+// StreamConfig 描述一次流式操作（put/get/cp/mv）的参数。
+type StreamConfig struct {
+	Concurrency int    // 并发工作数
+	ScrollMax   int    // 进度条滚动条数
+	Label       string // 进度条标签（"put"/"get"/"cp"/"mv"）
+
+	// Scan 扫描协程：向 jobs 通道写入任务。
+	// 返回 error 表示扫描失败。
+	Scan func(ctx context.Context, jobs chan<- StreamJob) error
+
+	// Work 处理一个任务。返回 error 表示该任务失败（会记录到进度条）。
+	Work func(ctx context.Context, job StreamJob) error
+}
+
+// RunStream 执行流式操作：扫描 → 并发处理 → 进度跟踪。
+// ctx 取消会触发尽早退出。
+func RunStream(ctx context.Context, cfg StreamConfig) error {
+	if cfg.Concurrency <= 0 {
+		cfg.Concurrency = 10
+	}
+
+	pt := myprint.NewProgressTracker(myprint.GetOutput(), cfg.ScrollMax, cfg.Label)
+	pt.SetContextDone(ctx.Done())
+	pt.Start()
+	defer pt.Stop()
+
+	jobs := make(chan StreamJob, cfg.Concurrency*2)
+	scanErr := make(chan error, 1)
+
+	// 扫描协程
+	go func() {
+		defer close(jobs)
+		if err := cfg.Scan(ctx, jobs); err != nil {
+			scanErr <- err
+		}
+	}()
+
+	// 工作协程
+	var wg sync.WaitGroup
+	for i := 0; i < cfg.Concurrency; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for j := range jobs {
+				pt.AddTotal(1, j.Size)
+				if err := cfg.Work(ctx, j); err != nil {
+					pt.AddFailed()
+					pt.AddDone(1, j.Size, fmt.Sprintf("✗ %s → %s", j.Src, j.Dst))
+				} else {
+					pt.AddDone(1, j.Size, fmt.Sprintf("✓ %s → %s (%s)", j.Src, j.Dst, myprint.FormatBytes(j.Size)))
+				}
+			}
+		}()
+	}
+	wg.Wait()
+
+	// 检查扫描错误
+	select {
+	case err := <-scanErr:
+		return err
+	default:
+	}
+	return nil
+}
