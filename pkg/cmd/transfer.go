@@ -30,8 +30,8 @@ func NewGetCmd() *cobra.Command {
 		}), &opts),
 	}
 	cmd.Flags().BoolVarP(&opts.Global.Recursive, "recursive", "r", false, "Operate on directories recursively")
-	cmd.Flags().IntVar(&getOpt.Concurrency, "concurrency", 10, "Number of concurrent parts to download")
-	cmd.Flags().IntVar(&getOpt.PartSizeMB, "part-size", 15, "Multipart download part size (MB)")
+	cmd.Flags().IntVar(&getOpt.Concurrency, "concurrency", config.DefaultConcurrency, "Number of concurrent parts to download")
+	cmd.Flags().IntVar(&getOpt.PartSizeMB, "part-size", config.DefaultPartSizeMB, "Multipart download part size (MB)")
 	cmd.Flags().StringVar(&getOpt.Range, "range", "", "HTTP Range header, e.g. 'bytes=0-1023' (single file only)")
 	return cmd
 }
@@ -54,8 +54,8 @@ func NewPutCmd() *cobra.Command {
 	}
 	cmd.Flags().BoolVarP(&opts.Global.Recursive, "recursive", "r", false, "Upload directories recursively")
 	cmd.Flags().StringVar(&putOpt.ContentType, "content-type", "", "Override Content-Type (single file only)")
-	cmd.Flags().IntVar(&putOpt.Concurrency, "concurrency", 10, "Number of concurrent parts to upload")
-	cmd.Flags().IntVar(&putOpt.PartSizeMB, "part-size", 15, "Multipart upload part size (MB)")
+	cmd.Flags().IntVar(&putOpt.Concurrency, "concurrency", config.DefaultConcurrency, "Number of concurrent parts to upload")
+	cmd.Flags().IntVar(&putOpt.PartSizeMB, "part-size", config.DefaultPartSizeMB, "Multipart upload part size (MB)")
 	cmd.Flags().StringVar(&putOpt.StorageClass, "storage-class", "", "Storage class: STANDARD / STANDARD_IA / GLACIER / DEEP_ARCHIVE / ...")
 	cmd.Flags().StringToStringVar(&putOpt.Metadata, "metadata", nil, "Custom metadata, can repeat. Format: key=value (becomes x-amz-meta-key)")
 	return cmd
@@ -107,8 +107,8 @@ func NewPipeCmd() *cobra.Command {
 		}), &opts),
 	}
 	cmd.Flags().StringVar(&pipeOpt.ContentType, "content-type", "", "Content-Type of the uploaded object")
-	cmd.Flags().IntVar(&pipeOpt.Concurrency, "concurrency", 10, "Number of concurrent parts to upload")
-	cmd.Flags().IntVar(&pipeOpt.PartSizeMB, "part-size", 15, "Multipart upload part size (MB)")
+	cmd.Flags().IntVar(&pipeOpt.Concurrency, "concurrency", config.DefaultConcurrency, "Number of concurrent parts to upload")
+	cmd.Flags().IntVar(&pipeOpt.PartSizeMB, "part-size", config.DefaultPartSizeMB, "Multipart upload part size (MB)")
 	cmd.Flags().StringVar(&pipeOpt.StorageClass, "storage-class", "", "Storage class")
 	cmd.Flags().StringToStringVar(&pipeOpt.Metadata, "metadata", nil, "Custom metadata (x-amz-meta-*). Can repeat. Format: key=value")
 	return cmd

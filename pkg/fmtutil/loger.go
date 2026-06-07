@@ -10,14 +10,20 @@ import (
 var debug bool
 
 func Info(format string, args ...interface{}) {
-	if !debug {
+	outMu.RLock()
+	d := debug
+	outMu.RUnlock()
+	if !d {
 		return
 	}
 	PrintlnGreen(logMessage("INFO", format, args...))
 }
 
 func Warn(format string, args ...interface{}) {
-	if !debug {
+	outMu.RLock()
+	d := debug
+	outMu.RUnlock()
+	if !d {
 		return
 	}
 	PrintlnYellow(logMessage("WARN", format, args...))
