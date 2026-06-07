@@ -16,6 +16,7 @@ Thumbs.db
 .idea/
 *.swp
 *.swo
+.github/
 
 # 依赖
 vendor/

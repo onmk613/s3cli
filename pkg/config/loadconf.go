@@ -13,8 +13,15 @@ func LoadConf() error {
 	}
 
 	// 初始化 G.S（防止 nil map panic）
-	if G.S == nil {
-		G.S = make(map[string]Static)
+	mu.RLock()
+	needInit := G.S == nil
+	mu.RUnlock()
+	if needInit {
+		mu.Lock()
+		if G.S == nil {
+			G.S = make(map[string]Static)
+		}
+		mu.Unlock()
 	}
 
 	// 文件不存在报错
@@ -38,6 +45,7 @@ func LoadConf() error {
 	}
 
 	sections := cfg.Sections()
+	newS := make(map[string]Static, len(sections))
 	for _, sec := range sections {
 		name := sec.Name()
 		// 空配置忽略
@@ -50,7 +58,8 @@ func LoadConf() error {
 		if err := sec.MapTo(&s); err != nil {
 			return fmt.Errorf("parse section [%s]: %w", name, err)
 		}
-		G.S[name] = s
+		newS[name] = s
 	}
+	SetSections(newS)
 	return nil
 }

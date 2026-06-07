@@ -1,3 +1,4 @@
+// Package httptracer 提供 HTTP 请求/响应的抓包 dump 功能，用于 --debug 模式调试。
 package httptracer
 
 import (

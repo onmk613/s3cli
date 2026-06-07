@@ -17,6 +17,21 @@ func isCanceled(ctx context.Context) bool {
 	return errors.Is(ctx.Err(), context.Canceled)
 }
 
+// formatUserError 将内部 error 转换为对用户友好的显示信息。
+// 优先使用 action.FormatAPIError；fallback 到 err.Error()。
+func formatUserError(err error) string {
+	if err == nil {
+		return ""
+	}
+	// 对 smithy API 错误做友好格式化
+	return action.FormatAPIError(err)
+}
+
+// displayError 向用户输出错误（统一入口）。
+func displayError(err error) {
+	myprint.Errorln(formatUserError(err))
+}
+
 type ActionFunc func(S3 action.S3Client, opts *CmdContext, s3path *utils.S3Path) error
 
 // ArgParseMode 定义 args 参数的格式
@@ -92,7 +107,7 @@ func NewRunE(fn ActionFunc, opts *CmdContext) func(cmd *cobra.Command, args []st
 					return nil
 				}
 				if !(opts.Global.AllowAliasOnly && errors.Is(err, utils.ErrAliasOnly)) {
-					myprint.Errorln(err)
+					displayError(err)
 					errs = append(errs, err)
 					continue
 				}
@@ -103,7 +118,7 @@ func NewRunE(fn ActionFunc, opts *CmdContext) func(cmd *cobra.Command, args []st
 				if isCanceled(cmd.Context()) {
 					return nil
 				}
-				myprint.Errorln(err)
+				displayError(err)
 				errs = append(errs, err)
 				continue
 			}
@@ -131,7 +146,7 @@ func NewRunETwoPaths(fn TwoS3ActionFunc, opts *CmdContext) func(cmd *cobra.Comma
 			if isCanceled(cmd.Context()) {
 				return nil
 			}
-			myprint.Errorln(err)
+			displayError(err)
 			return err
 		}
 		dstClient, dstPath, err := client.ParsePathAndNewClient(cmd.Context(), args[1])
@@ -139,7 +154,7 @@ func NewRunETwoPaths(fn TwoS3ActionFunc, opts *CmdContext) func(cmd *cobra.Comma
 			if isCanceled(cmd.Context()) {
 				return nil
 			}
-			myprint.Errorln(err)
+			displayError(err)
 			return err
 		}
 		srcS3 := action.S3Client{S3: srcClient, Alias: srcPath.Alias, Ctx: cmd.Context()}
@@ -148,7 +163,7 @@ func NewRunETwoPaths(fn TwoS3ActionFunc, opts *CmdContext) func(cmd *cobra.Comma
 			if isCanceled(cmd.Context()) {
 				return nil
 			}
-			myprint.Errorln(err)
+			displayError(err)
 			return err
 		}
 		return nil

@@ -1,3 +1,4 @@
+// Package utils 提供路径解析、AWS 配置文件加载等基础工具函数。
 package utils
 
 import (

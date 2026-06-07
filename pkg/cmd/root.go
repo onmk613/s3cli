@@ -1,3 +1,5 @@
+// Package cmd 定义 s3cli 的所有命令与子命令，基于 cobra 框架。
+// 提供命令自注册机制、统一的 RunE 工厂、全局选项管理。
 package cmd
 
 import (
@@ -7,6 +9,7 @@ import (
 	"os/signal"
 	"sync"
 	"syscall"
+	"time"
 
 	"s3cli/pkg/config"
 	myprint "s3cli/pkg/fmtutil"
@@ -59,6 +62,7 @@ func NewRootCmd() *cobra.Command {
 	var (
 		noColor bool
 		toFile  string
+		timeout time.Duration
 	)
 
 	rootCmd := &cobra.Command{
@@ -77,6 +81,18 @@ func NewRootCmd() *cobra.Command {
 
 			if cmd.Name() == cmd.Root().Name() {
 				return nil
+			}
+
+			// 若指定了 --timeout，为当前上下文添加超时
+			if timeout > 0 {
+				ctxWithTimeout, cancelTimeout := context.WithTimeout(ctx, timeout)
+				cmd.SetContext(ctxWithTimeout)
+				// 在原有 cancel 之前先取消 timeout
+				origCancel := cancel
+				cancel = func() {
+					cancelTimeout()
+					origCancel()
+				}
 			}
 
 			if toFile != "" {
@@ -119,6 +135,7 @@ func NewRootCmd() *cobra.Command {
 	pf.BoolVar(&noColor, "no-color", false, "Disable color output")
 	pf.StringVar(&toFile, "logfile", "", "Write output to file instead of stdout")
 	pf.IntVar(&ScrollMax, "scroll", 5, "Progress scroll lines (0=show all, default 5)")
+	pf.DurationVar(&timeout, "timeout", 0, "Maximum execution time (e.g. 30s, 5m). 0 means no limit.")
 
 	// 从注册表添加所有子命令（带分组显示）
 	for _, g := range cmdRegistry {
