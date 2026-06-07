@@ -34,6 +34,11 @@ func S3PathStatic(alias, bucket, key string) string {
 
 // IsS3File 检查路径是文件 (true) 还是目录 / 不存在 (false)
 func (c *S3Client) IsS3File(bucket, key string) (bool, error) {
+	// 空 key 表示目标是 bucket 本身，不可能是文件
+	if key == "" {
+		return false, nil
+	}
+
 	_, err := c.S3.HeadObject(c.Ctx, &s3.HeadObjectInput{
 		Bucket: aws.String(bucket), Key: aws.String(key),
 	})

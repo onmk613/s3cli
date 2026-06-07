@@ -9,6 +9,7 @@ import (
 	"time"
 
 	myprint "s3cli/pkg/fmtutil"
+	"s3cli/pkg/progress"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
@@ -428,7 +429,7 @@ func Mirror(cfg MirrorOptions) error {
 		myprint.Println("Strategy: download + upload (cross endpoint)")
 	}
 
-	pt := myprint.NewProgressTracker(myprint.GetOutput(), cfg.ScrollMax, "mirror")
+	pt := progress.NewProgressTracker(myprint.GetOutput(), cfg.ScrollMax, "mirror")
 	pt.SetContextDone(srcClient.Ctx.Done())
 	pt.Start()
 	defer pt.Stop()

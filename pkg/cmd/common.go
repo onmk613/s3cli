@@ -40,6 +40,7 @@ type ArgParseMode int
 const (
 	ParseS3OnlyPath         ArgParseMode = iota // 所有 args 都是 S3 路径
 	ParseLocalFileAndS3Path                     // args[0] 是本地文件，args[1:] 是 S3 路径
+	ParseS3PathAndLocalFile                     // args[0] 是 S3 路径，args[1] 是本地文件
 	ParseTwoS3Paths                             // 用于 cp/mv: args[0] 和 args[1] 都是 S3 路径
 )
 
@@ -95,6 +96,13 @@ func NewRunE(fn ActionFunc, opts *CmdContext) func(cmd *cobra.Command, args []st
 		case ParseLocalFileAndS3Path:
 			opts.Global.LocalFile = args[0]
 			s3PathArg = args[1:]
+		case ParseS3PathAndLocalFile:
+			if len(args) >= 2 {
+				opts.Global.LocalFile = args[len(args)-1]
+				s3PathArg = args[:len(args)-1]
+			} else {
+				s3PathArg = args
+			}
 		default:
 			panic("NewRunE: unsupported ArgParseMode (use NewRunETwoPaths for ParseTwoS3Paths)")
 		}

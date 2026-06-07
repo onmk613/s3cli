@@ -75,7 +75,7 @@ func NewRootCmd() *cobra.Command {
 		RunE:          func(cmd *cobra.Command, args []string) error { return cmd.Help() },
 		PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
 			switch cmd.Name() {
-			case "help", "completion", "version":
+			case "help", "version":
 				return nil
 			}
 
@@ -87,7 +87,6 @@ func NewRootCmd() *cobra.Command {
 			if timeout > 0 {
 				ctxWithTimeout, cancelTimeout := context.WithTimeout(ctx, timeout)
 				cmd.SetContext(ctxWithTimeout)
-				// 在原有 cancel 之前先取消 timeout
 				origCancel := cancel
 				cancel = func() {
 					cancelTimeout()
@@ -95,6 +94,7 @@ func NewRootCmd() *cobra.Command {
 				}
 			}
 
+			// ── 初始化输出（所有命令都需要，含 alias/completion）────────
 			if toFile != "" {
 				logFile, err := myprint.OpenLogFile(toFile)
 				if err != nil {
@@ -108,14 +108,16 @@ func NewRootCmd() *cobra.Command {
 				myprint.NewFormat(os.Stdout, config.G.Debug, noColor)
 			}
 
-			// 运行时日志：记录执行命令和参数
-			myprint.Info("command: %s, args: %v", cmd.CommandPath(), args)
-
+			// ── alias / completion 是元命令，不要求配置文件 ──────────
 			for c := cmd; c != nil; c = c.Parent() {
-				if c.Name() == "alias" {
+				switch c.Name() {
+				case "completion", "alias":
 					return nil
 				}
 			}
+
+			// 运行时日志：记录执行命令和参数
+			myprint.Info("command: %s, args: %v", cmd.CommandPath(), args)
 
 			if err := config.LoadConf(); err != nil {
 				return err

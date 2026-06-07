@@ -61,32 +61,32 @@ func detectColor(w io.Writer) bool {
 }
 
 // target 表示一个输出目标及其独立的着色策略。
-type target struct {
-	w     io.Writer
-	color bool
+type Target struct {
+	W     io.Writer
+	Color bool
 }
 
 // multiWriter 同时向多个目标写入，并为每个目标独立决定是否着色：
 // 终端目标写带 ANSI 颜色的文本，文件等非终端目标写纯文本。
-type multiWriter struct {
-	targets []target
+type MultiWriter struct {
+	Targets []Target
 }
 
 // NewMultiWriter 构造一个按目标分别着色的 writer。
 // 每个传入的目标会在构造时根据 noColor 与是否为终端来决定其着色策略。
 func NewMultiWriter(writers ...io.Writer) io.Writer {
-	mw := &multiWriter{targets: make([]target, 0, len(writers))}
+	mw := &MultiWriter{Targets: make([]Target, 0, len(writers))}
 	for _, w := range writers {
-		mw.targets = append(mw.targets, target{w: w, color: detectColor(w)})
+		mw.Targets = append(mw.Targets, Target{W: w, Color: detectColor(w)})
 	}
 	return mw
 }
 
 // Write 写入纯文本（不含颜色）到所有目标。
 // 带颜色的写入由 writeColor 处理，从而对每个目标分别决定颜色。
-func (m *multiWriter) Write(p []byte) (int, error) {
-	for _, t := range m.targets {
-		if _, err := t.w.Write(p); err != nil {
+func (m *MultiWriter) Write(p []byte) (int, error) {
+	for _, t := range m.Targets {
+		if _, err := t.W.Write(p); err != nil {
 			return 0, err
 		}
 	}
@@ -94,19 +94,19 @@ func (m *multiWriter) Write(p []byte) (int, error) {
 }
 
 // writeColor 用指定颜色向各目标写入：着色目标写带色文本，其余写纯文本。
-func (m *multiWriter) writeColor(c Color, s string) error {
+func (m *MultiWriter) writeColor(c Color, s string) error {
 	colored := s
 	if c != Reset {
 		if code, ok := colorCodes[c]; ok {
 			colored = code + s + resetCode
 		}
 	}
-	for _, t := range m.targets {
+	for _, t := range m.Targets {
 		out := s
-		if t.color {
+		if t.Color {
 			out = colored
 		}
-		if _, err := t.w.Write([]byte(out)); err != nil {
+		if _, err := t.W.Write([]byte(out)); err != nil {
 			return err
 		}
 	}

@@ -6,6 +6,7 @@ import (
 	"sync"
 
 	myprint "s3cli/pkg/fmtutil"
+	"s3cli/pkg/progress"
 )
 
 // StreamJob 流式操作中的一个任务。
@@ -36,7 +37,7 @@ func RunStream(ctx context.Context, cfg StreamConfig) error {
 		cfg.Concurrency = 10
 	}
 
-	pt := myprint.NewProgressTracker(myprint.GetOutput(), cfg.ScrollMax, cfg.Label)
+	pt := progress.NewProgressTracker(myprint.GetOutput(), cfg.ScrollMax, cfg.Label)
 	pt.SetContextDone(ctx.Done())
 	pt.Start()
 	defer pt.Stop()
