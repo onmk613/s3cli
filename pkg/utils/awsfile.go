@@ -16,11 +16,13 @@ func LoadAWSConfigFile(path string) ([]byte, string, error) {
 	if err != nil {
 		return nil, "", fmt.Errorf("read %s: %w", path, err)
 	}
+
 	data = bytes.TrimPrefix(data, []byte{0xEF, 0xBB, 0xBF})
 	trimmed := bytes.TrimSpace(data)
 	if len(trimmed) == 0 {
 		return nil, "", fmt.Errorf("file %s is empty", path)
 	}
+
 	switch trimmed[0] {
 	case '{', '[':
 		return data, "json", nil
