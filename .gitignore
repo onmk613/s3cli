@@ -4,6 +4,9 @@ s3cli.exe
 output/
 bin/
 
+# 配置文件（含密钥，不应提交）
+s3cli.ini
+
 # 系统文件
 .DS_Store
 Thumbs.db
@@ -19,4 +22,3 @@ vendor/
 
 # 测试临时文件
 test*
-
