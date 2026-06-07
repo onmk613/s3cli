@@ -1,0 +1,9 @@
+*.exe
+.DS_Store
+.vscode/
+.idea
+.vimrc
+vendor/
+test*
+bin/
+s3cli*
