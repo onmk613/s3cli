@@ -1,9 +1,22 @@
-*.exe
-.DS_Store
-.vscode/
-.idea
-.vimrc
-vendor/
-test*
+# 构建产物
+s3cli
+s3cli.exe
+output/
 bin/
-s3cli*
+
+# 系统文件
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# 依赖
+vendor/
+
+# 测试临时文件
+test*
+
