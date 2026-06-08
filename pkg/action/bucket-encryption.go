@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 
+	myprint "s3cli/pkg/fmtutil"
 	"s3cli/pkg/utils"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -69,7 +70,9 @@ func (c *S3Client) SetEncryption(opt EncryptionOptions, bucket string) error {
 	if err != nil {
 		return fmt.Errorf("set encryption %s: %s", bucket, FormatAPIError(err))
 	}
-	fmt.Printf("Encryption set for %s (%d rules)\n", c.S3Path(bucket, ""), len(cfg.Rules))
+
+	myprint.Info("set encryption: bucket=%s rules=%d", bucket, len(cfg.Rules))
+	myprint.Successf("Encryption set for %s (%d rules)\n", c.S3Path(bucket, ""), len(cfg.Rules))
 	return nil
 }
 
@@ -85,7 +88,9 @@ func (c *S3Client) GetEncryption(bucket string) error {
 	if err != nil {
 		return fmt.Errorf("marshal encryption: %w", err)
 	}
-	fmt.Printf("# %s\n%s\n", c.S3Path(bucket, ""), string(b))
+
+	myprint.PrintfDim("# %s encryption\n", c.S3Path(bucket, ""))
+	myprint.Println(string(b))
 	return nil
 }
 
@@ -97,6 +102,8 @@ func (c *S3Client) DelEncryption(bucket string) error {
 	if err != nil {
 		return fmt.Errorf("delete encryption %s: %s", bucket, FormatAPIError(err))
 	}
-	fmt.Printf("Encryption deleted for %s\n", c.S3Path(bucket, ""))
+
+	myprint.Info("delete encryption: bucket=%s", bucket)
+	myprint.Successf("Encryption deleted for %s\n", c.S3Path(bucket, ""))
 	return nil
 }

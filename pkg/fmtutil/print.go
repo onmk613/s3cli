@@ -16,9 +16,7 @@ var (
 )
 
 func NewFormat(w io.Writer, d, c bool) {
-	outMu.Lock()
-	defer outMu.Unlock()
-	debug = d
+	debug.Store(d)
 	output = w
 	noColor = c
 }
@@ -68,63 +66,63 @@ func PrintlnRed(a ...any) {
 
 func PrintfGreen(format string, a ...any) {
 	outMu.RLock()
+	defer outMu.RUnlock()
 	printfColor(output, Green, format, a...)
-	outMu.RUnlock()
 }
 func PrintlnGreen(a ...any) {
 	outMu.RLock()
+	defer outMu.RUnlock()
 	printlnColor(output, Green, a...)
-	outMu.RUnlock()
 }
 
 func PrintfYellow(format string, a ...any) {
 	outMu.RLock()
+	defer outMu.RUnlock()
 	printfColor(output, Yellow, format, a...)
-	outMu.RUnlock()
 }
 func PrintlnYellow(a ...any) {
 	outMu.RLock()
+	defer outMu.RUnlock()
 	printlnColor(output, Yellow, a...)
-	outMu.RUnlock()
 }
 
 func PrintfBlue(format string, a ...any) {
 	outMu.RLock()
+	defer outMu.RUnlock()
 	printfColor(output, Blue, format, a...)
-	outMu.RUnlock()
 }
 func PrintlnBlue(a ...any) {
 	outMu.RLock()
+	defer outMu.RUnlock()
 	printlnColor(output, Blue, a...)
-	outMu.RUnlock()
 }
 
 func PrintfCyan(format string, a ...any) {
 	outMu.RLock()
+	defer outMu.RUnlock()
 	printfColor(output, Cyan, format, a...)
-	outMu.RUnlock()
 }
 func PrintlnCyan(a ...any) {
 	outMu.RLock()
+	defer outMu.RUnlock()
 	printlnColor(output, Cyan, a...)
-	outMu.RUnlock()
 }
 
 func PrintfMagenta(format string, a ...any) {
 	outMu.RLock()
+	defer outMu.RUnlock()
 	printfColor(output, Magenta, format, a...)
-	outMu.RUnlock()
 }
 func PrintlnMagenta(a ...any) {
 	outMu.RLock()
+	defer outMu.RUnlock()
 	printlnColor(output, Magenta, a...)
-	outMu.RUnlock()
 }
 
 func PrintfWhite(format string, a ...any) {
 	outMu.RLock()
+	defer outMu.RUnlock()
 	printfColor(output, White, format, a...)
-	outMu.RUnlock()
 }
 func PrintlnWhite(a ...any) {
 	outMu.RLock()
@@ -135,70 +133,61 @@ func PrintlnWhite(a ...any) {
 // Successf 成功信息（加粗绿色）
 func Successf(format string, a ...any) {
 	outMu.RLock()
+	defer outMu.RUnlock()
 	printfColor(output, BoldGreen, format, a...)
-	outMu.RUnlock()
 }
 func Successln(a ...any) {
 	outMu.RLock()
+	defer outMu.RUnlock()
 	printlnColor(output, BoldGreen, a...)
-	outMu.RUnlock()
 }
 
 // Warnf 警告信息（加粗黄色）
 func Warnf(format string, a ...any) {
 	outMu.RLock()
+	defer outMu.RUnlock()
 	printfColor(output, BoldYellow, format, a...)
-	outMu.RUnlock()
 }
 func Warnln(a ...any) {
 	outMu.RLock()
+	defer outMu.RUnlock()
 	printlnColor(output, BoldYellow, a...)
-	outMu.RUnlock()
 }
 
 // Errorf 错误信息（加粗红色）
 func Errorf(format string, a ...any) {
 	outMu.RLock()
+	defer outMu.RUnlock()
 	printfColor(output, BoldRed, format, a...)
-	outMu.RUnlock()
 }
 func Errorln(a ...any) {
 	outMu.RLock()
+	defer outMu.RUnlock()
 	printlnColor(output, BoldRed, a...)
-	outMu.RUnlock()
 }
-
-// DirColor 目录颜色（蓝色）
-func DirColor() Color { return Blue }
-
-// FileColor 文件颜色（绿色）
-func FileColor() Color { return Green }
-
-// SizeColor 大小颜色（蓝色 / 青色）
-func SizeColor() Color { return Cyan }
 
 // PrintlnDim 暗淡文字
 func PrintlnDim(a ...any) {
 	outMu.RLock()
+	defer outMu.RUnlock()
 	printlnColor(output, Dim, a...)
-	outMu.RUnlock()
 }
 func PrintfDim(format string, a ...any) {
 	outMu.RLock()
+	defer outMu.RUnlock()
 	printfColor(output, Dim, format, a...)
-	outMu.RUnlock()
 }
 
 // PrintlnBoldCyan 加粗青色
 func PrintlnBoldCyan(a ...any) {
 	outMu.RLock()
+	defer outMu.RUnlock()
 	printlnColor(output, BoldCyan, a...)
-	outMu.RUnlock()
 }
 func PrintfBoldCyan(format string, a ...any) {
 	outMu.RLock()
+	defer outMu.RUnlock()
 	printfColor(output, BoldCyan, format, a...)
-	outMu.RUnlock()
 }
 
 func printlnColor(w io.Writer, c Color, a ...any) {

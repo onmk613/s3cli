@@ -5,6 +5,7 @@ import (
 	"encoding/xml"
 	"fmt"
 
+	myprint "s3cli/pkg/fmtutil"
 	"s3cli/pkg/utils"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -29,13 +30,15 @@ func (c *S3Client) SetCors(corsFile string, bucket string) error {
 	}
 
 	_, err = c.S3.PutBucketCors(c.Ctx, &s3.PutBucketCorsInput{
-		Bucket: aws.String(bucket), CORSConfiguration: cfg,
+		Bucket:            aws.String(bucket),
+		CORSConfiguration: cfg,
 	})
 	if err != nil {
 		return fmt.Errorf("set cors %s: %s", bucket, FormatAPIError(err))
 	}
 
-	fmt.Printf("CORS configuration set for %s\n", c.S3Path(bucket, ""))
+	myprint.Info("set cors: bucket=%s", bucket)
+	myprint.Successf("CORS configuration set for %s\n", c.S3Path(bucket, ""))
 	return nil
 }
 
@@ -49,7 +52,9 @@ func (c *S3Client) GetCors(bucket string) error {
 	if err != nil {
 		return fmt.Errorf("marshal cors: %w", err)
 	}
-	fmt.Printf("# %s\n%s\n", c.S3Path(bucket, ""), string(b))
+
+	myprint.PrintfDim("# %s cors\n", c.S3Path(bucket, ""))
+	myprint.Println(string(b))
 	return nil
 }
 
@@ -58,10 +63,13 @@ func (c *S3Client) DelCors(bucket string) error {
 	if _, err := c.S3.DeleteBucketCors(c.Ctx, &s3.DeleteBucketCorsInput{Bucket: aws.String(bucket)}); err != nil {
 		return fmt.Errorf("delete cors %s: %s", bucket, FormatAPIError(err))
 	}
-	fmt.Printf("CORS configuration deleted for %s\n", c.S3Path(bucket, ""))
+
+	myprint.Info("delete cors: bucket=%s", bucket)
+	myprint.Successf("CORS configuration deleted for %s\n", c.S3Path(bucket, ""))
 	return nil
 }
 
+// parseCORSConfig 解析 CORS 配置文件，支持 JSON 和 XML 格式。
 func parseCORSConfig(data []byte, format string) (*s3types.CORSConfiguration, error) {
 	switch format {
 	case "json":

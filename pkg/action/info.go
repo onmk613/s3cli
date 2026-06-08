@@ -39,6 +39,7 @@ func (c *S3Client) Info(bucket, prefix string, outputJSON bool) error {
 // ─── 对象信息 ───────────────────────────────────────────────────────────────────
 
 func (c *S3Client) infoObject(opt infoOptions, bucket, key string) error {
+	myprint.Info("fetching object metadata for %s", c.S3Path(bucket, key))
 	head, err := c.S3.HeadObject(c.Ctx, &s3.HeadObjectInput{
 		Bucket: aws.String(bucket), Key: aws.String(key),
 	})
@@ -103,7 +104,7 @@ func (c *S3Client) infoObject(opt infoOptions, bucket, key string) error {
 	}
 
 	// 文本输出
-	myprint.Printf("%s (object):\n", c.S3Path(bucket, key))
+	myprint.PrintfBoldCyan("%s (object):\n", c.S3Path(bucket, key))
 	myprint.Printf("    Content-Length:       %d (", aws.ToInt64(head.ContentLength))
 	myprint.PrintfCyan("%s", FormatBytes(aws.ToInt64(head.ContentLength)))
 	myprint.Printf(")\n")
@@ -147,19 +148,19 @@ func (c *S3Client) infoObject(opt infoOptions, bucket, key string) error {
 			head.ObjectLockRetainUntilDate.Format("2006-01-02 15:04:05"))
 	}
 	if len(head.Metadata) > 0 {
-		myprint.Println("    Metadata:")
+		myprint.PrintfDim("    Metadata:\n")
 		for k, v := range head.Metadata {
 			myprint.Printf("        x-amz-meta-%s: %s\n", k, v)
 		}
 	}
 	if len(tags) > 0 {
-		myprint.Println("    Tags:")
+		myprint.PrintfDim("    Tags:\n")
 		for k, v := range tags {
 			myprint.Printf("        %s = %s\n", k, v)
 		}
 	}
 	if aclGrants != nil {
-		myprint.Println("    ACL:")
+		myprint.PrintfDim("    ACL:\n")
 		b, _ := json.MarshalIndent(map[string]any{
 			"Owner": aclOwner, "Grants": aclGrants,
 		}, "        ", "  ")
@@ -172,6 +173,7 @@ func (c *S3Client) infoObject(opt infoOptions, bucket, key string) error {
 // ─── 桶信息 ─────────────────────────────────────────────────────────────────────
 
 func (c *S3Client) infoBucket(opt infoOptions, bucket string) error {
+	myprint.Info("fetching bucket metadata for %s", c.S3Path(bucket, ""))
 	info := map[string]any{"Bucket": bucket}
 
 	// Location
@@ -246,13 +248,14 @@ func (c *S3Client) infoBucket(opt infoOptions, bucket string) error {
 	}
 
 	// 文本输出
-	myprint.Printf("%s (bucket):\n", c.S3Path(bucket, ""))
+	myprint.PrintfBoldCyan("%s (bucket):\n", c.S3Path(bucket, ""))
 	myprint.Printf("    Location:        %s\n", loc)
 	if versioning != "" {
 		myprint.Printf("    Versioning:      %s\n", versioning)
 	}
 	if policy != "" {
-		myprint.Printf("    Policy:\n%s\n", indent(policy, "        "))
+		myprint.PrintfDim("    Policy:\n")
+		myprint.Printf("%s\n", indent(policy, "        "))
 	}
 	if len(corsRules) > 0 {
 		corsConfig := corsConfiguration{
@@ -260,11 +263,12 @@ func (c *S3Client) infoBucket(opt infoOptions, bucket string) error {
 			CORSRules: corsRules,
 		}
 		if b, err := xml.MarshalIndent(corsConfig, "        ", "  "); err == nil {
-			myprint.Printf("    CORS:\n        %s\n", string(b))
+			myprint.PrintfDim("    CORS:\n")
+			myprint.Printf("        %s\n", string(b))
 		}
 	}
 	if len(aclGrants) > 0 {
-		myprint.Println("    ACL Grants:")
+		myprint.PrintfDim("    ACL Grants:\n")
 		for _, g := range aclGrants {
 			myprint.Printf("        %s: %s\n", getGranteeName(g.Grantee), string(g.Permission))
 		}

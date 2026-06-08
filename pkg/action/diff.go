@@ -211,38 +211,39 @@ func diffSingleFile(a, b *DiffEndpoint, mode DiffMode) error {
 	}
 
 	if ea.Size != eb.Size {
-		myprint.Printf("DIFFER  %s  vs  %s  (size %s vs %s)\n",
+		myprint.PrintfRed("DIFFER  %s  vs  %s  (size %s vs %s)\n",
 			a.String(), b.String(),
 			FormatBytes(ea.Size), FormatBytes(eb.Size))
 		return errDiffer
 	}
 
 	if mode == DiffModeSize {
-		myprint.Printf("OK      %s  vs  %s  (size %s)\n",
+		myprint.PrintfGreen("OK      %s  vs  %s  (size %s)\n",
 			a.String(), b.String(), FormatBytes(ea.Size))
 		return nil
 	}
 	if mode == DiffModeQuick {
 		if ea.Mtime != eb.Mtime {
-			myprint.Printf("DIFFER  %s  vs  %s  (mtime %d vs %d)\n",
+			myprint.PrintfRed("DIFFER  %s  vs  %s  (mtime %d vs %d)\n",
 				a.String(), b.String(), ea.Mtime, eb.Mtime)
 			return errDiffer
 		}
-		myprint.Printf("OK      %s  vs  %s  (size %s, mtime match)\n",
+		myprint.PrintfGreen("OK      %s  vs  %s  (size %s, mtime match)\n",
 			a.String(), b.String(), FormatBytes(ea.Size))
 		return nil
 	}
 
 	// MD5 模式：流式对比
+	myprint.Info("comparing content (md5) of %s vs %s", a.String(), b.String())
 	equal, err := compareContent(a, "", b, "")
 	if err != nil {
 		return err
 	}
 	if !equal {
-		myprint.Printf("DIFFER  %s  vs  %s  (content)\n", a.String(), b.String())
+		myprint.PrintfRed("DIFFER  %s  vs  %s  (content)\n", a.String(), b.String())
 		return errDiffer
 	}
-	myprint.Printf("OK      %s  vs  %s  (size %s, md5 match)\n",
+	myprint.PrintfGreen("OK      %s  vs  %s  (size %s, md5 match)\n",
 		a.String(), b.String(), FormatBytes(ea.Size))
 	return nil
 }
@@ -256,10 +257,12 @@ func IsDifferErr(err error) bool { return err == errDiffer }
 // =============== 目录 diff ===============
 
 func diffDirectories(opt DiffOptions) error {
+	myprint.Info("listing entries of A: %s", opt.A.String())
 	listA, err := listAllEntries(opt.A)
 	if err != nil {
 		return fmt.Errorf("list A: %w", err)
 	}
+	myprint.Info("listing entries of B: %s", opt.B.String())
 	listB, err := listAllEntries(opt.B)
 	if err != nil {
 		return fmt.Errorf("list B: %w", err)
@@ -337,9 +340,9 @@ func diffDirectories(opt DiffOptions) error {
 	sort.Strings(differ)
 
 	// 3. 打印
-	myprint.Printf("--- A: %s\n", opt.A.String())
-	myprint.Printf("+++ B: %s\n", opt.B.String())
-	myprint.Printf("mode=%s, concurrency=%d\n", opt.Mode, opt.Concurrency)
+	myprint.PrintfDim("--- A: %s\n", opt.A.String())
+	myprint.PrintfDim("+++ B: %s\n", opt.B.String())
+	myprint.PrintfDim("mode=%s, concurrency=%d\n", opt.Mode, opt.Concurrency)
 	myprint.Println()
 	for _, k := range differ {
 		myprint.PrintfRed("DIFFER %s\n", k)
@@ -357,7 +360,7 @@ func diffDirectories(opt DiffOptions) error {
 	}
 
 	myprint.Println()
-	myprint.Printf("Summary: identical=%d differ=%d only-A=%d only-B=%d\n",
+	myprint.PrintfBoldCyan("Summary: identical=%d differ=%d only-A=%d only-B=%d\n",
 		len(identical), len(differ), len(onlyA), len(onlyB))
 
 	if len(differ)+len(onlyA)+len(onlyB) > 0 {

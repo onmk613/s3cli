@@ -4,28 +4,21 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sync/atomic"
 	"time"
 )
 
-var debug bool
+// 简单的日志记录
+var debug atomic.Bool
 
 func Info(format string, args ...interface{}) {
-	outMu.RLock()
-	d := debug
-	outMu.RUnlock()
-	if !d {
+	if !debug.Load() {
 		return
 	}
 	PrintlnGreen(logMessage("INFO", format, args...))
 }
 
 func Warn(format string, args ...interface{}) {
-	outMu.RLock()
-	d := debug
-	outMu.RUnlock()
-	if !d {
-		return
-	}
 	PrintlnYellow(logMessage("WARN", format, args...))
 }
 
@@ -40,6 +33,7 @@ func logMessage(level string, format string, args ...interface{}) string {
 	return fmt.Sprintf("[%v] [%s] %v", formattedTime, level, message)
 }
 
+// OpenLogFile 创建日志文件并确保目录存在
 func OpenLogFile(path string) (*os.File, error) {
 	dir := filepath.Dir(path)
 	if err := os.MkdirAll(dir, 0755); err != nil {

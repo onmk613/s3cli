@@ -22,7 +22,7 @@ func (c *S3Client) Mv(srcBucket, srcKey, destBucket, destKey string, recursive b
 	}
 	ok2, err2 := c.IsS3File(destBucket, destKey)
 	if err2 != nil {
-		myprint.Warn("check destination: %s", FormatAPIError(err2))
+		myprint.Warnf("check destination: %s\n", FormatAPIError(err2))
 	}
 
 	if !ok && !recursive {
@@ -30,7 +30,11 @@ func (c *S3Client) Mv(srcBucket, srcKey, destBucket, destKey string, recursive b
 	}
 	if ok {
 		dst := utils.ResolveDestKey(destKey, destKey, path.Base(srcKey))
-		return c.mvObject(srcBucket, srcKey, destBucket, dst)
+		if err := c.mvObject(srcBucket, srcKey, destBucket, dst); err != nil {
+			return err
+		}
+		myprint.Successf("mv: %s -> %s\n", c.S3Path(srcBucket, srcKey), c.S3Path(destBucket, dst))
+		return nil
 	}
 	target := destKey
 	if strings.HasSuffix(destKey, "/") && !ok2 {
@@ -43,6 +47,7 @@ func (c *S3Client) mvObject(srcBucket, srcKey, destBucket, destKey string) error
 	if err := c.copyObject(srcBucket, srcKey, destBucket, destKey); err != nil {
 		return err
 	}
+	myprint.Info("removing source %s", c.S3Path(srcBucket, srcKey))
 	_, err := c.S3.DeleteObject(c.Ctx, &s3.DeleteObjectInput{
 		Bucket: aws.String(srcBucket), Key: aws.String(srcKey),
 	})

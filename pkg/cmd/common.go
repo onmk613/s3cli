@@ -18,7 +18,6 @@ func isCanceled(ctx context.Context) bool {
 }
 
 // formatUserError 将内部 error 转换为对用户友好的显示信息。
-// 优先使用 action.FormatAPIError；fallback 到 err.Error()。
 func formatUserError(err error) string {
 	if err == nil {
 		return ""
@@ -45,7 +44,6 @@ const (
 )
 
 // CmdContext 承载跨命令共享的"全局"选项和路径解析模式。
-// 各命令特有的选项由命令自身定义，不再集中存放于此。
 type CmdContext struct {
 	Global       *GlobalOptions
 	ArgParseMode ArgParseMode

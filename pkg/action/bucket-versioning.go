@@ -3,6 +3,8 @@ package action
 import (
 	"fmt"
 
+	myprint "s3cli/pkg/fmtutil"
+
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	s3types "github.com/aws/aws-sdk-go-v2/service/s3/types"
@@ -27,7 +29,8 @@ func (c *S3Client) SetVersioning(bucket string, status bool) error {
 		return fmt.Errorf("set versioning %s: %s", bucket, FormatAPIError(err))
 	}
 
-	fmt.Printf("Versioning %s for %s\n", st, c.S3Path(bucket, ""))
+	myprint.Info("set versioning: bucket=%s status=%s", bucket, st)
+	myprint.Successf("Versioning %s for %s\n", st, c.S3Path(bucket, ""))
 	return nil
 }
 
@@ -42,6 +45,6 @@ func (c *S3Client) GetVersioning(bucket string) error {
 		status = "(disabled)"
 	}
 
-	fmt.Printf("%s: %s\n", c.S3Path(bucket, ""), status)
+	myprint.Printf("%s: %s\n", c.S3Path(bucket, ""), status)
 	return nil
 }
