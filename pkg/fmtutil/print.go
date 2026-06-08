@@ -6,6 +6,7 @@ import (
 	"io"
 	"log"
 	"math"
+	"os"
 	"sync"
 )
 
@@ -227,6 +228,10 @@ func FormatBytes(bytes int64) string {
 // 若 w 是 multiWriter，则交给它对每个目标分别决定是否着色；
 // 否则按 detectColor 的结果对整段输出统一着色。
 func writeColored(w io.Writer, c Color, s string) {
+	if w == nil {
+		// 全局 output 尚未初始化（NewFormat 未调用），退化为 stderr，避免 nil 解引用 panic。
+		w = os.Stderr
+	}
 	if mw, ok := w.(*MultiWriter); ok {
 		if err := mw.writeColor(c, s); err != nil {
 			log.Fatal(err)

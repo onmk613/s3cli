@@ -4,9 +4,11 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/signal"
 	"strings"
 	"sync"
 	"sync/atomic"
+	"syscall"
 	"time"
 
 	myprint "s3cli/pkg/fmtutil"
@@ -14,17 +16,33 @@ import (
 	"golang.org/x/term"
 )
 
-// ProgressTracker 终端进度条 + 滚动区域。
+// 进度区使用的 ANSI 颜色（直接写入终端，不经 fmtutil）。
+const (
+	colorBar    = "\033[32m" // 进度条：绿色
+	colorScroll = "\033[2m"  // 滚动记录：暗淡（灰色）
+	colorReset  = "\033[0m"
+)
+
+// ProgressTracker 终端进度条 + 固定滚动窗口。
 //
 // 绘制策略（为什么这样设计）：
-//   - 仅在进度区所占行数内操作，绝不使用 \033[J（清到屏底）→ 避免删除终端上面的历史输出
-//   - 也不使用 \033[s/\033[u（光标保存/恢复）→ 多行变化时光标会错位
-//   - 每次重绘：\033[nA 上移到旧进度区顶部 → 逐行 \r\033[K 清除并写入 →
-//     进度区缩小/扩大时只补清多余行，光标始终落在进度条行尾。
-//   - 所有滚动行强制截断到终端宽度，绝不折行 → 保持布局整齐
 //
-// 兼容性：依赖 ANSI 转义序列（\033[nA / \033[K / \r）。
-// 主流终端均支持。非终端环境自动退化为纯文本输出。
+//	采用「固定行数进度区」方案：进度区始终占 scrollMax+1 行
+//	（上方 scrollMax 行为最近消息滚动窗口，最后 1 行为进度条）。
+//
+//	关键：第一次绘制时先输出 scrollMax+1 个空行把区域「预占」住，
+//	      让终端在此时一次性完成向上滚动；此后每次重绘都是
+//	      「\033[nA 上移固定 n 行 → 逐行 \r\033[K 重写」，行数恒定不变。
+//
+//	早期「随消息增长的多行进度区」方案会崩坏：进度区行数边画边涨，
+//	在终端底部 \033[nA 上移被截断 → 行数失配 → 进度条堆叠、吃掉历史。
+//	本方案行数固定且区域已预占，从根本上消除该问题。
+//
+//	滚动窗口用环形缓冲保存最近 scrollMax 条消息；旧消息滚出窗口即被覆盖，
+//	不会逐条刷屏，也不污染上方的历史输出。scrollMax==0 时只显示进度条单行。
+//
+// 兼容性：依赖 \033[nA（上移）、\r、\033[K（清行），主流终端均支持。
+// 非终端环境（重定向到文件）自动退化为纯文本逐行输出。
 
 type ProgressTracker struct {
 	mu sync.Mutex // 互斥锁，保护并发访问（多个 goroutine 同时更新进度）
@@ -43,18 +61,19 @@ type ProgressTracker struct {
 	failed  atomic.Int64 // 失败文件数
 
 	// 显示相关
-	label   string        // 进度条标签（如 "Uploading"）
-	startAt time.Time     // 开始时间，用于计算速率和 ETA
+	label   string    // 进度条标签（如 "Uploading"）
+	startAt time.Time // 开始时间，用于计算速率和 ETA
 
-	// 滚动缓冲区（显示最近处理的文件名）
-	scroll    []string // 滚动消息环形缓冲区
-	scrollMax int      // 最大保存条数
-	scrollPos int      // 环形写位置（当前写到哪个槽位）
-	scrollLen int      // 实际条目数（可能小于 scrollMax）
-	lastLines int      // 上次绘制占用了多少行（用于增量更新）
-	barWidth  int      // 上次进度条宽度（宽度变化时调整布局）
+	// 固定滚动窗口（环形缓冲，保存最近 scrollMax 条消息）
+	scrollMax int      // 滚动窗口行数；0 表示只显示进度条单行
+	scroll    []string // 环形缓冲，长度 == scrollMax
+	scrollPos int      // 下一个写入位置
+	scrollLen int      // 已写入条数（<=scrollMax）
+	drawn     bool     // 进度区是否已预占/绘制过（决定是否需要上移重绘）
 
-	started atomic.Bool // 是否已启动（用于控制光标隐藏/显示）
+	sigCh   chan os.Signal // 信号兜底：被中断时恢复光标
+	started atomic.Bool    // 是否已启动（用于控制光标隐藏/显示）
+	aborted atomic.Bool    // 被 Ctrl+C 中断后置位：此后所有重绘都跳过，避免清屏后又被重画
 }
 
 // NewProgressTracker 创建一个新的进度跟踪器
@@ -64,24 +83,24 @@ type ProgressTracker struct {
 //   - label: 进度条标签，如 "Downloading"
 func NewProgressTracker(w io.Writer, scrollMax int, label string) *ProgressTracker {
 	// 初始化默认值（非终端环境）
-	rawW := io.Discard    // 原始输出默认丢弃（不输出）
-	termW := w            // 终端输出默认用原 writer
-	isTerm := false       // 默认不是终端
-	wd := 80              // 默认终端宽度 80 字符
+	rawW := io.Discard // 原始输出默认丢弃（不输出）
+	termW := w         // 终端输出默认用原 writer
+	isTerm := false    // 默认不是终端
+	wd := 80           // 默认终端宽度 80 字符
 
 	// 情况1：传入的是 MultiWriter（自定义的多路输出器）
 	if mw, ok := w.(*myprint.MultiWriter); ok {
 		for _, t := range mw.Targets {
-			if t.Color {  // 支持颜色的目标视为终端
+			if t.Color { // 支持颜色的目标视为终端
 				termW = t.W
 				isTerm = true
-			} else {  // 不支持颜色的目标视为原始输出（文件）
+			} else { // 不支持颜色的目标视为原始输出（文件）
 				rawW = t.W
 			}
 		}
-	// 情况2：传入的是普通文件
+		// 情况2：传入的是普通文件
 	} else if f, ok := w.(*os.File); ok {
-		isTerm = detectTerm(f)  // 检测是否为终端（如 /dev/tty）
+		isTerm = detectTerm(f) // 检测是否为终端（如 /dev/tty）
 		if isTerm {
 			// 获取终端宽度
 			if fd := int(f.Fd()); fd >= 0 {
@@ -90,23 +109,26 @@ func NewProgressTracker(w io.Writer, scrollMax int, label string) *ProgressTrack
 				}
 			}
 			termW = w
-			rawW = io.Discard  // 终端环境下不输出到原始输出
+			rawW = io.Discard // 终端环境下不输出到原始输出
 		} else {
 			// 不是终端（如重定向到文件），退化为纯文本
 			rawW = w
 		}
 	}
 
-	return &ProgressTracker{
+	pt := &ProgressTracker{
 		termW:     termW,
 		rawW:      rawW,
 		isTerm:    isTerm,
 		termWd:    wd,
 		scrollMax: scrollMax,
-		scroll:    make([]string, 0, max(scrollMax, 1)), // 预分配空间
 		label:     label,
 		startAt:   time.Now(),
 	}
+	if scrollMax > 0 {
+		pt.scroll = make([]string, scrollMax)
+	}
+	return pt
 }
 
 // SetContextDone 实现接口要求（当前未使用）
@@ -115,9 +137,29 @@ func (pt *ProgressTracker) SetContextDone(_ <-chan struct{}) {}
 // Start 启动进度条显示
 // 在终端环境下会隐藏光标，避免闪烁
 func (pt *ProgressTracker) Start() {
-	pt.started.Store(true)  // 标记为已启动
+	pt.started.Store(true) // 标记为已启动
 	if pt.isTerm {
+		// 加锁，避免隐藏光标的转义序列与首次绘制的输出交错
+		pt.mu.Lock()
 		fmt.Fprint(pt.termW, "\033[?25l") // ANSI 转义序列：隐藏光标
+		pt.mu.Unlock()
+
+		// 信号兜底：即使进程被 Ctrl+C / kill 打断、defer Stop() 来不及执行，
+		// 也要在退出前恢复光标，避免终端光标一直消失（看起来像“输出没了”）。
+		pt.sigCh = make(chan os.Signal, 1)
+		signal.Notify(pt.sigCh, syscall.SIGINT, syscall.SIGTERM)
+		go func(ch chan os.Signal) {
+			if _, ok := <-ch; !ok {
+				return // channel 被 Stop() 关闭，正常退出
+			}
+			// 收到中断信号：先置位 aborted，阻止后续任何 render() 重绘进度区，
+			// 再清除整个进度区并恢复光标，避免“清屏后又被在途的 AddDone 重画”导致错乱。
+			// 收尾（summary 输出）统一交给随后执行的 Stop()，这里不额外换行。
+			pt.aborted.Store(true)
+			pt.mu.Lock()
+			pt.clearArea()
+			pt.mu.Unlock()
+		}(pt.sigCh)
 	}
 }
 
@@ -127,27 +169,19 @@ func (pt *ProgressTracker) Stop() {
 	if !pt.started.Swap(false) {
 		return
 	}
+
+	// 注销信号兜底并唤醒/结束兜底 goroutine。
+	if pt.sigCh != nil {
+		signal.Stop(pt.sigCh)
+		close(pt.sigCh)
+		pt.sigCh = nil
+	}
+
 	pt.mu.Lock()
 	defer pt.mu.Unlock()
 
-	// 清除进度区并显示光标
-	if pt.isTerm && pt.lastLines > 0 {
-		// 上移到进度区顶部（向上移动 lastLines 行）
-		fmt.Fprintf(pt.termW, "\033[%dA", pt.lastLines)
-		
-		// 逐行清除（不用 \033[J，避免误删上方历史）
-		for i := 0; i < pt.lastLines; i++ {
-			fmt.Fprint(pt.termW, "\r\033[K")  // \r 回车，\033[K 清除到行尾
-			if i < pt.lastLines-1 {
-				fmt.Fprint(pt.termW, "\n")    // 换到下一行
-			}
-		}
-		
-		// 回到顶部，准备输出总结
-		fmt.Fprintf(pt.termW, "\033[%dA", pt.lastLines-1)
-		fmt.Fprint(pt.termW, "\033[?25h")  // 显示光标
-		pt.lastLines = 0
-	}
+	// 清除整个进度区，summary 将从进度区顶部输出。
+	pt.clearArea()
 
 	// 计算统计信息
 	elapsed := time.Since(pt.startAt).Truncate(time.Millisecond)
@@ -156,15 +190,15 @@ func (pt *ProgressTracker) Stop() {
 	dsz := pt.doneSz.Load()
 	tsz := pt.totalSz.Load()
 	f := pt.failed.Load()
-	
+
 	// 计算速率
 	rate := "0 B/s"
 	if elapsed.Seconds() > 0 {
 		rate = myprint.FormatBytes(int64(float64(dsz)/elapsed.Seconds())) + "/s"
 	}
-	
+
 	// 构建总结信息
-	summary := fmt.Sprintf("%s: %d/%d files (%s/%s) in %s (%s)", 
+	summary := fmt.Sprintf("%s: %d/%d files (%s/%s) in %s (%s)",
 		pt.label, d, t, myprint.FormatBytes(dsz), myprint.FormatBytes(tsz), elapsed, rate)
 	if f > 0 {
 		summary += fmt.Sprintf(", %d failed", f)
@@ -174,14 +208,14 @@ func (pt *ProgressTracker) Stop() {
 
 // AddTotal 增加总任务数（在开始处理前调用）
 func (pt *ProgressTracker) AddTotal(n int64, sz int64) {
-	pt.total.Add(n)      // 增加总文件数
-	pt.totalSz.Add(sz)   // 增加总字节数
+	pt.total.Add(n)    // 增加总文件数
+	pt.totalSz.Add(sz) // 增加总字节数
 }
 
 // AddDone 增加已完成任务（每完成一个文件调用一次）
 func (pt *ProgressTracker) AddDone(n int64, sz int64, msg string) {
-	pt.done.Add(n)       // 增加已完成文件数
-	pt.doneSz.Add(sz)    // 增加已完成字节数
+	pt.done.Add(n)    // 增加已完成文件数
+	pt.doneSz.Add(sz) // 增加已完成字节数
 
 	pt.mu.Lock()
 	defer pt.mu.Unlock()
@@ -191,11 +225,137 @@ func (pt *ProgressTracker) AddDone(n int64, sz int64, msg string) {
 		fmt.Fprintln(pt.rawW, msg)
 	}
 
-	// 终端环境：更新滚动区和进度条
-	if pt.isTerm {
-		pt.pushScroll(msg)  // 将消息加入滚动缓冲区
-		pt.redraw()         // 重新绘制界面
+	// 已被中断：不再触碰终端，避免清屏后又被重绘导致输出错乱。
+	if !pt.isTerm || pt.aborted.Load() {
+		return
 	}
+
+	// 把消息写入环形滚动窗口（仅当 scrollMax>0）。
+	if pt.scrollMax > 0 {
+		pt.scroll[pt.scrollPos] = msg
+		pt.scrollPos = (pt.scrollPos + 1) % pt.scrollMax
+		if pt.scrollLen < pt.scrollMax {
+			pt.scrollLen++
+		}
+	}
+
+	pt.render()
+}
+
+// Tick 仅刷新进度条/速率/ETA（不新增消息）。可用于周期性更新。
+func (pt *ProgressTracker) Tick() {
+	pt.mu.Lock()
+	defer pt.mu.Unlock()
+	if pt.isTerm && !pt.aborted.Load() {
+		pt.render()
+	}
+}
+
+// render 重绘整个进度区（固定 scrollMax+1 行）。调用方须持有 pt.mu。
+//
+// 布局：第 1 行为进度条（绿色），下方 scrollMax 行为滚动窗口（灰色）。
+//
+// 首次：输出 scrollMax+1 个空行预占区域（让终端一次性完成滚动），
+//
+//	再上移回顶部绘制；此后区域行数恒定，每次都是上移→逐行重写。
+func (pt *ProgressTracker) render() {
+	if pt.aborted.Load() {
+		return // 已中断，不再绘制
+	}
+	wd := pt.curWidth()
+	maxLineW := wd - 2
+	if maxLineW < 20 {
+		maxLineW = 20
+	}
+	lines := pt.scrollMax + 1 // 进度区总行数（进度条 + 滚动窗口）
+
+	var sb strings.Builder
+
+	if !pt.drawn {
+		// 预占：输出 lines 个空行，使终端在此刻完成向上滚动，
+		// 之后进度区位置固定，\033[nA 上移不会再被截断。
+		for i := 0; i < lines; i++ {
+			sb.WriteString("\n")
+		}
+		pt.drawn = true
+	}
+
+	// 上移到进度区顶部行首。
+	sb.WriteString("\r")
+	if lines > 1 {
+		sb.WriteString(fmt.Sprintf("\033[%dA", lines-1))
+	}
+
+	// 第 1 行：进度条（绿色）。
+	sb.WriteString("\r\033[K")
+	sb.WriteString(colorBar)
+	sb.WriteString(pt.buildBar(wd))
+	sb.WriteString(colorReset)
+
+	// 下方 scrollMax 行：滚动窗口（灰色，从旧到新；不足处留空行）。
+	if pt.scrollMax > 0 {
+		ordered := pt.scrollOrdered()
+		for i := 0; i < pt.scrollMax; i++ {
+			sb.WriteString("\n\r\033[K")
+			if i < len(ordered) {
+				sb.WriteString(colorScroll)
+				sb.WriteString("  ")
+				sb.WriteString(truncateMsg(ordered[i], maxLineW))
+				sb.WriteString(colorReset)
+			}
+		}
+	}
+
+	fmt.Fprint(pt.termW, sb.String())
+}
+
+// clearArea 清除整个进度区（scrollMax+1 行）并恢复光标。调用方须持有 pt.mu。
+//
+// 绘制结束时光标停在进度区最后一行行尾，因此先上移 lines-1 行到顶部，
+// 逐行清除，最后回到进度区顶部行首（后续输出将从这里覆盖原位置）。
+// 幂等：drawn==false 时直接返回，可被 Stop() 与信号兜底安全地重复调用。
+func (pt *ProgressTracker) clearArea() {
+	if !pt.isTerm || !pt.drawn {
+		return
+	}
+	lines := pt.scrollMax + 1
+	var sb strings.Builder
+	sb.WriteString("\r") // 当前在最后一行行首
+	if lines > 1 {
+		sb.WriteString(fmt.Sprintf("\033[%dA", lines-1)) // 上移到顶部
+	}
+	for i := 0; i < lines; i++ {
+		sb.WriteString("\r\033[K") // 清当前行
+		if i < lines-1 {
+			sb.WriteString("\n")
+		}
+	}
+	// 回到进度区顶部行首。
+	if lines > 1 {
+		sb.WriteString(fmt.Sprintf("\033[%dA", lines-1))
+	}
+	sb.WriteString("\r\033[?25h") // 行首 + 显示光标
+	fmt.Fprint(pt.termW, sb.String())
+	pt.drawn = false
+}
+
+// scrollOrdered 按从旧到新的顺序返回滚动窗口内的消息。
+func (pt *ProgressTracker) scrollOrdered() []string {
+	if pt.scrollLen == 0 {
+		return nil
+	}
+	out := make([]string, 0, pt.scrollLen)
+	if pt.scrollLen < pt.scrollMax {
+		// 未满：[0, scrollLen) 即为从旧到新。
+		out = append(out, pt.scroll[:pt.scrollLen]...)
+		return out
+	}
+	// 已满：从 scrollPos（最旧）开始环形遍历。
+	for i := 0; i < pt.scrollMax; i++ {
+		idx := (pt.scrollPos + i) % pt.scrollMax
+		out = append(out, pt.scroll[idx])
+	}
+	return out
 }
 
 // AddFailed 增加失败计数
@@ -205,47 +365,8 @@ func (pt *ProgressTracker) AddFailed() {
 
 // ── 内部实现（私有方法）────────────────────────────────────────
 
-// pushScroll 将新消息加入滚动缓冲区（环形缓冲区）
-func (pt *ProgressTracker) pushScroll(msg string) {
-	if pt.scrollMax == 0 {
-		return  // 不需要滚动区
-	}
-	
-	if pt.scrollLen < pt.scrollMax {
-		// 缓冲区未满：直接追加
-		pt.scroll = append(pt.scroll, msg)
-		pt.scrollLen++
-	} else {
-		// 缓冲区已满：覆盖最旧的消息（环形覆盖）
-		pt.scrollPos = (pt.scrollPos + 1) % pt.scrollMax
-		pt.scroll[pt.scrollPos] = msg
-	}
-}
-
-// scrollOrdered 按顺序返回滚动消息（从旧到新）
-func (pt *ProgressTracker) scrollOrdered() []string {
-	if pt.scrollLen == 0 {
-		return nil
-	}
-	
-	if pt.scrollLen < pt.scrollMax {
-		// 未满，直接返回全部
-		return pt.scroll
-	}
-	
-	// 已满，需要从环形缓冲区的起始位置开始取
-	out := make([]string, 0, pt.scrollLen)
-	for i := 0; i < pt.scrollMax; i++ {
-		// 计算环形索引（从上次写入位置的下一个开始）
-		idx := (pt.scrollPos + 1 + i) % pt.scrollMax
-		out = append(out, pt.scroll[idx])
-	}
-	return out
-}
-
-// redraw 重新绘制整个进度界面（终端专用）
-func (pt *ProgressTracker) redraw() {
-	// 获取最新终端宽度（用户可能调整了窗口大小）
+// curWidth 获取当前终端宽度（用户可能调整了窗口大小）。
+func (pt *ProgressTracker) curWidth() int {
 	wd := pt.termWd
 	if f, ok := pt.termW.(*os.File); ok {
 		if fd := int(f.Fd()); fd >= 0 {
@@ -256,57 +377,9 @@ func (pt *ProgressTracker) redraw() {
 		}
 	}
 	if wd < 20 {
-		wd = 80  // 最小宽度保护
+		wd = 80 // 最小宽度保护
 	}
-
-	scrollLines := pt.scrollOrdered()
-	newLines := len(scrollLines) + 1  // 滚动行数 + 1条进度条
-
-	maxLineW := wd - 2  // 减去 "  " 前缀的宽度
-	if maxLineW < 20 {
-		maxLineW = 20
-	}
-
-	// 构建进度条
-	barLine := pt.buildBar(wd)
-	lineW := displayWidth(barLine)
-	if lineW > pt.barWidth {
-		pt.barWidth = lineW
-	}
-
-	var sb strings.Builder
-
-	// 1. 上移到旧进度区顶部（首次 lastLines==0 则直接从光标处绘制）
-	if pt.lastLines > 0 {
-		sb.WriteString(fmt.Sprintf("\033[%dA", pt.lastLines))
-	}
-
-	// 2. 逐行清除并绘制滚动行（绝不使用 \033[J）
-	for _, line := range scrollLines {
-		sb.WriteString("\r\033[K")           // 回车+清除行
-		sb.WriteString("  ")                 // 缩进两个空格
-		sb.WriteString(truncateMsg(line, maxLineW))  // 截断过长的消息
-		sb.WriteByte('\n')                   // 换行
-	}
-
-	// 3. 清除并绘制进度条行（不换行，光标留在行尾）
-	sb.WriteString("\r\033[K")
-	sb.WriteString(barLine)
-
-	// 4. 如果旧内容行数更多，向下逐行清除多余行
-	if newLines < pt.lastLines {
-		extra := pt.lastLines - newLines
-		for i := 0; i < extra; i++ {
-			sb.WriteByte('\n')
-			sb.WriteString("\r\033[K")
-		}
-		// 回到进度条行尾
-		sb.WriteString(fmt.Sprintf("\033[%dA", extra))
-	}
-
-	pt.lastLines = newLines  // 记录本次占用的行数
-
-	fmt.Fprint(pt.termW, sb.String())
+	return wd
 }
 
 // buildBar 构建进度条字符串
@@ -318,7 +391,7 @@ func (pt *ProgressTracker) buildBar(wd int) string {
 	tsz := pt.totalSz.Load()
 
 	elapsed := time.Since(pt.startAt)
-	
+
 	// 计算速率
 	rate := "0B/s"
 	if elapsed.Seconds() > 0.5 {
@@ -327,7 +400,7 @@ func (pt *ProgressTracker) buildBar(wd int) string {
 
 	// 计算预计剩余时间 (ETA)
 	var eta string
-	if d > 0 && t > 0 && elapsed.Seconds() > 0.5 {
+	if d > 0 && t > d && elapsed.Seconds() > 0.5 {
 		// 根据当前速率估算剩余时间
 		etaSec := elapsed.Seconds() * float64(t-d) / float64(d)
 		if etaSec < 3600 {
@@ -346,7 +419,10 @@ func (pt *ProgressTracker) buildBar(wd int) string {
 	if t > 0 {
 		pct = int(float64(d) * 100 / float64(t))
 	}
-	
+	if pct > 100 {
+		pct = 100
+	}
+
 	// 构建右侧信息
 	countStr := fmt.Sprintf("%d/%d", d, t)
 	sizeStr := fmt.Sprintf("%s/%s", myprint.FormatBytes(dsz), myprint.FormatBytes(tsz))
@@ -358,7 +434,7 @@ func (pt *ProgressTracker) buildBar(wd int) string {
 		// 空间不足，降级显示
 		return fmt.Sprintf("%s %d%% | %s", countStr, pct, sizeStr)
 	}
-	
+
 	// 绘制进度条 [=====>    ]
 	barLen := barArea - 1
 	filled := 0
@@ -371,20 +447,20 @@ func (pt *ProgressTracker) buildBar(wd int) string {
 	if filled < 0 {
 		filled = 0
 	}
-	
+
 	var bar strings.Builder
 	bar.WriteByte('[')
 	for i := 0; i < filled; i++ {
 		bar.WriteByte('=')
 	}
 	if filled < barLen {
-		bar.WriteByte('>')  // 当前进度位置
+		bar.WriteByte('>') // 当前进度位置
 		for i := filled + 1; i < barLen; i++ {
 			bar.WriteByte(' ')
 		}
 	}
 	bar.WriteByte(']')
-	
+
 	return fmt.Sprintf("%s %s %s", bar.String(), countStr, rightStr)
 }
 
@@ -399,9 +475,9 @@ func truncateMsg(msg string, maxLen int) string {
 	if displayWidth(msg) <= maxLen {
 		return msg
 	}
-	
+
 	// 逐字符累加宽度，找到截断点
-	limit := maxLen - 1  // 留一个位置给"…"
+	limit := maxLen - 1 // 留一个位置给"…"
 	target := 0
 	cut := 0
 	for i, r := range runes {
@@ -427,7 +503,7 @@ func truncateMsg(msg string, maxLen int) string {
 func displayWidth(s string) int {
 	w := 0
 	for _, r := range s {
-		if r > 0x7FF {  // 大于0x7FF的是中文等宽字符
+		if r > 0x7FF { // 大于0x7FF的是中文等宽字符
 			w += 2
 		} else {
 			w++

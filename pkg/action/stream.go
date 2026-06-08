@@ -45,22 +45,35 @@ func RunStream(ctx context.Context, cfg StreamConfig) error {
 	jobs := make(chan StreamJob, cfg.Concurrency*2)
 	scanErr := make(chan error, 1)
 
-	// 扫描协程
+	// 扫描协程：在派发任务时累加 total，使进度条的分母随发现的任务增长，
+	// 而 done 永远滞后于 total，避免 done≈total 时百分比/ETA 来回抖动。
 	go func() {
 		defer close(jobs)
-		if err := cfg.Scan(ctx, jobs); err != nil {
-			scanErr <- err
+		// 包一层 channel，扫描器每写入一个 job 就累加一次 total。
+		relay := make(chan StreamJob, cfg.Concurrency*2)
+		go func() {
+			defer close(relay)
+			if err := cfg.Scan(ctx, relay); err != nil {
+				scanErr <- err
+			}
+		}()
+		for j := range relay {
+			pt.AddTotal(1, j.Size)
+			select {
+			case jobs <- j:
+			case <-ctx.Done():
+				return
+			}
 		}
 	}()
 
-	// 工作协程
+	// 工作协程：只负责处理与累加 done。
 	var wg sync.WaitGroup
 	for i := 0; i < cfg.Concurrency; i++ {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
 			for j := range jobs {
-				pt.AddTotal(1, j.Size)
 				if err := cfg.Work(ctx, j); err != nil {
 					pt.AddFailed()
 					pt.AddDone(1, j.Size, fmt.Sprintf("✗ %s → %s", j.Src, j.Dst))
