@@ -434,5 +434,5 @@ s3cli completion fish | source
 
 ## 许可证
 
-Apache 2.0 LICENSE
+MIT License
 
