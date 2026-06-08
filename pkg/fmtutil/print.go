@@ -55,13 +55,13 @@ func Println(a ...any) {
 
 func PrintfRed(format string, a ...any) {
 	outMu.RLock()
+	defer outMu.RUnlock()
 	printfColor(output, Red, format, a...)
-	outMu.RUnlock()
 }
 func PrintlnRed(a ...any) {
 	outMu.RLock()
+	defer outMu.RUnlock()
 	printlnColor(output, Red, a...)
-	outMu.RUnlock()
 }
 
 func PrintfGreen(format string, a ...any) {
@@ -126,8 +126,8 @@ func PrintfWhite(format string, a ...any) {
 }
 func PrintlnWhite(a ...any) {
 	outMu.RLock()
+	defer outMu.RUnlock()
 	printlnColor(output, White, a...)
-	outMu.RUnlock()
 }
 
 // Successf 成功信息（加粗绿色）
