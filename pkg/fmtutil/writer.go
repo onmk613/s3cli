@@ -67,13 +67,11 @@ type Target struct {
 }
 
 // multiWriter 同时向多个目标写入，并为每个目标独立决定是否着色：
-// 终端目标写带 ANSI 颜色的文本，文件等非终端目标写纯文本。
 type MultiWriter struct {
 	Targets []Target
 }
 
 // NewMultiWriter 构造一个按目标分别着色的 writer。
-// 每个传入的目标会在构造时根据 noColor 与是否为终端来决定其着色策略。
 func NewMultiWriter(writers ...io.Writer) io.Writer {
 	mw := &MultiWriter{Targets: make([]Target, 0, len(writers))}
 	for _, w := range writers {
@@ -83,7 +81,6 @@ func NewMultiWriter(writers ...io.Writer) io.Writer {
 }
 
 // Write 写入纯文本（不含颜色）到所有目标。
-// 带颜色的写入由 writeColor 处理，从而对每个目标分别决定颜色。
 func (m *MultiWriter) Write(p []byte) (int, error) {
 	for _, t := range m.Targets {
 		if _, err := t.W.Write(p); err != nil {

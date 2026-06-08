@@ -32,13 +32,14 @@ func (c *S3Client) DeleteObjects(bucket, prefix string, recursive bool) error {
 }
 
 func (c *S3Client) deleteSingleObject(bucket, key string) error {
+	myprint.Info("deleting object %s", c.S3Path(bucket, key))
 	_, err := c.S3.DeleteObject(c.Ctx, &s3.DeleteObjectInput{
 		Bucket: aws.String(bucket), Key: aws.String(key),
 	})
 	if err != nil {
 		return fmt.Errorf("delete s3://%s/%s: %s", bucket, key, FormatAPIError(err))
 	}
-	myprint.Printf("delete: %s\n", c.S3Path(bucket, key))
+	myprint.Successf("delete: %s\n", c.S3Path(bucket, key))
 	return nil
 }
 
@@ -46,6 +47,7 @@ func (c *S3Client) deleteObjectsWithPrefix(bucket, prefix string) error {
 	paginator := s3.NewListObjectsV2Paginator(c.S3, &s3.ListObjectsV2Input{
 		Bucket: aws.String(bucket), Prefix: aws.String(prefix),
 	})
+	myprint.Info("deleting objects under %s", c.S3Path(bucket, prefix))
 	var toDelete []types.ObjectIdentifier
 	var total int
 	for paginator.HasMorePages() {
@@ -71,9 +73,9 @@ func (c *S3Client) deleteObjectsWithPrefix(bucket, prefix string) error {
 		total += len(toDelete)
 	}
 	if prefix == "" {
-		myprint.Printf("delete: %d objects from %s\n", total, c.S3Path(bucket, ""))
+		myprint.Successf("delete: %d objects from %s\n", total, c.S3Path(bucket, ""))
 	} else {
-		myprint.Printf("delete: %d objects from %s\n", total, c.S3Path(bucket, prefix))
+		myprint.Successf("delete: %d objects from %s\n", total, c.S3Path(bucket, prefix))
 	}
 	return nil
 }

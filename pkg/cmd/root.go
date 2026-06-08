@@ -1,5 +1,3 @@
-// Package cmd 定义 s3cli 的所有命令与子命令，基于 cobra 框架。
-// 提供命令自注册机制、统一的 RunE 工厂、全局选项管理。
 package cmd
 
 import (

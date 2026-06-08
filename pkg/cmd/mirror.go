@@ -4,7 +4,6 @@ import (
 	"fmt"
 
 	"s3cli/pkg/action"
-	"s3cli/pkg/client"
 	"s3cli/pkg/utils"
 
 	"github.com/spf13/cobra"
@@ -71,20 +70,13 @@ func NewMirrorCmd() *cobra.Command {
 		sizeLimit   int64
 	)
 
+	opts := newCmdContext()
 	cmd := &cobra.Command{
 		Use:     "mirror [src-alias:bucket/prefix] [dst-alias:bucket/prefix]",
 		Aliases: []string{"sync"},
 		Short:   "Synchronize objects from source to target (one-way sync)",
 		Args:    cobra.ExactArgs(2),
-		RunE: func(cmd *cobra.Command, args []string) error {
-			srcS3, srcPath, err := newS3Client(cmd, args[0])
-			if err != nil {
-				return fmt.Errorf("parse src: %w", err)
-			}
-			tgtS3, tgtPath, err := newS3Client(cmd, args[1])
-			if err != nil {
-				return fmt.Errorf("parse dst: %w", err)
-			}
+		RunE: NewRunETwoPaths(func(src, tgt action.S3Client, srcPath, tgtPath *utils.S3Path, opts *CmdContext) error {
 			if srcPath.Bucket == "" || tgtPath.Bucket == "" {
 				return fmt.Errorf("both src and dst must include a bucket")
 			}
@@ -94,13 +86,13 @@ func NewMirrorCmd() *cobra.Command {
 
 			return action.Mirror(action.MirrorOptions{
 				Src: &action.S3PathOptions{
-					Client:        srcS3,
+					Client:        &src,
 					Bucket:        srcPath.Bucket,
 					ObjectKey:     srcPath.Key,
 					TrailingSlash: srcPath.TrailingSlash,
 				},
 				Tgt: &action.S3PathOptions{
-					Client:        tgtS3,
+					Client:        &tgt,
 					Bucket:        tgtPath.Bucket,
 					ObjectKey:     tgtPath.Key,
 					TrailingSlash: tgtPath.TrailingSlash,
@@ -113,7 +105,7 @@ func NewMirrorCmd() *cobra.Command {
 				SizeLimit:   sizeLimit,
 				ScrollMax:   ScrollMax,
 			})
-		},
+		}, &opts),
 	}
 
 	f := cmd.Flags()
@@ -124,16 +116,4 @@ func NewMirrorCmd() *cobra.Command {
 	f.IntVar(&partSizeMB, "part-size", 64, "Multipart part size in MB (cross-endpoint only)")
 	f.Int64Var(&sizeLimit, "size-limit", 0, "Skip objects larger than N bytes (0 = no limit)")
 	return cmd
-}
-
-func newS3Client(cmd *cobra.Command, arg string) (*action.S3Client, *utils.S3Path, error) {
-	s3c, s3path, err := client.ParsePathAndNewClient(cmd.Context(), arg)
-	if err != nil {
-		return nil, s3path, err
-	}
-	return &action.S3Client{
-		S3:    s3c,
-		Alias: s3path.Alias,
-		Ctx:   cmd.Context(),
-	}, s3path, nil
 }

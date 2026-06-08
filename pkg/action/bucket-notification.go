@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 
+	myprint "s3cli/pkg/fmtutil"
 	"s3cli/pkg/utils"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -45,7 +46,8 @@ func (c *S3Client) SetNotification(configfile, bucket string) error {
 	if err != nil {
 		return fmt.Errorf("set notification %s: %s", bucket, FormatAPIError(err))
 	}
-	fmt.Printf("Notification set for %s (%d configurations)\n", c.S3Path(bucket, ""), total)
+	myprint.Info("set notification: bucket=%s configs=%d", bucket, total)
+	myprint.Successf("Notification set for %s (%d configurations)\n", c.S3Path(bucket, ""), total)
 	return nil
 }
 
@@ -64,7 +66,8 @@ func (c *S3Client) GetNotification(bucket string) error {
 		"EventBridgeConfiguration":     out.EventBridgeConfiguration,
 	}
 	b, _ := json.MarshalIndent(m, "", "  ")
-	fmt.Printf("# %s\n%s\n", c.S3Path(bucket, ""), string(b))
+	myprint.PrintfDim("# %s\n", c.S3Path(bucket, ""))
+	myprint.Println(string(b))
 	return nil
 }
 
@@ -77,6 +80,7 @@ func (c *S3Client) DelNotification(bucket string) error {
 	if err != nil {
 		return fmt.Errorf("delete notification %s: %s", bucket, FormatAPIError(err))
 	}
-	fmt.Printf("Notification configuration cleared for %s\n", c.S3Path(bucket, ""))
+	myprint.Info("delete notification: bucket=%s", bucket)
+	myprint.Successf("Notification configuration cleared for %s\n", c.S3Path(bucket, ""))
 	return nil
 }

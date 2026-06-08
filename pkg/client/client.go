@@ -1,4 +1,3 @@
-// Package client 负责构建唯一的全局 S3 客户端
 package client
 
 import (
@@ -18,7 +17,9 @@ import (
 	"s3cli/pkg/config"
 )
 
+// NewS3Client 根据配置构建一个全局可用的 S3 客户端
 func NewS3Client(ctx context.Context, cfg config.Static) (*s3.Client, error) {
+	// 构建 HTTP 客户端，设置合理的超时和连接池参数，并根据调试/SSL 配置启用相应功能
 	transport := &http.Transport{
 		TLSClientConfig: &tls.Config{InsecureSkipVerify: !cfg.IsVerifySSL()},
 		DialContext: (&net.Dialer{

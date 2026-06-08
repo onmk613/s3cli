@@ -20,9 +20,10 @@ func NewMpuCmd() *cobra.Command {
 
 func newMpuListCmd() *cobra.Command {
 	return &cobra.Command{
-		Use:   "list [alias:bucket[/prefix]] ...",
-		Short: "List in-progress multipart uploads",
-		Args:  cobra.MinimumNArgs(1),
+		Use:     "list [alias:bucket[/prefix]] ...",
+		Aliases: []string{"ls"},
+		Short:   "List in-progress multipart uploads",
+		Args:    cobra.MinimumNArgs(1),
 		RunE: NewRunE(ActionFunc(func(S3 action.S3Client, _ *CmdContext, s3path *utils.S3Path) error {
 			return S3.MpuList(s3path.Bucket, s3path.Key)
 		}), nil),
@@ -33,13 +34,14 @@ func newMpuAbortCmd() *cobra.Command {
 	var uploadID string
 	opts := newCmdContext()
 	cmd := &cobra.Command{
-		Use:   "abort [alias:bucket[/prefix]]",
-		Short: "Abort multipart upload(s). With --upload-id aborts one; otherwise aborts all under the prefix.",
-		Args:  cobra.ExactArgs(1),
+		Use:     "abort [alias:bucket[/key-or-prefix]]",
+		Aliases: []string{"rm", "delete", "del"},
+		Short:   "Abort multipart upload(s). With --upload-id aborts one; otherwise aborts all under the prefix.",
+		Args:    cobra.ExactArgs(1),
 		RunE: NewRunE(ActionFunc(func(S3 action.S3Client, _ *CmdContext, s3path *utils.S3Path) error {
 			return S3.MpuAbort(s3path.Bucket, s3path.Key, uploadID)
 		}), &opts),
 	}
-	cmd.Flags().StringVar(&uploadID, "upload-id", "", "Specific UploadId to abort (otherwise abort all under prefix)")
+	cmd.Flags().StringVar(&uploadID, "upload-id", "", "Specific UploadId to abort. If the object key is omitted, it is auto-resolved by listing uploads under the prefix")
 	return cmd
 }
