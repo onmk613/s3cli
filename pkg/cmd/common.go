@@ -28,7 +28,7 @@ func formatUserError(err error) string {
 
 // displayError 向用户输出错误（统一入口）。
 func displayError(err error) {
-	myprint.Errorln(formatUserError(err))
+	myprint.PrintlnRed(formatUserError(err))
 }
 
 type ActionFunc func(S3 action.S3Client, opts *CmdContext, s3path *utils.S3Path) error
@@ -119,7 +119,6 @@ func NewRunE(fn ActionFunc, opts *CmdContext) func(cmd *cobra.Command, args []st
 				}
 			}
 			S3 := action.S3Client{S3: s3client, Alias: s3path.Alias, Ctx: cmd.Context()}
-			myprint.Info("processing: alias=%s bucket=%s key=%s", s3path.Alias, s3path.Bucket, s3path.Key)
 			if err := fn(S3, opts, s3path); err != nil {
 				if isCanceled(cmd.Context()) {
 					return nil

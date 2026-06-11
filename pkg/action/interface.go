@@ -44,8 +44,8 @@ type ObjectWriter interface {
 	PutObject(opt PutOptions, bucket, prefix, localpath string, isS3Dir bool) error
 	PipeUpload(opt PipeOptions, bucket, key string) error
 	DeleteObjects(bucket, prefix string, recursive bool) error
-	CopyObjects(srcBucket, srcKey, destBucket, destKey string, recursive bool, scrollMax int) error
-	Mv(srcBucket, srcKey, destBucket, destKey string, recursive bool, scrollMax int) error
+	CopyObjects(srcBucket, srcKey, destBucket, destKey string, recursive bool) error
+	Mv(srcBucket, srcKey, destBucket, destKey string, recursive bool) error
 }
 
 // BucketManager 桶的创建与删除。

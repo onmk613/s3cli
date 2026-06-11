@@ -29,8 +29,7 @@ func (c *S3Client) SetVersioning(bucket string, status bool) error {
 		return fmt.Errorf("set versioning %s: %s", bucket, FormatAPIError(err))
 	}
 
-	myprint.Info("set versioning: bucket=%s status=%s", bucket, st)
-	myprint.Successf("Versioning %s for %s\n", st, c.S3Path(bucket, ""))
+	myprint.PrintfGreen("Versioning %s for %s\n", st, c.S3Path(bucket, ""))
 	return nil
 }
 

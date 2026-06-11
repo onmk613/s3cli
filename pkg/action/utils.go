@@ -6,7 +6,7 @@ import (
 	"mime"
 	"sync"
 
-	"s3cli/pkg/fmtutil"
+	"s3cli/pkg/utils"
 
 	"github.com/aws/smithy-go"
 )
@@ -24,7 +24,7 @@ func FormatAPIError(err error) string {
 
 // FormatBytes 委托给 fmtutil.FormatBytes
 func FormatBytes(bytes int64) string {
-	return fmtutil.FormatBytes(bytes)
+	return utils.FormatBytes(bytes)
 }
 
 var addMimeOnce sync.Once

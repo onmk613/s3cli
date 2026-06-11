@@ -46,7 +46,7 @@ func SetAliasConf(section string) error {
 	for {
 		conf.HostBase = read("Enter Host Base (e.g. http://s3.example.com): ")
 		if conf.HostBase == "" {
-			myprint.Errorln("Host Base cannot be empty")
+			myprint.PrintlnRed("Host Base cannot be empty")
 			continue
 		}
 		break
@@ -55,7 +55,7 @@ func SetAliasConf(section string) error {
 	for {
 		conf.AccessKey = read("Enter Access Key: ")
 		if conf.AccessKey == "" {
-			myprint.Errorln("Access Key cannot be empty")
+			myprint.PrintlnRed("Access Key cannot be empty")
 			continue
 		}
 		break
@@ -64,7 +64,7 @@ func SetAliasConf(section string) error {
 	for {
 		conf.SecretKey = read("Enter Secret Key: ")
 		if conf.SecretKey == "" {
-			myprint.Errorln("Secret Key cannot be empty")
+			myprint.PrintlnRed("Secret Key cannot be empty")
 			continue
 		}
 		break
@@ -84,7 +84,7 @@ func SetAliasConf(section string) error {
 		case "false":
 			conf.VerifySSL = false
 		default:
-			myprint.Errorln("Invalid input, please enter true/True or false/False")
+			myprint.PrintlnRed("Invalid input, please enter true/True or false/False")
 			continue
 		}
 		break
@@ -97,7 +97,7 @@ func SetAliasConf(section string) error {
 		if input != "" {
 			m, err := strconv.Atoi(input)
 			if err != nil {
-				myprint.Errorln("Invalid input, please enter a number")
+				myprint.PrintlnRed("Invalid input, please enter a number")
 				continue
 			}
 			conf.MultipartChunkSizeMb = m
@@ -117,6 +117,6 @@ func SetAliasConf(section string) error {
 	if err := cfg.SaveTo(ConfigPath); err != nil {
 		return fmt.Errorf("save config: %w", err)
 	}
-	myprint.Successln("S3 configuration saved to", ConfigPath)
+	myprint.PrintfGreen("S3 configuration saved to %s\n", ConfigPath)
 	return nil
 }

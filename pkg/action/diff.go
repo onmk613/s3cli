@@ -234,7 +234,6 @@ func diffSingleFile(a, b *DiffEndpoint, mode DiffMode) error {
 	}
 
 	// MD5 模式：流式对比
-	myprint.Info("comparing content (md5) of %s vs %s", a.String(), b.String())
 	equal, err := compareContent(a, "", b, "")
 	if err != nil {
 		return err
@@ -257,12 +256,12 @@ func IsDifferErr(err error) bool { return err == errDiffer }
 // =============== 目录 diff ===============
 
 func diffDirectories(opt DiffOptions) error {
-	myprint.Info("listing entries of A: %s", opt.A.String())
+
 	listA, err := listAllEntries(opt.A)
 	if err != nil {
 		return fmt.Errorf("list A: %w", err)
 	}
-	myprint.Info("listing entries of B: %s", opt.B.String())
+
 	listB, err := listAllEntries(opt.B)
 	if err != nil {
 		return fmt.Errorf("list B: %w", err)

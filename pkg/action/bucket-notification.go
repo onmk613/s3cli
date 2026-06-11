@@ -46,8 +46,8 @@ func (c *S3Client) SetNotification(configfile, bucket string) error {
 	if err != nil {
 		return fmt.Errorf("set notification %s: %s", bucket, FormatAPIError(err))
 	}
-	myprint.Info("set notification: bucket=%s configs=%d", bucket, total)
-	myprint.Successf("Notification set for %s (%d configurations)\n", c.S3Path(bucket, ""), total)
+
+	myprint.PrintfGreen("Notification set for %s (%d configurations)\n", c.S3Path(bucket, ""), total)
 	return nil
 }
 
@@ -80,7 +80,7 @@ func (c *S3Client) DelNotification(bucket string) error {
 	if err != nil {
 		return fmt.Errorf("delete notification %s: %s", bucket, FormatAPIError(err))
 	}
-	myprint.Info("delete notification: bucket=%s", bucket)
-	myprint.Successf("Notification configuration cleared for %s\n", c.S3Path(bucket, ""))
+
+	myprint.PrintfGreen("Notification configuration cleared for %s\n", c.S3Path(bucket, ""))
 	return nil
 }

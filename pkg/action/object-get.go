@@ -21,7 +21,6 @@ type GetOptions struct {
 	Concurrency int
 	PartSizeMB  int
 	Range       string // HTTP Range header (e.g. "bytes=0-1023"); 仅对单文件有效
-	ScrollMax   int    // 进度条滚动刷屏条数，0=全部显示
 }
 
 // Get 下载对象
@@ -50,7 +49,6 @@ func (c *S3Client) downloadDirectory(opt GetOptions, bucket, key, localpath stri
 
 	return RunStream(c.Ctx, StreamConfig{
 		Concurrency: opt.Concurrency,
-		ScrollMax:   opt.ScrollMax,
 		Label:       "get",
 		Scan: func(ctx context.Context, jobs chan<- StreamJob) error {
 			paginator := s3.NewListObjectsV2Paginator(c.S3, &s3.ListObjectsV2Input{

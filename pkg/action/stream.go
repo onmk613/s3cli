@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"sync"
 
-	myprint "s3cli/pkg/fmtutil"
 	"s3cli/pkg/progress"
+	"s3cli/pkg/utils"
 )
 
 // StreamJob 流式操作中的一个任务。
@@ -19,7 +19,6 @@ type StreamJob struct {
 // StreamConfig 描述一次流式操作（put/get/cp/mv）的参数。
 type StreamConfig struct {
 	Concurrency int    // 并发工作数
-	ScrollMax   int    // 进度条滚动条数
 	Label       string // 进度条标签（"put"/"get"/"cp"/"mv"）
 
 	// Scan 扫描协程：向 jobs 通道写入任务。
@@ -37,8 +36,8 @@ func RunStream(ctx context.Context, cfg StreamConfig) error {
 		cfg.Concurrency = 10
 	}
 
-	pt := progress.NewProgressTracker(myprint.GetOutput(), cfg.ScrollMax, cfg.Label)
-	pt.SetContextDone(ctx.Done())
+	pt := progress.New()
+	pt.SetLabel(cfg.Label)
 	pt.Start()
 	defer pt.Stop()
 
@@ -74,11 +73,14 @@ func RunStream(ctx context.Context, cfg StreamConfig) error {
 		go func() {
 			defer wg.Done()
 			for j := range jobs {
+				msg := fmt.Sprintf("✓ %s → %s (%s)", j.Src, j.Dst, utils.FormatBytes(j.Size))
 				if err := cfg.Work(ctx, j); err != nil {
-					pt.AddFailed()
-					pt.AddDone(1, j.Size, fmt.Sprintf("✗ %s → %s", j.Src, j.Dst))
+					pt.AddFailed(msg)
+					// pt.AddDone(1, j.Size, fmt.Sprintf("✗ %s → %s", j.Src, j.Dst))
+					pt.AddDone(1, j.Size)
 				} else {
-					pt.AddDone(1, j.Size, fmt.Sprintf("✓ %s → %s (%s)", j.Src, j.Dst, myprint.FormatBytes(j.Size)))
+					// pt.AddDone(1, j.Size, fmt.Sprintf("✓ %s → %s (%s)", j.Src, j.Dst, utils.FormatBytes(j.Size)))
+					pt.AddDone(1, j.Size)
 				}
 			}
 		}()

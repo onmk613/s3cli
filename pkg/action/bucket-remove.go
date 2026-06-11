@@ -21,7 +21,7 @@ func (c *S3Client) RemoveBuckets(bucket string, force bool) error {
 	if err != nil {
 		return fmt.Errorf("delete bucket %s: %s", bucket, FormatAPIError(err))
 	}
-	myprint.Successf("Bucket %s deleted\n", c.S3Path(bucket, ""))
+	myprint.PrintfGreen("Bucket %s deleted\n", c.S3Path(bucket, ""))
 	return nil
 }
 
