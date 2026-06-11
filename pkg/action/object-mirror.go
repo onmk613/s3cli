@@ -434,7 +434,7 @@ func Mirror(cfg MirrorOptions) error {
 	defer pt.Stop()
 
 	// 预先设置总数（mirror 是先列完再操作的）
-	pt.AddTotal(int64(len(diff.ToCopy)), 0)
+	pt.AddTotal(int64(len(diff.ToCopy)))
 
 	var (
 		wg      sync.WaitGroup
@@ -474,12 +474,12 @@ func Mirror(cfg MirrorOptions) error {
 				failed.Add(1)
 				pt.AddFailed(msg)
 				// pt.AddDone(1, 0, fmt.Sprintf("✗ %s → %s", srcClient.S3Path(srcBucket, srcKey), tgtClient.S3Path(tgtBucket, tgtKey)))
-				pt.AddDone(1, 0)
+				pt.AddTotalDone(1)
 				return
 			}
 			copied.Add(1)
 			// pt.AddDone(1, 0, fmt.Sprintf("✓ %s → %s", srcClient.S3Path(srcBucket, srcKey), tgtClient.S3Path(tgtBucket, tgtKey)))
-			pt.AddDone(1, 0)
+			pt.AddTotalDone(1)
 		}(rel)
 	}
 	wg.Wait()

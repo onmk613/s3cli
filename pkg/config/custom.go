@@ -5,6 +5,7 @@ import (
 	"strings"
 )
 
+// 自定义寻址判断
 func validateCustomTemplate(tpl, placeholder string) bool {
 	// 1) 必须包含占位符
 	if !strings.Contains(tpl, placeholder) {

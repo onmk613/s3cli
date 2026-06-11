@@ -2,7 +2,10 @@ package config
 
 import (
 	"bufio"
+	"context"
+	"errors"
 	"fmt"
+	"io"
 	"os"
 	"strconv"
 	"strings"
@@ -12,9 +15,15 @@ import (
 	"gopkg.in/ini.v1"
 )
 
-func SetAliasConf(section string) error {
+// errInterrupted 表示交互式输入被用户中断（Ctrl+C）或 stdin 关闭（EOF）。
+var errInterrupted = errors.New("input cancelled")
+
+func SetAliasConf(ctx context.Context, section string) error {
 	if section == "" {
 		return fmt.Errorf("alias name cannot be empty")
+	}
+	if ctx == nil {
+		ctx = context.Background()
 	}
 
 	var conf Static
@@ -34,17 +43,41 @@ func SetAliasConf(section string) error {
 	}
 
 	reader := bufio.NewReader(os.Stdin)
-	read := func(prompt string) string {
+	// read 阻塞读取一行，同时监听 ctx 取消（Ctrl+C）。
+	// 返回 errInterrupted 时调用方应立即终止，避免死循环。
+	read := func(prompt string) (string, error) {
 		myprint.Print(prompt)
-		s, err := reader.ReadString('\n')
-		if err != nil {
-			return ""
+		type result struct {
+			s   string
+			err error
 		}
-		return strings.TrimSpace(s)
+		ch := make(chan result, 1)
+		go func() {
+			s, err := reader.ReadString('\n')
+			ch <- result{s, err}
+		}()
+		select {
+		case <-ctx.Done():
+			myprint.Println("")
+			return "", errInterrupted
+		case r := <-ch:
+			if r.err != nil {
+				if errors.Is(r.err, io.EOF) {
+					myprint.Println("")
+					return "", errInterrupted
+				}
+				return "", fmt.Errorf("read input: %w", r.err)
+			}
+			return strings.TrimSpace(r.s), nil
+		}
 	}
 
+	var err error
 	for {
-		conf.HostBase = read("Enter Host Base (e.g. http://s3.example.com): ")
+		conf.HostBase, err = read("Enter Host Base (e.g. http://s3.example.com): ")
+		if err != nil {
+			return err
+		}
 		if conf.HostBase == "" {
 			myprint.PrintlnRed("Host Base cannot be empty")
 			continue
@@ -53,7 +86,10 @@ func SetAliasConf(section string) error {
 	}
 
 	for {
-		conf.AccessKey = read("Enter Access Key: ")
+		conf.AccessKey, err = read("Enter Access Key: ")
+		if err != nil {
+			return err
+		}
 		if conf.AccessKey == "" {
 			myprint.PrintlnRed("Access Key cannot be empty")
 			continue
@@ -62,7 +98,10 @@ func SetAliasConf(section string) error {
 	}
 
 	for {
-		conf.SecretKey = read("Enter Secret Key: ")
+		conf.SecretKey, err = read("Enter Secret Key: ")
+		if err != nil {
+			return err
+		}
 		if conf.SecretKey == "" {
 			myprint.PrintlnRed("Secret Key cannot be empty")
 			continue
@@ -70,14 +109,21 @@ func SetAliasConf(section string) error {
 		break
 	}
 
-	conf.Region = read("Enter Region (default 'us-east-1'): ")
+	if conf.Region, err = read("Enter Region (default 'us-east-1'): "); err != nil {
+		return err
+	}
 
 	myprint.Println("Bucket addressing style? ")
-	conf.BucketLookup = read("Mode: path / dns / https://www.%(bucket).example.com (default path): ")
+	if conf.BucketLookup, err = read("Mode: path / dns / https://www.%(bucket).example.com (default path): "); err != nil {
+		return err
+	}
 
 	// 只能为 True / true / False / False 或者不输入
 	for {
-		input := read("Verify SSL certificate? (default True): ")
+		input, rerr := read("Verify SSL certificate? (default True): ")
+		if rerr != nil {
+			return rerr
+		}
 		switch strings.ToLower(input) {
 		case "true", "":
 			conf.VerifySSL = true
@@ -90,10 +136,15 @@ func SetAliasConf(section string) error {
 		break
 	}
 
-	conf.DefaultMimeType = read("Default MimeType (default binary/octet-stream): ")
+	if conf.DefaultMimeType, err = read("Default MimeType (default binary/octet-stream): "); err != nil {
+		return err
+	}
 
 	for {
-		input := read("Multipart Chunk Size (default 15): ")
+		input, rerr := read("Multipart Chunk Size (default 15): ")
+		if rerr != nil {
+			return rerr
+		}
 		if input != "" {
 			m, err := strconv.Atoi(input)
 			if err != nil {

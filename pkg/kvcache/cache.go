@@ -1,4 +1,3 @@
-// Package kvcache 提供一个泛型、并发安全的内存 KV 缓存，基于 sync.Map 封装。
 package kvcache
 
 import "sync"

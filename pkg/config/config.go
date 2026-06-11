@@ -26,7 +26,7 @@ var DefaultConfigPath = filepath.Join(os.Getenv("HOME"), ".s3cli")
 
 var (
 	G  = &Config{}
-	mu sync.RWMutex // 保护 Config 并发读写
+	mu sync.RWMutex
 )
 
 type Config struct {
@@ -34,34 +34,7 @@ type Config struct {
 	Debug bool // --debug
 }
 
-// ── 线程安全的 Config 访问器 ──────────────────────────────────────
-
-// GetSection 安全地读取指定 alias 的配置，不存在返回 nil。
-func GetSection(alias string) *Static {
-	mu.RLock()
-	defer mu.RUnlock()
-	if s, ok := G.S[alias]; ok {
-		cp := s
-		return &cp
-	}
-	return nil
-}
-
-// IsDebug 安全地读取 debug 标志。
-func IsDebug() bool {
-	mu.RLock()
-	defer mu.RUnlock()
-	return G.Debug
-}
-
-// SetDebug 安全地设置 debug 标志（仅在启动阶段使用）。
-func SetDebug(v bool) {
-	mu.Lock()
-	defer mu.Unlock()
-	G.Debug = v
-}
-
-// SetSections 安全地设置全部 section map（仅 LoadConf 调用）。
+// SetSections 安全地设置全部 section map
 func SetSections(m map[string]Static) {
 	mu.Lock()
 	defer mu.Unlock()
@@ -115,5 +88,5 @@ func (s *Static) GetAccessKey() string    { return strings.TrimSpace(s.AccessKey
 func (s *Static) GetSecretKey() string    { return strings.TrimSpace(s.SecretKey) }
 func (s *Static) GetSessionToken() string { return strings.TrimSpace(s.SessionToken) }
 func (s *Static) GetEndpoint() string     { return strings.TrimSpace(s.HostBase) }
-func (s *Static) IsDebug() bool           { return IsDebug() }
+func (s *Static) IsDebug() bool           { return G.Debug }
 func (s *Static) IsVerifySSL() bool       { return s.VerifySSL }

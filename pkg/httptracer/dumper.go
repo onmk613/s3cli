@@ -9,10 +9,8 @@ import (
 	"time"
 )
 
-// http debug 输出中 错误为红色，其他为蓝色
 type dumper struct {
 	tag         string
-	maxBodyDump int64
 	maxLogLen   int
 	dumpReqBody bool
 }
@@ -20,7 +18,6 @@ type dumper struct {
 func newDumper(opts *Options) *dumper {
 	return &dumper{
 		tag:         opts.Tag,
-		maxBodyDump: opts.MaxBodyDump,
 		maxLogLen:   opts.MaxLogLen,
 		dumpReqBody: opts.DumpRequestBody,
 	}

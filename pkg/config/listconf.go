@@ -11,6 +11,7 @@ import (
 	"gopkg.in/ini.v1"
 )
 
+// 列出配置文件中的所有别名
 func ListAliasConf() error {
 	if ConfigPath == "" {
 		ConfigPath = DefaultConfigPath

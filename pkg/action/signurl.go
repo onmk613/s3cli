@@ -58,7 +58,7 @@ func (c *S3Client) Signurl(opt SignurlOptions, bucketname, key string) error {
 		}
 	}
 
-	myprint.Println(signed)
+	myprint.PrintlnGreen(signed)
 	return nil
 }
 

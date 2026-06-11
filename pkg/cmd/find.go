@@ -30,6 +30,8 @@ func NewFindCmd() *cobra.Command {
 	cmd.Flags().StringVar(&findOpt.NewerThan, "newer-than", "", "Only objects modified after this time (RFC3339 or 'YYYY-MM-DD')")
 	cmd.Flags().StringVar(&findOpt.OlderThan, "older-than", "", "Only objects modified before this time (RFC3339 or 'YYYY-MM-DD')")
 	cmd.Flags().IntVar(&findOpt.Limit, "limit", 0, "Stop after N matching objects (0 = unlimited)")
+
+	_ = cmd.MarkFlagRequired("name")
 	return cmd
 }
 

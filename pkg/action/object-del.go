@@ -22,7 +22,7 @@ func (c *S3Client) DeleteObjects(bucket, prefix string, recursive bool) error {
 			return err
 		}
 	case !ok && !recursive:
-		return fmt.Errorf("s3://%s/%s: not a single object. Use -r/--recursive to delete a directory.", bucket, prefix)
+		return fmt.Errorf("%s: not a single object. Use -r/--recursive to delete a directory.", c.S3Path(bucket, prefix))
 	default:
 		if err := c.deleteSingleObject(bucket, prefix); err != nil {
 			return err
@@ -36,9 +36,10 @@ func (c *S3Client) deleteSingleObject(bucket, key string) error {
 		Bucket: aws.String(bucket), Key: aws.String(key),
 	})
 	if err != nil {
-		return fmt.Errorf("delete s3://%s/%s: %s", bucket, key, FormatAPIError(err))
+		return fmt.Errorf("delete %s: %s", c.S3Path(bucket, key), FormatAPIError(err))
 	}
-	myprint.PrintfGreen("delete: %s\n", c.S3Path(bucket, key))
+
+	myprint.PrintfBoldGreen("Delete %s: success\n", c.S3Path(bucket, key))
 	return nil
 }
 
@@ -71,11 +72,8 @@ func (c *S3Client) deleteObjectsWithPrefix(bucket, prefix string) error {
 		}
 		total += len(toDelete)
 	}
-	if prefix == "" {
-		myprint.PrintfGreen("delete: %d objects from %s\n", total, c.S3Path(bucket, ""))
-	} else {
-		myprint.PrintfGreen("delete: %d objects from %s\n", total, c.S3Path(bucket, prefix))
-	}
+
+	myprint.PrintfBoldGreen("Delete %d objects from %s: success\n", total, c.S3Path(bucket, prefix))
 	return nil
 }
 

@@ -106,7 +106,7 @@ func NewPipeCmd() *cobra.Command {
 			return S3.PipeUpload(p, s3path.Bucket, s3path.Key)
 		}), &opts),
 	}
-	cmd.Flags().StringVar(&pipeOpt.ContentType, "content-type", "", "Content-Type of the uploaded object")
+	cmd.Flags().StringVar(&pipeOpt.ContentType, "content-type", config.DefaultMimeType, "Content-Type of the uploaded object")
 	cmd.Flags().IntVar(&pipeOpt.Concurrency, "concurrency", config.DefaultConcurrency, "Number of concurrent parts to upload")
 	cmd.Flags().IntVar(&pipeOpt.PartSizeMB, "part-size", config.DefaultPartSizeMB, "Multipart upload part size (MB)")
 	cmd.Flags().StringVar(&pipeOpt.StorageClass, "storage-class", "", "Storage class")

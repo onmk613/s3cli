@@ -23,9 +23,11 @@ func NewMbCmd() *cobra.Command {
 			return S3.MakeBuckets(mkOpt, s3path.Bucket)
 		}), &opts),
 	}
+
 	cmd.Flags().StringVar(&mkOpt.CorsFile, "set-cors", "", "cors-file")
 	cmd.Flags().StringVar(&mkOpt.LifecycleFile, "set-lifecycle", "", "lifecycle-file")
 	cmd.Flags().StringVar(&mkOpt.PolicyFile, "set-policy", "", "policy-file")
+
 	return cmd
 }
 
@@ -39,6 +41,8 @@ func NewRbCmd() *cobra.Command {
 			return S3.RemoveBuckets(s3path.Bucket, opts.Global.Force)
 		}), &opts),
 	}
+
 	cmd.Flags().BoolVar(&opts.Global.Force, "force", false, "Force remove bucket even if not empty")
+	
 	return cmd
 }

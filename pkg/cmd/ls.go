@@ -19,7 +19,7 @@ func NewLsCmd() *cobra.Command {
 	opts.Global.AllowAliasOnly = true // ls 支持只输入 alias 来列出所有 bucket
 	cmd := &cobra.Command{
 		Use:     "ls [alias:[bucket/[path]]]",
-		Aliases: []string{"list"},
+		Aliases: []string{"list", "l"},
 		Short:   "List objects or buckets",
 		Args:    cobra.MinimumNArgs(1),
 		RunE: NewRunE(ActionFunc(func(S3 action.S3Client, opts *CmdContext, s3path *utils.S3Path) error {
@@ -48,10 +48,9 @@ func NewInfoCmd() *cobra.Command {
 		Short: "Show information about a bucket or object",
 		Args:  cobra.MinimumNArgs(1),
 		RunE: NewRunE(ActionFunc(func(S3 action.S3Client, opts *CmdContext, s3path *utils.S3Path) error {
-			return S3.Info(s3path.Bucket, s3path.Key, opts.Global.OutputJSON)
+			return S3.Info(s3path.Bucket, s3path.Key)
 		}), &opts),
 	}
-	cmd.Flags().BoolVar(&opts.Global.OutputJSON, "json", false, "Output as JSON")
 	return cmd
 }
 

@@ -1,8 +1,0 @@
-<LifecycleConfiguration>
-    <Rule>
-        <ID>cleanup</ID>
-        <Status>Enabled</Status>
-        <Filter><Prefix>tmp/</Prefix></Filter>
-        <Expiration><Days>7</Days></Expiration>
-    </Rule>
-</LifecycleConfiguration>

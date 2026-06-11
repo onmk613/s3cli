@@ -13,6 +13,7 @@ import (
 func (c *S3Client) ListOjbectVersions(bucket, prefix string) error {
 	paginator := s3.NewListObjectVersionsPaginator(c.S3,
 		&s3.ListObjectVersionsInput{Bucket: aws.String(bucket), Prefix: aws.String(prefix)})
+
 	for paginator.HasMorePages() {
 		page, err := paginator.NextPage(c.Ctx)
 		if err != nil {

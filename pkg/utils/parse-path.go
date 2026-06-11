@@ -44,7 +44,6 @@ func ParseS3Path(s string) (*S3Path, error) {
 	// 1. 切 alias
 	colon := strings.Index(s, ":")
 	if colon < 0 {
-		// 没有冒号: 整个字符串视为 alias_name
 		if !AliasNameRegex.MatchString(s) {
 			return nil, fmt.Errorf("invalid alias name %q: must match %s", s, AliasNameRegex.String())
 		}
@@ -65,7 +64,6 @@ func ParseS3Path(s string) (*S3Path, error) {
 		return nil, fmt.Errorf("invalid s3 path %q: bucket is required after %q:", s, alias)
 	}
 
-	// 2. 切 bucket / key
 	var bucket, key string
 	trailing := strings.HasSuffix(rest, "/")
 	if slash := strings.Index(rest, "/"); slash >= 0 {
@@ -99,22 +97,7 @@ func ParseS3Path(s string) (*S3Path, error) {
 	}, nil
 }
 
-// NormalizePrefix 统一处理 s3:// 路径中的 prefix 后缀斜杠逻辑：
-//   - 如果 path 以 "/" 结尾且 key 非空，追加 "/"（列出目录内容）
-//   - 兼容 ceph: "//" 规范化回 "/"
-func NormalizePrefix(path, key string) string {
-	prefix := key
-	if strings.HasSuffix(path, "/") && key != "" {
-		prefix = key + "/"
-	}
-	if prefix == "//" {
-		prefix = "/"
-	}
-	return prefix
-}
-
-// ResolveDestKey 计算 cp/mv 操作的目标 key。
-//
+// 计算 cp/mv 操作的目标 key。
 // destPath 以 "/" 结尾 -> 目标视为目录，将 srcBase 拼接到 destKey 下。
 // destKey 为空 -> 直接用 srcBase。
 func ResolveDestKey(destPath, destKey, srcBase string) string {

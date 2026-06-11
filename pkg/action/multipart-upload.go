@@ -29,7 +29,7 @@ func (c *S3Client) MpuList(bucket, prefix string) error {
 		}
 	}
 	if count == 0 {
-		myprint.PrintfYellow("%s: no in-progress multipart uploads\n", c.S3Path(bucket, ""))
+		myprint.PrintfBoldYellow("%s: no in-progress multipart uploads\n", c.S3Path(bucket, ""))
 	}
 	return nil
 }
@@ -85,12 +85,11 @@ func (c *S3Client) MpuAbort(bucket, prefix, uploadID string) error {
 			aborted++
 		}
 	}
-	myprint.PrintfGreen("aborted %d in-progress uploads under s3://%s/%s\n", aborted, bucket, prefix)
+	myprint.PrintfBoldGreen("aborted %d in-progress uploads under %s\n", aborted, c.S3Path(bucket, prefix))
 	return nil
 }
 
 // findUploadKey 在 prefix 下列举 in-progress multipart uploads，
-// 返回与给定 uploadID 匹配的对象 key；找不到时返回空字符串。
 func (c *S3Client) findUploadKey(bucket, prefix, uploadID string) (string, error) {
 	paginator := s3.NewListMultipartUploadsPaginator(c.S3, &s3.ListMultipartUploadsInput{
 		Bucket: aws.String(bucket), Prefix: aws.String(prefix),

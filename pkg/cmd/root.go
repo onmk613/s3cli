@@ -43,12 +43,11 @@ func Register(groupID, title string, fn func() *cobra.Command) {
 	cmdRegistry = append(cmdRegistry, cmdGroup{ID: groupID, Title: title, Commands: []func() *cobra.Command{fn}})
 }
 
-func NewRootCmd() *cobra.Command {
+func NewRootCmd() {
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 
 	var (
 		noColor bool
-		toFile  string
 	)
 
 	rootCmd := &cobra.Command{
@@ -95,7 +94,6 @@ func NewRootCmd() *cobra.Command {
 	pf.StringVarP(&config.ConfigPath, "conf", "f", "", "Path to configuration file (default ~/.s3cli)")
 	pf.BoolVar(&config.G.Debug, "debug", false, "Print summarized S3 requests")
 	pf.BoolVar(&noColor, "no-color", false, "Disable color output")
-	pf.StringVar(&toFile, "logfile", "", "Write output to file instead of stdout")
 
 	// 从注册表添加所有子命令（带分组显示）
 	for _, g := range cmdRegistry {
@@ -106,5 +104,10 @@ func NewRootCmd() *cobra.Command {
 			rootCmd.AddCommand(cmd)
 		}
 	}
-	return rootCmd
+
+	err := rootCmd.Execute()
+	if err != nil {
+		myprint.PrintlnBoldRed(err.Error())
+		os.Exit(1)
+	}
 }

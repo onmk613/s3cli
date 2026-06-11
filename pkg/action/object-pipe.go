@@ -62,6 +62,7 @@ func (c *S3Client) PipeUpload(opt PipeOptions, bucket, key string) error {
 	if _, err := uploader.Upload(c.Ctx, in); err != nil {
 		return fmt.Errorf("pipe upload %s: %s", c.S3Path(bucket, key), FormatAPIError(err))
 	}
-	myprint.Printf("pipe: stdin --> %s  (%s)\n", c.S3Path(bucket, key), opt.ContentType)
+
+	myprint.PrintfBoldGreen("pipe: stdin --> %s  (%s)\n", c.S3Path(bucket, key), opt.ContentType)
 	return nil
 }

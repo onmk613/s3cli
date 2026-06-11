@@ -11,7 +11,7 @@ import (
 	"gopkg.in/ini.v1"
 )
 
-// DelConf 从配置文件中删除指定别名 section。
+// 从配置文件中删除指定别名 section。
 // 删除前会要求用户输入 y/Y 进行确认。
 func DelConf(sections []string) error {
 	if ConfigPath == "" {

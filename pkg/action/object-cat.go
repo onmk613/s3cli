@@ -14,7 +14,6 @@ type CatOptions struct {
 	Range string // HTTP Range header (e.g. "bytes=0-1023")
 }
 
-// CatObject 把对象内容直接写到 stdout
 func (c *S3Client) CatObject(opt CatOptions, bucket, key string) error {
 	if key == "" {
 		return fmt.Errorf("cat requires an object key, not a bucket")

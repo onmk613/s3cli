@@ -17,7 +17,7 @@ type S3Client struct {
 	Ctx   context.Context
 }
 
-// S3Path 格式化路径为 "s3://alias/bucket/key"（S3 标准 URI 格式）
+// S3Path 格式化路径为 "alias:bucket/key", 和命令行格式一样
 func (c *S3Client) S3Path(bucket, key string) string {
 	if key == "" {
 		return c.Alias + ":" + bucket

@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"s3cli/pkg/action"
+	"s3cli/pkg/config"
 	"s3cli/pkg/utils"
 
 	"github.com/spf13/cobra"
@@ -111,8 +112,8 @@ func NewMirrorCmd() *cobra.Command {
 	f.BoolVar(&remove, "remove", false, "Delete extra objects on target that don't exist on source")
 	f.BoolVar(&overwrite, "overwrite", false, "Overwrite target objects whose ETag/size/mtime differ from source")
 	f.BoolVar(&dryRun, "dry-run", false, "Show what would be done without making any changes")
-	f.IntVar(&concurrency, "concurrency", action.DefaultMirrorConcurrency, "Number of concurrent transfers")
-	f.IntVar(&partSizeMB, "part-size", 64, "Multipart part size in MB (cross-endpoint only)")
+	f.IntVar(&concurrency, "concurrency", config.DefaultConcurrency, "Number of concurrent transfers")
+	f.IntVar(&partSizeMB, "part-size", config.DefaultPartSizeMB, "Multipart part size in MB (cross-endpoint only)")
 	f.Int64Var(&sizeLimit, "size-limit", 0, "Skip objects larger than N bytes (0 = no limit)")
 	return cmd
 }

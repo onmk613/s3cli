@@ -16,7 +16,7 @@ import (
 // 例如:
 //
 //		Template = "https://www.%(bucket).example.com"
-//	 BucketPlaceholder = "%(bucket)"
+//	    BucketPlaceholder = "%(bucket)"
 //		bucket   = "mydata"
 //		->         https://www.mydata.example.com
 type customBucketResolver struct {

@@ -25,8 +25,8 @@ func (c *S3Client) DuObject(bucket, prefix string) error {
 			count++
 		}
 	}
-	myprint.Printf("%12d  ", totalSize)
-	myprint.PrintfCyan("%10s", FormatBytes(totalSize))
-	myprint.Printf("  %5d objects  %s\n", count, c.S3Path(bucket, prefix))
+
+	myprint.PrintfBoldGreen("%s", c.S3Path(bucket, prefix))
+	myprint.PrintfBoldCyan("%5d  %12d  %10s\n", count, totalSize, FormatBytes(totalSize))
 	return nil
 }

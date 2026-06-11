@@ -57,7 +57,8 @@ func RunStream(ctx context.Context, cfg StreamConfig) error {
 			}
 		}()
 		for j := range relay {
-			pt.AddTotal(1, j.Size)
+			pt.AddTotal(1)
+			pt.AddTotalSize(j.Size)
 			select {
 			case jobs <- j:
 			case <-ctx.Done():
@@ -73,15 +74,19 @@ func RunStream(ctx context.Context, cfg StreamConfig) error {
 		go func() {
 			defer wg.Done()
 			for j := range jobs {
-				msg := fmt.Sprintf("✓ %s → %s (%s)", j.Src, j.Dst, utils.FormatBytes(j.Size))
-				if err := cfg.Work(ctx, j); err != nil {
-					pt.AddFailed(msg)
-					// pt.AddDone(1, j.Size, fmt.Sprintf("✗ %s → %s", j.Src, j.Dst))
-					pt.AddDone(1, j.Size)
-				} else {
-					// pt.AddDone(1, j.Size, fmt.Sprintf("✓ %s → %s (%s)", j.Src, j.Dst, utils.FormatBytes(j.Size)))
-					pt.AddDone(1, j.Size)
+				// 已被取消（Ctrl+C）则停止处理剩余任务，
+				// 不把中断导致的错误误记为"失败"。
+				if ctx.Err() != nil {
+					return
 				}
+				if err := cfg.Work(ctx, j); err != nil {
+					if ctx.Err() != nil {
+						return
+					}
+					pt.AddFailed(fmt.Sprintf("✗ %s → %s (%s): %v", j.Src, j.Dst, utils.FormatBytes(j.Size), err))
+				}
+				pt.AddTotalDone(1)
+				pt.AddTotalSizeDone(j.Size)
 			}
 		}()
 	}
