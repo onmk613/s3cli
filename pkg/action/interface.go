@@ -32,7 +32,7 @@ type ObjectReader interface {
 	ListObjects(bucket, prefix string, listAll bool) error
 	GetObject(opt GetOptions, bucket, prefix, localpath string) error
 	CatObject(opt CatOptions, bucket, key string) error
-	Info(bucket, prefix string, outputJSON bool) error
+	Info(bucket, prefix string) error
 	DuObject(bucket, prefix string) error
 	FindObjects(opt FindOptions, bucket, prefix string) error
 	TreeObjects(opt TreeOptions, bucket, prefix string) error

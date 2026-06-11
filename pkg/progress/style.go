@@ -26,6 +26,7 @@ func DefaultStyle() Style {
 		Filled:       "▓",
 		Head:         "█",
 		Empty:        "░",
+		BarColor:     "\033[1;32m",
 	}
 }
 

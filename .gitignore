@@ -1,26 +1,15 @@
-# 构建产物
 s3cli
 s3cli.exe
 output/
 bin/
-
-# 配置文件（含密钥，不应提交）
 s3cli.ini
-
-# 系统文件
 .DS_Store
 Thumbs.db
-
-# IDE
 .vscode/
 .idea/
 *.swp
 *.swo
 .github/
-
-# 依赖
 vendor/
-
-# 测试临时文件
 test*
 !testdata/

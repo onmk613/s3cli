@@ -10,17 +10,6 @@ import (
 	s3types "github.com/aws/aws-sdk-go-v2/service/s3/types"
 )
 
-func parseTagPairs(m map[string]string) []s3types.Tag {
-	tags := make([]s3types.Tag, 0, len(m))
-	for k, v := range m {
-		tags = append(tags, s3types.Tag{
-			Key:   aws.String(k),
-			Value: aws.String(v),
-		})
-	}
-	return tags
-}
-
 func (c *S3Client) SetTag(bucket, prefix string, tagStr map[string]string) error {
 	tags := parseTagPairs(tagStr)
 	if prefix == "" {
@@ -31,9 +20,10 @@ func (c *S3Client) SetTag(bucket, prefix string, tagStr map[string]string) error
 		if err != nil {
 			return fmt.Errorf("set bucket tag: %s", FormatAPIError(err))
 		}
-		myprint.Printf("tag set for %s (%d tags)\n", c.S3Path(bucket, ""), len(tags))
+		myprint.PrintfBoldGreen("Tag set for %s (%d tags)\n", c.S3Path(bucket, prefix), len(tags))
 		return nil
 	}
+
 	_, err := c.S3.PutObjectTagging(c.Ctx, &s3.PutObjectTaggingInput{
 		Bucket: aws.String(bucket), Key: aws.String(prefix),
 		Tagging: &s3types.Tagging{TagSet: tags},
@@ -41,7 +31,8 @@ func (c *S3Client) SetTag(bucket, prefix string, tagStr map[string]string) error
 	if err != nil {
 		return fmt.Errorf("set object tag: %s", FormatAPIError(err))
 	}
-	myprint.Printf("tag set for %s (%d tags)\n", c.S3Path(bucket, prefix), len(tags))
+
+	myprint.PrintfBoldGreen("tag set for %s (%d tags)\n", c.S3Path(bucket, prefix), len(tags))
 	return nil
 }
 
@@ -63,12 +54,13 @@ func (c *S3Client) GetTag(bucket, prefix string) error {
 		tags = out.TagSet
 	}
 	if len(tags) == 0 {
-		myprint.Printf("# %s: no tags\n", c.S3Path(bucket, prefix))
+		myprint.PrintfCyan("# %s: no tags\n", c.S3Path(bucket, prefix))
 		return nil
 	}
-	myprint.Printf("# %s\n", c.S3Path(bucket, prefix))
+
+	myprint.PrintfBoldBlue("# %s tags:\n", c.S3Path(bucket, prefix))
 	for _, t := range tags {
-		myprint.Printf("  %s = %s\n", aws.ToString(t.Key), aws.ToString(t.Value))
+		myprint.PrintfGreen("  %s = %s\n", aws.ToString(t.Key), aws.ToString(t.Value))
 	}
 	return nil
 }
@@ -85,6 +77,18 @@ func (c *S3Client) DelTag(bucket, prefix string) error {
 			return fmt.Errorf("delete object tag: %s", FormatAPIError(err))
 		}
 	}
-	myprint.Printf("tags deleted for %s\n", c.S3Path(bucket, prefix))
+
+	myprint.PrintfBoldGreen("Tags deleted for %s\n", c.S3Path(bucket, prefix))
 	return nil
+}
+
+func parseTagPairs(m map[string]string) []s3types.Tag {
+	tags := make([]s3types.Tag, 0, len(m))
+	for k, v := range m {
+		tags = append(tags, s3types.Tag{
+			Key:   aws.String(k),
+			Value: aws.String(v),
+		})
+	}
+	return tags
 }

@@ -10,6 +10,7 @@ import (
 	"syscall"
 	"time"
 
+	myprint "s3cli/pkg/fmtutil"
 	"s3cli/pkg/utils"
 
 	"golang.org/x/term"
@@ -40,18 +41,24 @@ type ProgressTracker struct {
 	label   string    // 进度条标签（如 "Uploading"）
 	startAt time.Time // 开始时间，用于计算速率和 ETA
 	style   Style     // 进度条填充物
+	noColor bool      // 禁用所有颜色（受 --no-color / 非终端影响）
 
 	sigCh chan os.Signal // 信号兜底：被中断时恢复光标
 }
 
 func New() *ProgressTracker {
-	return &ProgressTracker{
+	pt := &ProgressTracker{
 		output:  os.Stdout,
-		fd:      int(os.Getegid()),
+		fd:      int(os.Stdout.Fd()),
 		width:   defaultBarWidth,
 		startAt: time.Now(),
 		style:   DefaultStyle(),
+		noColor: myprint.NoColor(),
 	}
+	if tw, _, err := term.GetSize(pt.fd); err == nil && tw > 0 {
+		pt.width = tw
+	}
+	return pt
 }
 
 // SetStyle 设置进度条样式（填充物 + 颜色）
@@ -80,6 +87,7 @@ func (pt *ProgressTracker) SetWriter(w io.Writer) error {
 	}
 
 	fd := int(f.Fd())
+	pt.fd = fd
 	if fd >= 0 {
 		if tw, _, err := term.GetSize(fd); err == nil && tw > 0 {
 			pt.width = tw

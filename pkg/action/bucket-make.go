@@ -1,9 +1,6 @@
 package action
 
 import (
-	"errors"
-	"fmt"
-
 	myprint "s3cli/pkg/fmtutil"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -18,34 +15,36 @@ type MakeBucketOptions struct {
 }
 
 // Mb 创建桶
-func (c *S3Client) MakeBuckets(opt MakeBucketOptions, bucketname string) error {
-	in := &s3.CreateBucketInput{Bucket: aws.String(bucketname)}
-
-	if _, err := c.S3.CreateBucket(c.Ctx, in); err != nil {
+func (c *S3Client) MakeBuckets(opt MakeBucketOptions, bucket string) error {
+	if _, err := c.S3.CreateBucket(c.Ctx, &s3.CreateBucketInput{Bucket: aws.String(bucket)}); err != nil {
 		return err
 	}
+	myprint.PrintfBoldGreen("Bucket %s created for %s\n", bucket, c.Alias)
 
-	// 收集 CORS / Policy / Lifecycle 设置错误，桶已创建成功时汇总返回
-	var errs []error
+	// 配置 CORS / Policy / Lifecycle
 	if opt.CorsFile != "" {
-		if err := c.SetCors(opt.CorsFile, bucketname); err != nil {
-			errs = append(errs, fmt.Errorf("set cors: %w", err))
-		}
-	}
-	if opt.PolicyFile != "" {
-		if err := c.SetPolicy(opt.PolicyFile, bucketname); err != nil {
-			errs = append(errs, fmt.Errorf("set policy: %w", err))
-		}
-	}
-	if opt.LifecycleFile != "" {
-		if err := c.SetLifecycle(opt.LifecycleFile, bucketname); err != nil {
-			errs = append(errs, fmt.Errorf("set lifecycle: %w", err))
+		if err := c.SetCors(opt.CorsFile, bucket); err != nil {
+			myprint.PrintfBoldYellow("set cors: %v", err)
+		} else {
+			myprint.PrintlnBoldGreen("set cors success")
 		}
 	}
 
-	myprint.PrintfGreen("Bucket %s created\n", c.S3Path(bucketname, ""))
-	if len(errs) > 0 {
-		return fmt.Errorf("bucket created but config errors: %w", errors.Join(errs...))
+	if opt.PolicyFile != "" {
+		if err := c.SetPolicy(opt.PolicyFile, bucket); err != nil {
+			myprint.PrintfBoldYellow("set policy: %v", err)
+		} else {
+			myprint.PrintlnBoldGreen("set policy success")
+		}
 	}
+
+	if opt.LifecycleFile != "" {
+		if err := c.SetLifecycle(opt.LifecycleFile, bucket); err != nil {
+			myprint.PrintfBoldYellow("set lifecycle: %v", err)
+		} else {
+			myprint.PrintlnBoldGreen("set lifecycle success")
+		}
+	}
+
 	return nil
 }

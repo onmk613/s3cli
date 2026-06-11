@@ -13,14 +13,6 @@ import (
 )
 
 // SetNotification 设置桶事件通知 (JSON, AWS CLI 兼容)
-//
-// JSON 文件结构示例:
-//
-//	{
-//	  "TopicConfigurations":  [ {"TopicArn": "...", "Events": ["s3:ObjectCreated:*"]} ],
-//	  "QueueConfigurations":  [ {"QueueArn": "...", "Events": ["s3:ObjectRemoved:*"]} ],
-//	  "LambdaFunctionConfigurations": [ ... ]
-//	}
 func (c *S3Client) SetNotification(configfile, bucket string) error {
 	data, format, err := utils.LoadAWSConfigFile(configfile)
 	if err != nil {
@@ -47,7 +39,7 @@ func (c *S3Client) SetNotification(configfile, bucket string) error {
 		return fmt.Errorf("set notification %s: %s", bucket, FormatAPIError(err))
 	}
 
-	myprint.PrintfGreen("Notification set for %s (%d configurations)\n", c.S3Path(bucket, ""), total)
+	myprint.PrintfBoldGreen("Notification set for %s %s (%d configurations)\n", c.Alias, bucket, total)
 	return nil
 }
 
@@ -66,8 +58,9 @@ func (c *S3Client) GetNotification(bucket string) error {
 		"EventBridgeConfiguration":     out.EventBridgeConfiguration,
 	}
 	b, _ := json.MarshalIndent(m, "", "  ")
-	myprint.PrintfDim("# %s\n", c.S3Path(bucket, ""))
-	myprint.Println(string(b))
+
+	myprint.PrintfBoldBlue("# %s %s notification\n", c.Alias, bucket)
+	myprint.PrintlnGreen(string(b))
 	return nil
 }
 
@@ -81,6 +74,6 @@ func (c *S3Client) DelNotification(bucket string) error {
 		return fmt.Errorf("delete notification %s: %s", bucket, FormatAPIError(err))
 	}
 
-	myprint.PrintfGreen("Notification configuration cleared for %s\n", c.S3Path(bucket, ""))
+	myprint.PrintfBoldGreen("Notification configuration cleared for %s %s\n", c.Alias, bucket)
 	return nil
 }

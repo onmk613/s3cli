@@ -8,13 +8,11 @@ import (
 
 var globalSeq atomic.Int64
 
-// Transport 是一个可调试的 http.RoundTripper 装饰器
 type Transport struct {
 	base   http.RoundTripper
 	dumper *dumper
 }
 
-// New 创建调试传输层，opts 为 nil 时使用默认配置
 func New(base http.RoundTripper, opts *Options) http.RoundTripper {
 	if base == nil {
 		base = http.DefaultTransport

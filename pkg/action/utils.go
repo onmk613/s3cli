@@ -29,7 +29,6 @@ func FormatBytes(bytes int64) string {
 
 var addMimeOnce sync.Once
 
-// AddMime 注册一组常见后缀的 MIME 类型（仅首次调用执行）
 func AddMime() {
 	addMimeOnce.Do(func() {
 		entries := map[string]string{

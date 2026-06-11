@@ -11,7 +11,7 @@ import (
 
 func (c *S3Client) RemoveBuckets(bucket string, force bool) error {
 	if force {
-		myprint.PrintfYellow("!!! WARNING: --force will permanently delete all objects/versions in %v !!!", c.S3Path(bucket, ""))
+		myprint.PrintfBoldYellow("!!! WARNING: --force will permanently delete all objects/versions in %v %s!!!", c.Alias, bucket)
 		if err := c.deleteAllObjects(bucket); err != nil {
 			return fmt.Errorf("force-delete objects in %s: %v", bucket, err)
 		}
@@ -21,7 +21,8 @@ func (c *S3Client) RemoveBuckets(bucket string, force bool) error {
 	if err != nil {
 		return fmt.Errorf("delete bucket %s: %s", bucket, FormatAPIError(err))
 	}
-	myprint.PrintfGreen("Bucket %s deleted\n", c.S3Path(bucket, ""))
+
+	myprint.PrintfBoldGreen("Bucket %s deleted for %s\n", c.Alias, bucket)
 	return nil
 }
 

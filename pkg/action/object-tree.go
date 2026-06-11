@@ -17,7 +17,6 @@ type TreeOptions struct {
 	ShowSize bool // 是否在叶子上显示文件大小
 }
 
-// TreeObjects 把 s3://bucket/prefix 下的对象按目录结构以树形输出
 func (c *S3Client) TreeObjects(opt TreeOptions, bucket, prefix string) error {
 	if bucket == "" {
 		return fmt.Errorf("tree requires a bucket")

@@ -78,7 +78,7 @@ func NewDiffCmd() *cobra.Command {
 	f := cmd.Flags()
 	f.StringVar(&modeFlag, "check", "md5", "Compare strategy: md5 | size | quick")
 	f.BoolVarP(&recursive, "recursive", "r", true, "Recursively diff directories")
-	f.IntVar(&concurrency, "concurrency", action.DefaultDiffConcurrency, "Concurrent file comparisons (directory mode)")
+	f.IntVar(&concurrency, "concurrency", config.DefaultConcurrency, "Concurrent file comparisons (directory mode)")
 	f.BoolVar(&briefOnly, "brief", false, "Print only differences, hide identical files")
 	return cmd
 }

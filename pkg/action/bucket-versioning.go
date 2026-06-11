@@ -29,7 +29,7 @@ func (c *S3Client) SetVersioning(bucket string, status bool) error {
 		return fmt.Errorf("set versioning %s: %s", bucket, FormatAPIError(err))
 	}
 
-	myprint.PrintfGreen("Versioning %s for %s\n", st, c.S3Path(bucket, ""))
+	myprint.PrintfBoldGreen("Versioning %s for %s %s\n", st, c.Alias, bucket)
 	return nil
 }
 
@@ -44,6 +44,6 @@ func (c *S3Client) GetVersioning(bucket string) error {
 		status = "(disabled)"
 	}
 
-	myprint.Printf("%s: %s\n", c.S3Path(bucket, ""), status)
+	myprint.PrintfBoldGreen("Bucket %s versioning for%s: %s\n", c.Alias, bucket, status)
 	return nil
 }

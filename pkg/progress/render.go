@@ -6,9 +6,17 @@ import (
 	"golang.org/x/term"
 )
 
-// AddTotal 增加总任务数和总字节数
-func (pt *ProgressTracker) AddTotal(n int64, sz int64) {
+// AddTotal 增加总任务数
+func (pt *ProgressTracker) AddTotal(n int64) {
 	pt.total.Add(n)
+
+	pt.mu.Lock()
+	defer pt.mu.Unlock()
+	pt.render()
+}
+
+// AddTotalSize 增加总任务大小
+func (pt *ProgressTracker) AddTotalSize(sz int64) {
 	pt.totalSz.Add(sz)
 
 	pt.mu.Lock()
@@ -17,8 +25,16 @@ func (pt *ProgressTracker) AddTotal(n int64, sz int64) {
 }
 
 // AddDone 增加已完成任务数
-func (pt *ProgressTracker) AddDone(n int64, sz int64) {
+func (pt *ProgressTracker) AddTotalDone(n int64) {
 	pt.done.Add(n)
+
+	pt.mu.Lock()
+	defer pt.mu.Unlock()
+	pt.render()
+}
+
+// AddTotalSizeDone 增加已完成任务大小
+func (pt *ProgressTracker) AddTotalSizeDone(sz int64) {
 	pt.doneSz.Add(sz)
 
 	pt.mu.Lock()

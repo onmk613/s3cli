@@ -15,7 +15,7 @@ import (
 	"s3cli/pkg/config"
 )
 
-// NewS3Client 根据配置构建一个全局可用的 S3 客户端
+// 构建 S3 客户端
 func NewS3Client(ctx context.Context, cfg config.Static) (*s3.Client, error) {
 	transport := &http.Transport{
 		TLSClientConfig: &tls.Config{InsecureSkipVerify: !cfg.IsVerifySSL()},

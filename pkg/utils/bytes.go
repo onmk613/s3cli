@@ -5,6 +5,7 @@ import (
 	"math"
 )
 
+// 格式化字节
 func FormatBytes(bytes int64) string {
 	if bytes <= 0 {
 		return "0 B"

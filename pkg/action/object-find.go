@@ -93,18 +93,19 @@ func (c *S3Client) FindObjects(opt FindOptions, bucket, prefix string) error {
 				}
 			}
 
-			myprint.Printf("%s %12d   %s\n",
-				obj.LastModified.Format("2006-01-02 15:04:05"),
-				size, c.S3Path(bucket, key))
+			myprint.PrintfDim("[%s]  ", obj.LastModified.Format("2006-01-02 15:04:05"))
+			myprint.Printf("%12d   ", size)
+			myprint.PrintfGreen("FILE  %s\n", c.S3Path(bucket, key))
+
 			matched++
 			totalSize += size
 			if opt.Limit > 0 && matched >= opt.Limit {
-				myprint.Printf("\n(limit %d reached)\n", opt.Limit)
+				myprint.PrintfYellow("\n(limit %d reached)\n", opt.Limit)
 				return nil
 			}
 		}
 	}
-	myprint.Printf("\n%d matching objects (%s)\n", matched, FormatBytes(totalSize))
+	myprint.PrintfBoldBlue("\n%d matching objects (%s)\n", matched, FormatBytes(totalSize))
 	return nil
 }
 

@@ -37,7 +37,7 @@ func (c *S3Client) SetCors(corsFile string, bucket string) error {
 		return fmt.Errorf("set cors %s: %s", bucket, FormatAPIError(err))
 	}
 
-	myprint.PrintfGreen("CORS configuration set for %s\n", c.S3Path(bucket, ""))
+	myprint.PrintfBoldGreen("CORS configuration set for %s %s\n", c.Alias, bucket)
 	return nil
 }
 
@@ -52,8 +52,8 @@ func (c *S3Client) GetCors(bucket string) error {
 		return fmt.Errorf("marshal cors: %w", err)
 	}
 
-	myprint.PrintfDim("# %s cors\n", c.S3Path(bucket, ""))
-	myprint.Println(string(b))
+	myprint.PrintfBoldBlue("# %s %s cors:\n", c.Alias, bucket)
+	myprint.PrintlnGreen(string(b))
 	return nil
 }
 
@@ -63,7 +63,7 @@ func (c *S3Client) DelCors(bucket string) error {
 		return fmt.Errorf("delete cors %s: %s", bucket, FormatAPIError(err))
 	}
 
-	myprint.PrintfGreen("CORS configuration deleted for %s\n", c.S3Path(bucket, ""))
+	myprint.PrintfBoldGreen("CORS configuration deleted for %s %s\n", c.Alias, bucket)
 	return nil
 }
 

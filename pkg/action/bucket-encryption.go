@@ -71,7 +71,7 @@ func (c *S3Client) SetEncryption(opt EncryptionOptions, bucket string) error {
 		return fmt.Errorf("set encryption %s: %s", bucket, FormatAPIError(err))
 	}
 
-	myprint.PrintfGreen("Encryption set for %s (%d rules)\n", c.S3Path(bucket, ""), len(cfg.Rules))
+	myprint.PrintfBoldGreen("Encryption set for %s %s (%d rules)\n", c.Alias, bucket, len(cfg.Rules))
 	return nil
 }
 
@@ -88,8 +88,8 @@ func (c *S3Client) GetEncryption(bucket string) error {
 		return fmt.Errorf("marshal encryption: %w", err)
 	}
 
-	myprint.PrintfDim("# %s encryption\n", c.S3Path(bucket, ""))
-	myprint.Println(string(b))
+	myprint.PrintfBoldBlue("# %s %s encryption\n", c.Alias, bucket)
+	myprint.PrintlnGreen(string(b))
 	return nil
 }
 
@@ -102,6 +102,6 @@ func (c *S3Client) DelEncryption(bucket string) error {
 		return fmt.Errorf("delete encryption %s: %s", bucket, FormatAPIError(err))
 	}
 
-	myprint.PrintfGreen("Encryption deleted for %s\n", c.S3Path(bucket, ""))
+	myprint.PrintfBoldGreen("Encryption deleted for %s %s\n", c.Alias, bucket)
 	return nil
 }

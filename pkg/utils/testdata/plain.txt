@@ -1,2 +1,0 @@
-this is just a plain text file
-not json or xml
