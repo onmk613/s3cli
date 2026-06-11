@@ -43,7 +43,7 @@ func (c *S3Client) MakeBuckets(opt MakeBucketOptions, bucketname string) error {
 		}
 	}
 
-	myprint.PrintfGreen("Bucket " + c.S3Path(bucketname, "") + " created")
+	myprint.PrintfGreen("Bucket %s created\n", c.S3Path(bucketname, ""))
 	if len(errs) > 0 {
 		return fmt.Errorf("bucket created but config errors: %w", errors.Join(errs...))
 	}

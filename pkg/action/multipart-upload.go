@@ -79,7 +79,7 @@ func (c *S3Client) MpuAbort(bucket, prefix, uploadID string) error {
 				Bucket: aws.String(bucket), Key: u.Key, UploadId: u.UploadId,
 			})
 			if err != nil {
-				myprint.PrintfRed(fmt.Sprintf("abort %s/%s: %s", bucket, aws.ToString(u.Key), FormatAPIError(err)))
+				myprint.PrintfRed("abort %s/%s: %s\n", bucket, aws.ToString(u.Key), FormatAPIError(err))
 				continue
 			}
 			aborted++

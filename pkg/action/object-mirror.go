@@ -493,7 +493,7 @@ func Mirror(cfg MirrorOptions) error {
 		}
 		myprint.Printf("Deleting %d extra objects on target...\n", len(fullKeys))
 		if err := deleteObjectsBatch(tgtClient, tgtBucket, fullKeys); err != nil {
-			myprint.PrintfRed("delete error:", err)
+			myprint.PrintfRed("delete error: %v\n", err)
 		} else {
 			deleted = len(fullKeys)
 		}
