@@ -40,7 +40,6 @@ type MirrorOptions struct {
 	Concurrency int   // 并发数 (默认 8)
 	PartSizeMB  int   // 分片大小 MB (默认 64)
 	SizeLimit   int64 // 单对象大小上限 (字节)，0 表示不限制
-	ScrollMax   int   // 进度条滚动刷屏条数，0=全部显示
 }
 
 // =============== 对象信息 ===============
@@ -429,8 +428,8 @@ func Mirror(cfg MirrorOptions) error {
 		myprint.Println("Strategy: download + upload (cross endpoint)")
 	}
 
-	pt := progress.NewProgressTracker(myprint.GetOutput(), cfg.ScrollMax, "mirror")
-	pt.SetContextDone(srcClient.Ctx.Done())
+	pt := progress.New()
+	pt.SetLabel("mirror")
 	pt.Start()
 	defer pt.Stop()
 
@@ -471,13 +470,16 @@ func Mirror(cfg MirrorOptions) error {
 				cerr = copyObjectCrossEndpoint(srcClient, tgtClient, srcBucket, srcKey, tgtBucket, tgtKey, partSize)
 			}
 			if cerr != nil {
+				msg := fmt.Sprintf("✗ %s → %s", srcClient.S3Path(srcBucket, srcKey), tgtClient.S3Path(tgtBucket, tgtKey))
 				failed.Add(1)
-				pt.AddFailed()
-				pt.AddDone(1, 0, fmt.Sprintf("✗ %s → %s", srcClient.S3Path(srcBucket, srcKey), tgtClient.S3Path(tgtBucket, tgtKey)))
+				pt.AddFailed(msg)
+				// pt.AddDone(1, 0, fmt.Sprintf("✗ %s → %s", srcClient.S3Path(srcBucket, srcKey), tgtClient.S3Path(tgtBucket, tgtKey)))
+				pt.AddDone(1, 0)
 				return
 			}
 			copied.Add(1)
-			pt.AddDone(1, 0, fmt.Sprintf("✓ %s → %s", srcClient.S3Path(srcBucket, srcKey), tgtClient.S3Path(tgtBucket, tgtKey)))
+			// pt.AddDone(1, 0, fmt.Sprintf("✓ %s → %s", srcClient.S3Path(srcBucket, srcKey), tgtClient.S3Path(tgtBucket, tgtKey)))
+			pt.AddDone(1, 0)
 		}(rel)
 	}
 	wg.Wait()
@@ -491,13 +493,13 @@ func Mirror(cfg MirrorOptions) error {
 		}
 		myprint.Printf("Deleting %d extra objects on target...\n", len(fullKeys))
 		if err := deleteObjectsBatch(tgtClient, tgtBucket, fullKeys); err != nil {
-			myprint.Errorln("delete error:", err)
+			myprint.PrintfRed("delete error:", err)
 		} else {
 			deleted = len(fullKeys)
 		}
 	}
 
-	myprint.Successf("Mirror done in %s: copied=%d, skipped=%d, failed=%d, deleted=%d\n",
+	myprint.PrintfGreen("Mirror done in %s: copied=%d, skipped=%d, failed=%d, deleted=%d\n",
 		time.Since(startAt).Truncate(time.Millisecond),
 		copied.Load(), skipped.Load(), failed.Load(), deleted,
 	)

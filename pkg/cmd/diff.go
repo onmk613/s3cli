@@ -66,7 +66,6 @@ func NewDiffCmd() *cobra.Command {
 				Recursive:   recursive,
 				Concurrency: concurrency,
 				BriefOnly:   briefOnly,
-				ScrollMax:   ScrollMax,
 			})
 			if action.IsDifferErr(err) {
 				// 类似 unix diff：有差异时退出码为 1，但不再额外打印错误

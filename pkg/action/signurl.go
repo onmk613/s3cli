@@ -49,7 +49,7 @@ func (c *S3Client) Signurl(opt SignurlOptions, bucketname, key string) error {
 		signed = urlSignV2(cred.AccessKeyID, cred.SecretAccessKey, bucketname, cred.BaseEndpoint, key, opt.ExpireSeconds)
 	} else {
 		if opt.ExpireSeconds > 604800 {
-			myprint.Warnf("Warning: v4 signature maximum validity is 7 days (604800s), the generated URL may expire earlier\n")
+			myprint.PrintfYellow("Warning: v4 signature maximum validity is 7 days (604800s), the generated URL may expire earlier\n")
 		}
 		var perr error
 		signed, perr = c.presignV4(method, bucketname, key, opt.ExpireSeconds)
@@ -58,7 +58,6 @@ func (c *S3Client) Signurl(opt SignurlOptions, bucketname, key string) error {
 		}
 	}
 
-	myprint.Info("signurl: bucket=%s key=%s method=%s expire=%ds", bucketname, key, method, opt.ExpireSeconds)
 	myprint.Println(signed)
 	return nil
 }

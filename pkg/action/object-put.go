@@ -25,7 +25,6 @@ type PutOptions struct {
 	PartSizeMB      int
 	StorageClass    string            // e.g. "STANDARD_IA", "GLACIER"
 	Metadata        map[string]string // 用户元数据 (x-amz-meta-*)
-	ScrollMax       int               // 进度条滚动刷屏条数，0=全部显示
 }
 
 // Put 上传文件
@@ -73,7 +72,6 @@ func (c *S3Client) PutObject(opt PutOptions, bucket, prefix, localpath string, i
 func (c *S3Client) uploadDirStreaming(u *manager.Uploader, opt PutOptions, bucket, key, localpath string) error {
 	return RunStream(c.Ctx, StreamConfig{
 		Concurrency: opt.Concurrency,
-		ScrollMax:   opt.ScrollMax,
 		Label:       "put",
 		Scan: func(ctx context.Context, jobs chan<- StreamJob) error {
 			return filepath.Walk(localpath, func(path string, info os.FileInfo, err error) error {

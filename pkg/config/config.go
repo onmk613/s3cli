@@ -18,7 +18,6 @@ const (
 	DefaultRegion      = "us-east-1"
 	DefaultConcurrency = 10
 	DefaultPartSizeMB  = 15
-	DefaultScrollMax   = 5
 	DefaultMimeType    = "binary/octet-stream"
 )
 

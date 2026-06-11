@@ -26,8 +26,7 @@ func DelConf(sections []string) error {
 
 	for _, section := range sections {
 		if err := delConf(section); err != nil {
-			// 打印错误后继续
-			myprint.Errorln(err)
+			fmt.Errorf(err.Error())
 		}
 	}
 	return nil
@@ -58,6 +57,6 @@ func delConf(section string) error {
 		return fmt.Errorf("save config: %w", err)
 	}
 
-	myprint.Successf("Alias [%s] deleted from %s\n", section, ConfigPath)
+	myprint.PrintfGreen("Alias [%s] deleted from %s\n", section, ConfigPath)
 	return nil
 }

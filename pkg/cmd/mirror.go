@@ -33,7 +33,7 @@ func NewCpCmd() *cobra.Command {
 			if samePath(srcPath, dstPath) {
 				return fmt.Errorf("source and destination are the same: %s", action.S3PathStatic(srcPath.Alias, srcPath.Bucket, srcPath.Key))
 			}
-			return src.CopyObjects(srcPath.Bucket, srcPath.Key, dstPath.Bucket, dstPath.Key, opts.Global.Recursive, ScrollMax)
+			return src.CopyObjects(srcPath.Bucket, srcPath.Key, dstPath.Bucket, dstPath.Key, opts.Global.Recursive)
 		}, &opts),
 	}
 	cmd.Flags().BoolVarP(&opts.Global.Recursive, "recursive", "r", false, "Copy recursively")
@@ -53,7 +53,7 @@ func NewMvCmd() *cobra.Command {
 			if samePath(srcPath, dstPath) {
 				return fmt.Errorf("source and destination are the same: %s", action.S3PathStatic(srcPath.Alias, srcPath.Bucket, srcPath.Key))
 			}
-			return src.Mv(srcPath.Bucket, srcPath.Key, dstPath.Bucket, dstPath.Key, opts.Global.Recursive, ScrollMax)
+			return src.Mv(srcPath.Bucket, srcPath.Key, dstPath.Bucket, dstPath.Key, opts.Global.Recursive)
 		}, &opts),
 	}
 	cmd.Flags().BoolVarP(&opts.Global.Recursive, "recursive", "r", false, "Move recursively")
@@ -103,7 +103,6 @@ func NewMirrorCmd() *cobra.Command {
 				Concurrency: concurrency,
 				PartSizeMB:  partSizeMB,
 				SizeLimit:   sizeLimit,
-				ScrollMax:   ScrollMax,
 			})
 		}, &opts),
 	}

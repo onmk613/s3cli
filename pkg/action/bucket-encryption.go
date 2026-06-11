@@ -71,8 +71,7 @@ func (c *S3Client) SetEncryption(opt EncryptionOptions, bucket string) error {
 		return fmt.Errorf("set encryption %s: %s", bucket, FormatAPIError(err))
 	}
 
-	myprint.Info("set encryption: bucket=%s rules=%d", bucket, len(cfg.Rules))
-	myprint.Successf("Encryption set for %s (%d rules)\n", c.S3Path(bucket, ""), len(cfg.Rules))
+	myprint.PrintfGreen("Encryption set for %s (%d rules)\n", c.S3Path(bucket, ""), len(cfg.Rules))
 	return nil
 }
 
@@ -103,7 +102,6 @@ func (c *S3Client) DelEncryption(bucket string) error {
 		return fmt.Errorf("delete encryption %s: %s", bucket, FormatAPIError(err))
 	}
 
-	myprint.Info("delete encryption: bucket=%s", bucket)
-	myprint.Successf("Encryption deleted for %s\n", c.S3Path(bucket, ""))
+	myprint.PrintfGreen("Encryption deleted for %s\n", c.S3Path(bucket, ""))
 	return nil
 }

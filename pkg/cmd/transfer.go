@@ -25,7 +25,6 @@ func NewGetCmd() *cobra.Command {
 		Args:  cobra.MatchAll(cobra.MinimumNArgs(1), cobra.MaximumNArgs(2)),
 		RunE: NewRunE(ActionFunc(func(S3 action.S3Client, opts *CmdContext, s3path *utils.S3Path) error {
 			g := getOpt
-			g.ScrollMax = ScrollMax
 			g.Recursive = opts.Global.Recursive
 			return S3.GetObject(g, s3path.Bucket, s3path.Key, opts.Global.LocalFile)
 		}), &opts),
@@ -46,7 +45,6 @@ func NewPutCmd() *cobra.Command {
 		Args:  cobra.ExactArgs(2),
 		RunE: NewRunE(ActionFunc(func(S3 action.S3Client, opts *CmdContext, s3path *utils.S3Path) error {
 			p := putOpt
-			p.ScrollMax = ScrollMax
 			p.Recursive = opts.Global.Recursive
 			if cfg, ok := config.G.S[S3.Alias]; ok && cfg.DefaultMimeType != "" {
 				p.DefaultMimeType = cfg.DefaultMimeType

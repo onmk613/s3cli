@@ -15,14 +15,14 @@ import (
 
 // Mv 移动对象 = copy + delete
 // 处理同对象存储之内的移动
-func (c *S3Client) Mv(srcBucket, srcKey, destBucket, destKey string, recursive bool, scrollMax int) error {
+func (c *S3Client) Mv(srcBucket, srcKey, destBucket, destKey string, recursive bool) error {
 	ok, err := c.IsS3File(srcBucket, srcKey)
 	if err != nil {
 		return fmt.Errorf("check source: %s", FormatAPIError(err))
 	}
 	ok2, err2 := c.IsS3File(destBucket, destKey)
 	if err2 != nil {
-		myprint.Warnf("check destination: %s\n", FormatAPIError(err2))
+		myprint.PrintfYellow("check destination: %s\n", FormatAPIError(err2))
 	}
 
 	if !ok && !recursive {
@@ -33,21 +33,21 @@ func (c *S3Client) Mv(srcBucket, srcKey, destBucket, destKey string, recursive b
 		if err := c.mvObject(srcBucket, srcKey, destBucket, dst); err != nil {
 			return err
 		}
-		myprint.Successf("mv: %s -> %s\n", c.S3Path(srcBucket, srcKey), c.S3Path(destBucket, dst))
+		myprint.PrintfGreen("mv: %s -> %s\n", c.S3Path(srcBucket, srcKey), c.S3Path(destBucket, dst))
 		return nil
 	}
 	target := destKey
 	if strings.HasSuffix(destKey, "/") && !ok2 {
 		target = path.Join(destKey, path.Base(strings.TrimSuffix(srcKey, "/")))
 	}
-	return c.mvDirStreaming(srcBucket, srcKey, destBucket, target, scrollMax)
+	return c.mvDirStreaming(srcBucket, srcKey, destBucket, target)
 }
 
 func (c *S3Client) mvObject(srcBucket, srcKey, destBucket, destKey string) error {
 	if err := c.copyObject(srcBucket, srcKey, destBucket, destKey); err != nil {
 		return err
 	}
-	myprint.Info("removing source %s", c.S3Path(srcBucket, srcKey))
+
 	_, err := c.S3.DeleteObject(c.Ctx, &s3.DeleteObjectInput{
 		Bucket: aws.String(srcBucket), Key: aws.String(srcKey),
 	})
@@ -58,10 +58,9 @@ func (c *S3Client) mvObject(srcBucket, srcKey, destBucket, destKey string) error
 }
 
 // mvDirStreaming 流式列出并并发移动，带进度条。
-func (c *S3Client) mvDirStreaming(srcBucket, srcKey, destBucket, destKey string, scrollMax int) error {
+func (c *S3Client) mvDirStreaming(srcBucket, srcKey, destBucket, destKey string) error {
 	return RunStream(c.Ctx, StreamConfig{
 		Concurrency: 10,
-		ScrollMax:   scrollMax,
 		Label:       "mv",
 		Scan: func(ctx context.Context, jobs chan<- StreamJob) error {
 			paginator := s3.NewListObjectsV2Paginator(c.S3, &s3.ListObjectsV2Input{

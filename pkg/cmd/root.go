@@ -7,7 +7,6 @@ import (
 	"os/signal"
 	"sync"
 	"syscall"
-	"time"
 
 	"s3cli/pkg/config"
 	myprint "s3cli/pkg/fmtutil"
@@ -15,17 +14,11 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// ScrollMax 进度条滚动刷屏条数（0=全部显示）
-var ScrollMax = 5
 var (
 	Version   = "dev"
 	Commit    = "none"
 	BuildDate = "unknown"
 )
-
-// ── 命令自注册机制 ────────────────────────────────────────────────
-// 新增命令只需在对应文件中调用 cmd.Register，无需修改 root.go。
-// groupID 用于 cobra --help 分组显示，title 为分组标题。
 
 type cmdGroup struct {
 	ID       string
@@ -38,9 +31,6 @@ var (
 	registryMu  sync.Mutex
 )
 
-// Register 向指定分组注册一个命令工厂。
-// groupID 对应 cobra.Group.ID，title 为 --help 中显示的分组标题。
-// 应在各命令文件的 init() 中调用。
 func Register(groupID, title string, fn func() *cobra.Command) {
 	registryMu.Lock()
 	defer registryMu.Unlock()
@@ -53,14 +43,12 @@ func Register(groupID, title string, fn func() *cobra.Command) {
 	cmdRegistry = append(cmdRegistry, cmdGroup{ID: groupID, Title: title, Commands: []func() *cobra.Command{fn}})
 }
 
-// NewRootCmd 构造 s3cmd 根命令。
 func NewRootCmd() *cobra.Command {
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 
 	var (
 		noColor bool
 		toFile  string
-		timeout time.Duration
 	)
 
 	rootCmd := &cobra.Command{
@@ -81,30 +69,7 @@ func NewRootCmd() *cobra.Command {
 				return nil
 			}
 
-			// 若指定了 --timeout，为当前上下文添加超时
-			if timeout > 0 {
-				ctxWithTimeout, cancelTimeout := context.WithTimeout(ctx, timeout)
-				cmd.SetContext(ctxWithTimeout)
-				origCancel := cancel
-				cancel = func() {
-					cancelTimeout()
-					origCancel()
-				}
-			}
-
-			// ── 初始化输出（所有命令都需要，含 alias/completion）────────
-			if toFile != "" {
-				logFile, err := myprint.OpenLogFile(toFile)
-				if err != nil {
-					myprint.Printf("failed to open log file: %v", err)
-					myprint.NewFormat(os.Stdout, config.G.Debug, noColor)
-				} else {
-					w := myprint.NewMultiWriter(os.Stdout, logFile)
-					myprint.NewFormat(w, config.G.Debug, noColor)
-				}
-			} else {
-				myprint.NewFormat(os.Stdout, config.G.Debug, noColor)
-			}
+			myprint.SetNew(os.Stdout, noColor)
 
 			// ── alias / completion 是元命令，不要求配置文件 ──────────
 			for c := cmd; c != nil; c = c.Parent() {
@@ -113,9 +78,6 @@ func NewRootCmd() *cobra.Command {
 					return nil
 				}
 			}
-
-			// 运行时日志：记录执行命令和参数
-			myprint.Info("command: %s, args: %v", cmd.CommandPath(), args)
 
 			if err := config.LoadConf(); err != nil {
 				return err
@@ -134,8 +96,6 @@ func NewRootCmd() *cobra.Command {
 	pf.BoolVar(&config.G.Debug, "debug", false, "Print summarized S3 requests")
 	pf.BoolVar(&noColor, "no-color", false, "Disable color output")
 	pf.StringVar(&toFile, "logfile", "", "Write output to file instead of stdout")
-	pf.IntVar(&ScrollMax, "scroll", 5, "Progress scroll lines (0=show all, default 5)")
-	pf.DurationVar(&timeout, "timeout", 0, "Maximum execution time (e.g. 30s, 5m). 0 means no limit.")
 
 	// 从注册表添加所有子命令（带分组显示）
 	for _, g := range cmdRegistry {

@@ -1,27 +1,43 @@
-// Package fmtutil 提供格式化输出、彩色打印、进度条和日志功能。
 package fmtutil
 
 import (
 	"fmt"
 	"io"
 	"log"
-	"math"
 	"os"
 	"sync"
+
+	"golang.org/x/term"
 )
+
+// 传入一个 writer，和是否输出调试信息和是否禁用颜色用于初始化赋值
+// 直接调用 Printf/Print/Println 等函数即可
 
 var (
-	output io.Writer
-	outMu  sync.RWMutex // 保护 output / debug / noColor 并发访问
+	output io.Writer = os.Stdout
+	outMu  sync.RWMutex
 )
 
-func NewFormat(w io.Writer, d, c bool) {
-	debug.Store(d)
+func SetNew(w io.Writer, c bool) {
+	outMu.Lock()
+	defer outMu.Unlock()
+
 	output = w
 	noColor = c
+
+	// 不是*os.File的writer，禁用颜色
+	f, ok := w.(*os.File)
+	if !ok {
+		noColor = true
+		return
+	}
+
+	// 不是终端，禁用颜色
+	if !term.IsTerminal(int(f.Fd())) {
+		noColor = true
+	}
 }
 
-// GetOutput 返回当前输出 writer（供 ProgressTracker 等组件使用）。
 func GetOutput() io.Writer {
 	outMu.RLock()
 	defer outMu.RUnlock()
@@ -130,42 +146,6 @@ func PrintlnWhite(a ...any) {
 	printlnColor(output, White, a...)
 }
 
-// Successf 成功信息（加粗绿色）
-func Successf(format string, a ...any) {
-	outMu.RLock()
-	defer outMu.RUnlock()
-	printfColor(output, BoldGreen, format, a...)
-}
-func Successln(a ...any) {
-	outMu.RLock()
-	defer outMu.RUnlock()
-	printlnColor(output, BoldGreen, a...)
-}
-
-// Warnf 警告信息（加粗黄色）
-func Warnf(format string, a ...any) {
-	outMu.RLock()
-	defer outMu.RUnlock()
-	printfColor(output, BoldYellow, format, a...)
-}
-func Warnln(a ...any) {
-	outMu.RLock()
-	defer outMu.RUnlock()
-	printlnColor(output, BoldYellow, a...)
-}
-
-// Errorf 错误信息（加粗红色）
-func Errorf(format string, a ...any) {
-	outMu.RLock()
-	defer outMu.RUnlock()
-	printfColor(output, BoldRed, format, a...)
-}
-func Errorln(a ...any) {
-	outMu.RLock()
-	defer outMu.RUnlock()
-	printlnColor(output, BoldRed, a...)
-}
-
 // PrintlnDim 暗淡文字
 func PrintlnDim(a ...any) {
 	outMu.RLock()
@@ -198,41 +178,22 @@ func printfColor(w io.Writer, c Color, format string, a ...any) {
 	writeColored(w, c, fmt.Sprintf(format, a...))
 }
 
-// FormatBytes 格式化字节数为人类可读。
-func FormatBytes(bytes int64) string {
-	if bytes <= 0 {
-		return "0 B"
-	}
-	units := []string{"B", "KB", "MB", "GB", "TB", "PB", "EB"}
-	base := 1024.0
-	exp := int(math.Log(float64(bytes)) / math.Log(base))
-	if exp >= len(units) {
-		exp = len(units) - 1
-	}
-	value := float64(bytes) / math.Pow(base, float64(exp))
-	return fmt.Sprintf("%.2f %s", value, units[exp])
-}
-
-// writeColored 把字符串按颜色写入 w。
-// 若 w 是 multiWriter，则交给它对每个目标分别决定是否着色；
-// 否则按 detectColor 的结果对整段输出统一着色。
 func writeColored(w io.Writer, c Color, s string) {
-	if w == nil {
-		// 全局 output 尚未初始化（NewFormat 未调用），退化为 stderr，避免 nil 解引用 panic。
-		w = os.Stderr
-	}
-	if mw, ok := w.(*MultiWriter); ok {
-		if err := mw.writeColor(c, s); err != nil {
-			log.Fatal(err)
+	if noColor {
+		if _, err := w.Write([]byte(s)); err != nil {
+			log.Print(err)
 		}
 		return
 	}
-	if detectColor(w) && c != Reset {
+
+	colored := s
+	if c != Reset {
 		if code, ok := colorCodes[c]; ok {
-			s = code + s + resetCode
+			colored = code + s + resetCode
 		}
 	}
-	if _, err := w.Write([]byte(s)); err != nil {
-		log.Fatal(err)
+
+	if _, err := w.Write([]byte(colored)); err != nil {
+		log.Print(err)
 	}
 }

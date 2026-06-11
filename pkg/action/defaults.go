@@ -8,7 +8,6 @@ import "s3cli/pkg/config"
 const (
 	DefaultConcurrency       = config.DefaultConcurrency
 	DefaultPartSizeMB        = config.DefaultPartSizeMB
-	DefaultScrollMax         = config.DefaultScrollMax
 	DefaultMimeType          = config.DefaultMimeType
 	DefaultMirrorConcurrency = 8
 	DefaultDiffConcurrency   = 16

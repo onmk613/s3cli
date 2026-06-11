@@ -39,7 +39,6 @@ func (c *S3Client) Info(bucket, prefix string, outputJSON bool) error {
 // ─── 对象信息 ───────────────────────────────────────────────────────────────────
 
 func (c *S3Client) infoObject(opt infoOptions, bucket, key string) error {
-	myprint.Info("fetching object metadata for %s", c.S3Path(bucket, key))
 	head, err := c.S3.HeadObject(c.Ctx, &s3.HeadObjectInput{
 		Bucket: aws.String(bucket), Key: aws.String(key),
 	})
@@ -55,7 +54,7 @@ func (c *S3Client) infoObject(opt infoOptions, bucket, key string) error {
 		aclOwner = a.Owner
 		aclGrants = a.Grants
 	} else {
-		myprint.Warnf("Cannot read ACL for %s: %s", c.S3Path(bucket, key), FormatAPIError(err))
+		myprint.PrintfYellow("Cannot read ACL for %s: %s", c.S3Path(bucket, key), FormatAPIError(err))
 	}
 
 	// Tagging
@@ -67,7 +66,7 @@ func (c *S3Client) infoObject(opt infoOptions, bucket, key string) error {
 			tags[aws.ToString(kv.Key)] = aws.ToString(kv.Value)
 		}
 	} else {
-		myprint.Warnf("Cannot read tags for %s: %s", c.S3Path(bucket, key), FormatAPIError(err))
+		myprint.PrintfYellow("Cannot read tags for %s: %s", c.S3Path(bucket, key), FormatAPIError(err))
 	}
 
 	// JSON 输出
@@ -173,7 +172,6 @@ func (c *S3Client) infoObject(opt infoOptions, bucket, key string) error {
 // ─── 桶信息 ─────────────────────────────────────────────────────────────────────
 
 func (c *S3Client) infoBucket(opt infoOptions, bucket string) error {
-	myprint.Info("fetching bucket metadata for %s", c.S3Path(bucket, ""))
 	info := map[string]any{"Bucket": bucket}
 
 	// Location

@@ -29,7 +29,7 @@ func (c *S3Client) MpuList(bucket, prefix string) error {
 		}
 	}
 	if count == 0 {
-		myprint.Warnf("%s: no in-progress multipart uploads\n", c.S3Path(bucket, ""))
+		myprint.PrintfYellow("%s: no in-progress multipart uploads\n", c.S3Path(bucket, ""))
 	}
 	return nil
 }
@@ -61,8 +61,8 @@ func (c *S3Client) MpuAbort(bucket, prefix, uploadID string) error {
 		if err != nil {
 			return fmt.Errorf("abort mpu: %s", FormatAPIError(err))
 		}
-		myprint.Info("abort mpu: bucket=%s key=%s uploadId=%s", bucket, key, uploadID)
-		myprint.Successf("aborted: %s  uploadId=%s\n", c.S3Path(bucket, key), uploadID)
+
+		myprint.PrintfGreen("aborted: %s  uploadId=%s\n", c.S3Path(bucket, key), uploadID)
 		return nil
 	}
 
@@ -79,13 +79,13 @@ func (c *S3Client) MpuAbort(bucket, prefix, uploadID string) error {
 				Bucket: aws.String(bucket), Key: u.Key, UploadId: u.UploadId,
 			})
 			if err != nil {
-				myprint.Errorln(fmt.Sprintf("abort %s/%s: %s", bucket, aws.ToString(u.Key), FormatAPIError(err)))
+				myprint.PrintfRed(fmt.Sprintf("abort %s/%s: %s", bucket, aws.ToString(u.Key), FormatAPIError(err)))
 				continue
 			}
 			aborted++
 		}
 	}
-	myprint.Successf("aborted %d in-progress uploads under s3://%s/%s\n", aborted, bucket, prefix)
+	myprint.PrintfGreen("aborted %d in-progress uploads under s3://%s/%s\n", aborted, bucket, prefix)
 	return nil
 }
 
