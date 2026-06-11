@@ -1,6 +1,7 @@
 package config
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"strings"
@@ -24,12 +25,14 @@ func DelConf(sections []string) error {
 		return fmt.Errorf("stat config %s: %w", ConfigPath, err)
 	}
 
+	var errs []error
 	for _, section := range sections {
 		if err := delConf(section); err != nil {
-			fmt.Errorf(err.Error())
+			myprint.PrintfRed("%s\n", err)
+			errs = append(errs, err)
 		}
 	}
-	return nil
+	return errors.Join(errs...)
 }
 
 func delConf(section string) error {
