@@ -15,18 +15,18 @@ func (pt *ProgressTracker) AddTotal(n int64) {
 	pt.render()
 }
 
-// AddTotalSize 增加总任务大小
-func (pt *ProgressTracker) AddTotalSize(sz int64) {
-	pt.totalSz.Add(sz)
+// AddDone 增加已完成任务数
+func (pt *ProgressTracker) AddTotalDone(n int64) {
+	pt.done.Add(n)
 
 	pt.mu.Lock()
 	defer pt.mu.Unlock()
 	pt.render()
 }
 
-// AddDone 增加已完成任务数
-func (pt *ProgressTracker) AddTotalDone(n int64) {
-	pt.done.Add(n)
+// AddTotalSize 增加总任务大小
+func (pt *ProgressTracker) AddTotalSize(sz int64) {
+	pt.totalSz.Add(sz)
 
 	pt.mu.Lock()
 	defer pt.mu.Unlock()

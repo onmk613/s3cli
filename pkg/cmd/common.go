@@ -71,7 +71,7 @@ func newCmdContext(mode ...ArgParseMode) CmdContext {
 type GlobalOptions struct {
 	AllowAliasOnly bool   // 是否允许仅输入 alias
 	ListAll        bool   // ls --all
-	OutputJSON     bool   // info --json
+	Quiet          bool   //  --quiet
 	Force          bool   // rb --force
 	Recursive      bool   // get/put/rm/cp/mv -r
 	LocalFile      string // 本地文件路径 (get/put/cors/lifecycle/policy/event)

@@ -97,21 +97,114 @@ func ParseS3Path(s string) (*S3Path, error) {
 	}, nil
 }
 
-// 计算 cp/mv 操作的目标 key。
-// destPath 以 "/" 结尾 -> 目标视为目录，将 srcBase 拼接到 destKey 下。
-// destKey 为空 -> 直接用 srcBase。
-func ResolveDestKey(destPath, destKey, srcBase string) string {
-	if strings.HasSuffix(destPath, "/") {
-		if destKey == "" {
+// DestState 描述目标路径在对象存储中的当前状态。
+type DestState int
+
+const (
+	DestNone DestState = iota // 目标不存在
+	DestDir                   // 目标存在且为目录前缀
+	DestFile                  // 目标存在且为文件对象
+)
+
+// trimSlash 去掉首尾的 "/"。
+func trimSlash(s string) string {
+	return strings.Trim(s, "/")
+}
+
+// ResolveFileDest 计算「单个文件」源的目标对象 key（cp/mv 单文件场景，规则 5/6）。
+//
+//	destKey      目标 key（可能带尾部 "/"，用于表达 trailing 语义）
+//	destTrailing 目标是否以 "/" 结尾（语义上是目录）
+//	srcBase      源文件名（如 file1.txt）
+//
+// 规则：
+//   - 目标无尾斜杠            -> 直接写到 destKey（覆盖/重命名）；destKey 为空时退化为 srcBase
+//   - 目标有尾斜杠            -> destKey/srcBase
+func ResolveFileDest(destKey string, destTrailing bool, srcBase string) string {
+	dest := trimSlash(destKey)
+	if destTrailing {
+		if dest == "" {
 			return srcBase
 		}
-		if !strings.HasSuffix(destKey, "/") {
-			destKey += "/"
-		}
-		return destKey + srcBase
+		return dest + "/" + srcBase
 	}
-	if destKey == "" {
+	if dest == "" {
 		return srcBase
 	}
-	return destKey
+	return dest
+}
+
+// ResolveDirDestPrefix 计算「目录」源的目标前缀及是否需要追加相对路径
+// （cp/mv/mirror 目录场景，规则 1/2/3/4）。
+//
+//	srcKey       源 key（可能带尾部 "/"）
+//	srcTrailing  源是否以 "/" 结尾
+//	destKey      目标 key（可能带尾部 "/"）
+//	destTrailing 目标是否以 "/" 结尾
+//	state        目标当前状态（none/dir/file）
+//
+// 返回：
+//
+//	destPrefix   目标前缀（不含尾部 "/")
+//	appendRel    是否把源文件相对源前缀的路径拼接到 destPrefix 之下
+//
+// 规则矩阵（srcBase = 源最后一段，如 to1）：
+//
+//	目标 trailing:
+//	  源 trailing  -> (destKey,          appendRel=true)   规则2
+//	  源 no-slash  -> (destKey/srcBase,  appendRel=true)   规则4
+//	目标 no-slash:
+//	  state==file  -> (destKey,          appendRel=false)  规则1/3 (file)
+//	  state==dir   -> (destKey,          appendRel=true)   规则1/3 (dir)
+//	  state==none:
+//	    源 trailing -> (destKey,         appendRel=false)  规则1 (none)
+//	    源 no-slash -> (destKey,         appendRel=true)   规则3 (none)
+func ResolveDirDestPrefix(srcKey string, srcTrailing bool, destKey string, destTrailing bool, state DestState) (destPrefix string, appendRel bool) {
+	dest := trimSlash(destKey)
+	srcBase := lastSegment(srcKey)
+
+	if destTrailing {
+		if srcTrailing {
+			return dest, true
+		}
+		// 源无尾斜杠：把源目录名追加到目标前缀下
+		return joinNonEmpty(dest, srcBase), true
+	}
+
+	// 目标无尾斜杠
+	switch state {
+	case DestFile:
+		return dest, false
+	case DestDir:
+		return dest, true
+	default: // DestNone
+		if srcTrailing {
+			return dest, false
+		}
+		return dest, true
+	}
+}
+
+// lastSegment 返回路径最后一段（去尾斜杠后取 base）。
+func lastSegment(p string) string {
+	p = trimSlash(p)
+	if p == "" {
+		return ""
+	}
+	if i := strings.LastIndex(p, "/"); i >= 0 {
+		return p[i+1:]
+	}
+	return p
+}
+
+// joinNonEmpty 用 "/" 连接两段，忽略空串。
+func joinNonEmpty(a, b string) string {
+	switch {
+	case a == "":
+		return b
+	case b == "":
+		return a
+	default:
+		return a + "/" + b
+	}
 }

@@ -16,31 +16,35 @@ import (
 // Mv 移动对象 = copy + delete
 // 处理同对象存储之内的移动
 func (c *S3Client) Mv(srcBucket, srcKey, destBucket, destKey string, recursive bool) error {
-	ok, err := c.IsS3File(srcBucket, srcKey)
+	srcTrailing := strings.HasSuffix(srcKey, "/")
+	destTrailing := strings.HasSuffix(destKey, "/")
+
+	srcIsFile, err := c.IsS3File(srcBucket, srcKey)
 	if err != nil {
 		return fmt.Errorf("check source: %s", FormatAPIError(err))
 	}
-	ok2, err2 := c.IsS3File(destBucket, destKey)
-	if err2 != nil {
-		myprint.PrintfYellow("check destination: %s\n", FormatAPIError(err2))
-	}
-
-	if !ok && !recursive {
+	if !srcIsFile && !recursive {
 		return fmt.Errorf("source is a directory; use -r/--recursive")
 	}
-	if ok {
-		dst := utils.ResolveDestKey(destKey, destKey, path.Base(srcKey))
+
+	// 单文件源：规则 5/6
+	if srcIsFile {
+		dst := utils.ResolveFileDest(destKey, destTrailing, path.Base(strings.TrimSuffix(srcKey, "/")))
 		if err := c.mvObject(srcBucket, srcKey, destBucket, dst); err != nil {
 			return err
 		}
 		myprint.PrintfGreen("mv: %s -> %s\n", c.S3Path(srcBucket, srcKey), c.S3Path(destBucket, dst))
 		return nil
 	}
-	target := destKey
-	if strings.HasSuffix(destKey, "/") && !ok2 {
-		target = path.Join(destKey, path.Base(strings.TrimSuffix(srcKey, "/")))
+
+	// 目录源：规则 1/2/3/4
+	state, err := c.DestStateOf(destBucket, destKey)
+	if err != nil {
+		myprint.PrintfYellow("check destination (treated as not-exist): %s\n", FormatAPIError(err))
+		state = utils.DestNone
 	}
-	return c.mvDirStreaming(srcBucket, srcKey, destBucket, target)
+	destPrefix, appendRel := utils.ResolveDirDestPrefix(srcKey, srcTrailing, destKey, destTrailing, state)
+	return c.mvDirStreaming(srcBucket, srcKey, destBucket, destPrefix, appendRel)
 }
 
 func (c *S3Client) mvObject(srcBucket, srcKey, destBucket, destKey string) error {
@@ -58,7 +62,7 @@ func (c *S3Client) mvObject(srcBucket, srcKey, destBucket, destKey string) error
 }
 
 // mvDirStreaming 流式列出并并发移动，带进度条。
-func (c *S3Client) mvDirStreaming(srcBucket, srcKey, destBucket, destKey string) error {
+func (c *S3Client) mvDirStreaming(srcBucket, srcKey, destBucket, destPrefix string, appendRel bool) error {
 	return RunStream(c.Ctx, StreamConfig{
 		Concurrency: 10,
 		Label:       "mv",
@@ -73,10 +77,7 @@ func (c *S3Client) mvDirStreaming(srcBucket, srcKey, destBucket, destKey string)
 				}
 				for _, item := range page.Contents {
 					src := aws.ToString(item.Key)
-					dst, err := buildDestKey(src, srcKey, destKey)
-					if err != nil {
-						continue
-					}
+					dst := buildDestKey(src, srcKey, destPrefix, appendRel)
 					jobs <- StreamJob{
 						Src:  src,
 						Dst:  c.S3Path(destBucket, dst),
@@ -87,7 +88,7 @@ func (c *S3Client) mvDirStreaming(srcBucket, srcKey, destBucket, destKey string)
 			return nil
 		},
 		Work: func(ctx context.Context, job StreamJob) error {
-			dstKey, _ := buildDestKey(job.Src, srcKey, destKey)
+			dstKey := buildDestKey(job.Src, srcKey, destPrefix, appendRel)
 			if err := c.copyObject(srcBucket, job.Src, destBucket, dstKey); err != nil {
 				return err
 			}

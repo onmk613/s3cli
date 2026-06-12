@@ -10,15 +10,20 @@ import (
 	"syscall"
 	"time"
 
-	myprint "s3cli/pkg/fmtutil"
 	"s3cli/pkg/utils"
 
 	"golang.org/x/term"
 )
 
 const (
-	defaultBarWidth = 80
+	ansiReset       = "\033[0m"
+	defaultBarWidth = 80           // 默认进度条宽度
+	colorStats      = "\033[1;32m" // 统计信息颜色, 加粗绿色
+	colorError      = "\033[31m"   // 错误信息输出颜色, 红色
+	colorDone       = "\033[1;34m" // 完成信息颜色, 加粗蓝色
 )
+
+// var Quiet 	bool
 
 type ProgressTracker struct {
 	mu sync.Mutex
@@ -27,7 +32,6 @@ type ProgressTracker struct {
 	output io.Writer // 终端输出
 	width  int       // 终端宽度
 	fd     int       // 缓存文件描述符，避免重复 Fd() 调用
-	Color  string    // 颜色
 
 	// 统计数据（使用 atomic 类型，支持无锁并发读写）
 	total         atomic.Int64 // 总任务数
@@ -40,8 +44,9 @@ type ProgressTracker struct {
 	// 显示相关
 	label   string    // 进度条标签（如 "Uploading"）
 	startAt time.Time // 开始时间，用于计算速率和 ETA
-	style   Style     // 进度条填充物
-	noColor bool      // 禁用所有颜色（受 --no-color / 非终端影响）
+	style   *Style    // 进度条填充物
+	color   *Colors   // 统计信息颜色
+	noColor bool
 
 	sigCh chan os.Signal // 信号兜底：被中断时恢复光标
 }
@@ -53,7 +58,8 @@ func New() *ProgressTracker {
 		width:   defaultBarWidth,
 		startAt: time.Now(),
 		style:   DefaultStyle(),
-		noColor: myprint.NoColor(),
+		label:   "Uploading",
+		color:   DefaultColors(),
 	}
 	if tw, _, err := term.GetSize(pt.fd); err == nil && tw > 0 {
 		pt.width = tw
@@ -61,19 +67,30 @@ func New() *ProgressTracker {
 	return pt
 }
 
-// SetStyle 设置进度条样式（填充物 + 颜色）
-func (pt *ProgressTracker) SetStyle(s Style) {
+func (pt *ProgressTracker) SetStyle(s *Style) {
 	pt.mu.Lock()
 	defer pt.mu.Unlock()
-	pt.style = s.normalize()
+	if s.Filled == "" {
+		s.Filled = "="
+	}
+	if s.Empty == "" {
+		s.Empty = " "
+	}
+	pt.style = s
 }
 
 func (pt *ProgressTracker) SetLabel(label string) {
 	pt.label = label
 }
 
-func (pt *ProgressTracker) SetColor(color string) {
-	pt.Color = color
+func (pt *ProgressTracker) SetColor(color *Colors) {
+	pt.mu.Lock()
+	defer pt.mu.Unlock()
+	if color == nil {
+		pt.noColor = true
+		return
+	}
+	pt.color = color
 }
 
 func (pt *ProgressTracker) SetWriter(w io.Writer) error {
@@ -106,7 +123,6 @@ func (pt *ProgressTracker) Start() {
 		if _, ok := <-ch; !ok {
 			return
 		}
-		// 被中断：清除进度条行，避免残留半截彩色进度条。
 		pt.mu.Lock()
 		fmt.Fprint(pt.output, "\r\033[K")
 		pt.mu.Unlock()
@@ -142,6 +158,10 @@ func (pt *ProgressTracker) Stop() {
 	// 构建总结信息
 	summary := fmt.Sprintf("%s: %d/%d total (%s/%s) in %s (%s)",
 		pt.label, d, t, utils.FormatBytes(dsz), utils.FormatBytes(tsz), elapsed, rate)
+
+	if !pt.noColor && pt.color.Done != "" {
+		summary = pt.color.Done + summary + ansiReset
+	}
 	if f > 0 {
 		summary += fmt.Sprintf(", %d failed", f)
 	}
@@ -152,6 +172,10 @@ func (pt *ProgressTracker) Stop() {
 
 	// 打印失败任务列表
 	for _, s := range pt.failedStrings {
-		fmt.Fprintln(pt.output, "  failed:", s)
+		str := fmt.Sprintf("  failed: %s", s)
+		if !pt.noColor && pt.color.Error != "" {
+			str = pt.color.Error + str + ansiReset
+		}
+		fmt.Fprintln(pt.output, str)
 	}
 }

@@ -14,34 +14,39 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 )
 
-// Cp 复制对象 / 目录
 // 处理同对象存储之内的复制
 func (c *S3Client) CopyObjects(srcBucket, srcKey, destBucket, destKey string, recursive bool) error {
-	ok, err := c.IsS3File(srcBucket, srcKey)
+	srcTrailing := strings.HasSuffix(srcKey, "/")
+	destTrailing := strings.HasSuffix(destKey, "/")
+
+	// 源 key 是文件还是目录
+	srcIsFile, err := c.IsS3File(srcBucket, srcKey)
 	if err != nil {
 		return fmt.Errorf("check source: %s", FormatAPIError(err))
 	}
-	ok2, err2 := c.IsS3File(destBucket, destKey)
-	if err2 != nil {
-		myprint.PrintfYellow("check destination: %s\n", FormatAPIError(err2))
-	}
-
-	if !ok && !recursive {
+	// 为目录但是没有设置 -r
+	if !srcIsFile && !recursive {
 		return fmt.Errorf("source is a directory; use -r/--recursive")
 	}
-	if ok {
-		dst := utils.ResolveDestKey(destKey, destKey, path.Base(srcKey))
+
+	// 单文件源
+	if srcIsFile {
+		dst := utils.ResolveFileDest(destKey, destTrailing, path.Base(strings.TrimSuffix(srcKey, "/")))
 		if err := c.copyObject(srcBucket, srcKey, destBucket, dst); err != nil {
 			return err
 		}
 		myprint.PrintfGreen("cp: %s -> %s\n", c.S3Path(srcBucket, srcKey), c.S3Path(destBucket, dst))
 		return nil
 	}
-	target := destKey
-	if strings.HasSuffix(destKey, "/") && !ok2 {
-		target = path.Join(destKey, path.Base(strings.TrimSuffix(srcKey, "/")))
+
+	// 目录源
+	state, err := c.DestStateOf(destBucket, destKey)
+	if err != nil {
+		myprint.PrintfYellow("check destination (treated as not-exist): %s\n", FormatAPIError(err))
+		state = utils.DestNone
 	}
-	return c.copyDirStreaming(srcBucket, srcKey, destBucket, target)
+	destPrefix, appendRel := utils.ResolveDirDestPrefix(srcKey, srcTrailing, destKey, destTrailing, state)
+	return c.copyDirStreaming(srcBucket, srcKey, destBucket, destPrefix, appendRel)
 }
 
 func (c *S3Client) copyObject(srcBucket, srcKey, destBucket, destKey string) error {
@@ -57,7 +62,9 @@ func (c *S3Client) copyObject(srcBucket, srcKey, destBucket, destKey string) err
 }
 
 // copyDirStreaming 流式列出并并发复制，带进度条。
-func (c *S3Client) copyDirStreaming(srcBucket, srcKey, destBucket, destKey string) error {
+// destPrefix 为目标前缀；appendRel=true 时把每个源对象相对源前缀的路径拼到 destPrefix 之下，
+// 否则所有源对象都写到 destPrefix（与规则 1/3 的 trailing-none/file 语义一致）。
+func (c *S3Client) copyDirStreaming(srcBucket, srcKey, destBucket, destPrefix string, appendRel bool) error {
 	return RunStream(c.Ctx, StreamConfig{
 		Concurrency: 10,
 		Label:       "cp",
@@ -72,10 +79,7 @@ func (c *S3Client) copyDirStreaming(srcBucket, srcKey, destBucket, destKey strin
 				}
 				for _, item := range page.Contents {
 					src := aws.ToString(item.Key)
-					dst, err := buildDestKey(src, srcKey, destKey)
-					if err != nil {
-						continue
-					}
+					dst := buildDestKey(src, srcKey, destPrefix, appendRel)
 					jobs <- StreamJob{
 						Src:  src,
 						Dst:  c.S3Path(destBucket, dst),
@@ -86,26 +90,36 @@ func (c *S3Client) copyDirStreaming(srcBucket, srcKey, destBucket, destKey strin
 			return nil
 		},
 		Work: func(ctx context.Context, job StreamJob) error {
-			dstKey, _ := buildDestKey(job.Src, srcKey, destKey)
+			dstKey := buildDestKey(job.Src, srcKey, destPrefix, appendRel)
 			return c.copyObject(srcBucket, job.Src, destBucket, dstKey)
 		},
 	})
 }
 
-func buildDestKey(srcKey, srcPrefix, destPrefix string) (string, error) {
+// buildDestKey 计算目录复制时单个源对象的目标 key。
+//
+//	srcKey      源对象绝对 key
+//	srcPrefix   源前缀（可带尾斜杠）
+//	destPrefix  目标前缀（不含尾斜杠）
+//	appendRel   是否把源对象相对源前缀的路径拼到目标前缀下
+//
+// appendRel=false 时所有对象都写到 destPrefix 自身。
+func buildDestKey(srcKey, srcPrefix, destPrefix string, appendRel bool) string {
 	srcKey = strings.TrimPrefix(srcKey, "/")
-	srcPrefix = strings.TrimPrefix(srcPrefix, "/")
-	destPrefix = strings.TrimPrefix(destPrefix, "/")
-	if srcPrefix == "" {
-		return path.Join(destPrefix, srcKey), nil
+	srcPrefix = strings.Trim(srcPrefix, "/")
+	destPrefix = strings.Trim(destPrefix, "/")
+
+	if !appendRel {
+		return destPrefix
 	}
-	re, err := regexp.Compile("^" + regexp.QuoteMeta(srcPrefix) + "/?")
-	if err != nil {
-		return "", fmt.Errorf("invalid prefix pattern: %w", err)
+
+	rel := srcKey
+	if srcPrefix != "" {
+		re := regexp.MustCompile("^" + regexp.QuoteMeta(srcPrefix) + "/?")
+		rel = re.ReplaceAllString(srcKey, "")
 	}
-	rel := re.ReplaceAllString(srcKey, "")
 	if rel == "" {
-		return destPrefix, nil
+		return destPrefix
 	}
-	return path.Join(destPrefix, rel), nil
+	return path.Join(destPrefix, rel)
 }

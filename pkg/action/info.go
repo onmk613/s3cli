@@ -157,7 +157,7 @@ func (c *S3Client) infoBucket(bucket string) error {
 		return fmt.Errorf("marshal info: %w", err)
 	}
 
-	myprint.PrintfBoldBlue("# % %s info(bucket):\n", c.Alias, bucket)
+	myprint.PrintfBoldBlue("# %s %s info(bucket):\n", c.Alias, bucket)
 	myprint.PrintlnGreen(string(b))
 	return nil
 }

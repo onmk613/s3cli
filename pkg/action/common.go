@@ -4,6 +4,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
+
+	"s3cli/pkg/utils"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	awshttp "github.com/aws/aws-sdk-go-v2/aws/transport/http"
@@ -101,6 +104,64 @@ func (c *S3Client) checkIfDirectory(bucket, key string) (bool, error) {
 		return false, nil
 	}
 	return false, fmt.Errorf("path '%s' does not exist in bucket '%s'", key, bucket)
+}
+
+// DestStateOf 判断目标 key 当前的状态：文件 / 目录 / 不存在。
+// 用于 cp/mv/mirror 计算目标对象 key。探测失败时返回 (DestNone, err)。
+func (c *S3Client) DestStateOf(bucket, key string) (utils.DestState, error) {
+	// 空 key 表示 bucket 本身，视为目录
+	if strings.TrimSuffix(key, "/") == "" {
+		return utils.DestDir, nil
+	}
+
+	probe := strings.TrimSuffix(key, "/")
+
+	// 1) HeadObject 命中即为文件
+	_, err := c.S3.HeadObject(c.Ctx, &s3.HeadObjectInput{
+		Bucket: aws.String(bucket), Key: aws.String(probe),
+	})
+	if err == nil {
+		return utils.DestFile, nil
+	}
+
+	// 仅对 404 继续目录探测；403 等直接返回错误
+	var respErr *awshttp.ResponseError
+	if errors.As(err, &respErr) {
+		if respErr.HTTPStatusCode() == 403 {
+			return utils.DestNone, fmt.Errorf("access denied to bucket '%s'", bucket)
+		}
+		if respErr.HTTPStatusCode() != 404 {
+			return utils.DestNone, fmt.Errorf("S3 error: %w", err)
+		}
+	} else {
+		var apiErr smithy.APIError
+		if errors.As(err, &apiErr) {
+			switch apiErr.ErrorCode() {
+			case "NotFound", "NoSuchKey", "404":
+				// 继续探测目录
+			case "Forbidden", "AccessDenied", "403":
+				return utils.DestNone, fmt.Errorf("access denied to bucket '%s'", bucket)
+			default:
+				return utils.DestNone, fmt.Errorf("S3 error: %w", err)
+			}
+		} else {
+			return utils.DestNone, fmt.Errorf("S3 error: %w", err)
+		}
+	}
+
+	// 2) 目录探测：prefix = key + "/"
+	listResp, err := c.S3.ListObjectsV2(c.Ctx, &s3.ListObjectsV2Input{
+		Bucket: aws.String(bucket), Prefix: aws.String(probe + "/"),
+		Delimiter: aws.String("/"), MaxKeys: aws.Int32(1),
+	})
+	if err != nil {
+		return utils.DestNone, err
+	}
+	if len(listResp.CommonPrefixes) > 0 || len(listResp.Contents) > 0 {
+		return utils.DestDir, nil
+	}
+
+	return utils.DestNone, nil
 }
 
 type Cred struct {

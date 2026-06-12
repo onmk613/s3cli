@@ -21,26 +21,17 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 )
 
-// =============== 类型定义 ===============
-
-// DiffEndpoint 描述 diff 的一端，可以是 s3 或本地。
 type DiffEndpoint struct {
-	// IsS3 为 true 表示 S3 端；否则表示本地路径
-	IsS3 bool
-
-	// S3 端字段
+	IsS3          bool
 	S3            *s3.Client
 	Ctx           context.Context
 	Alias         string
 	Bucket        string
-	Key           string // 可为空；以 "/" 结尾表示"目录"
+	Key           string
 	TrailingSlash bool
-
-	// 本地端字段
-	Path string // 本地绝对/相对路径
+	Path          string
 }
 
-// String 用于打印，给用户看的"路径"表示。
 func (e *DiffEndpoint) String() string {
 	if e.IsS3 {
 		return S3PathStatic(e.Alias, e.Bucket, e.Key)
@@ -48,7 +39,6 @@ func (e *DiffEndpoint) String() string {
 	return e.Path
 }
 
-// DiffMode 决定如何比较“同名”文件的内容。
 type DiffMode string
 
 const (
@@ -69,10 +59,7 @@ type DiffOptions struct {
 	Recursive   bool // 目录模式是否递归（默认 true）
 	Concurrency int  // 比对内容时的并发（仅目录模式生效）
 	BriefOnly   bool // 只打印差异，不打印 "Identical" 列表
-	ScrollMax   int  // 进度条滚动刷屏条数，0=全部显示
 }
-
-// =============== 文件元信息抽象 ===============
 
 type fileEntry struct {
 	Path string // 在该端的“相对路径”（目录模式下相对于目录根）
@@ -91,7 +78,7 @@ type fileEntry struct {
 //   - 否则视为本地路径（不要求文件存在；后续会单独检查）
 //
 // 调用方需提供一个判断 alias 是否存在的回调（保持 action 包不依赖 config）。
-func ParseDiffArg(arg string, aliasExists func(string) bool, makeClient func(*utils.S3Path) (*s3.Client, error)) (*DiffEndpoint, error) {
+func ParseDiffArg(ctx context.Context, arg string, aliasExists func(string) bool, makeClient func(*utils.S3Path) (*s3.Client, error)) (*DiffEndpoint, error) {
 	// 先尝试 ParseS3Path
 	if colon := strings.Index(arg, ":"); colon > 0 {
 		alias := arg[:colon]
@@ -110,6 +97,7 @@ func ParseDiffArg(arg string, aliasExists func(string) bool, makeClient func(*ut
 			return &DiffEndpoint{
 				IsS3:          true,
 				S3:            cli,
+				Ctx:           ctx,
 				Alias:         sp.Alias,
 				Bucket:        sp.Bucket,
 				Key:           sp.Key,
@@ -125,8 +113,6 @@ func ParseDiffArg(arg string, aliasExists func(string) bool, makeClient func(*ut
 	}
 	return &DiffEndpoint{IsS3: false, Path: abs}, nil
 }
-
-// =============== Diff 主流程 ===============
 
 // Diff 比较两端。自动识别“文件 vs 目录”。
 func Diff(opt DiffOptions) error {
@@ -190,7 +176,11 @@ func endpointIsDir(e *DiffEndpoint) (bool, error) {
 		return true, nil
 	}
 	// 先 head，失败再 list
-	s3client := &S3Client{S3: e.S3, Ctx: e.Ctx}
+	ctx := e.Ctx
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	s3client := &S3Client{S3: e.S3, Ctx: ctx}
 	isFile, err := s3client.IsS3File(e.Bucket, e.Key)
 	if err == nil {
 		return !isFile, nil
