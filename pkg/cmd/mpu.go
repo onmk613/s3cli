@@ -43,7 +43,7 @@ func newMpuAbortCmd() *cobra.Command {
 			return S3.MpuAbort(s3path.Bucket, s3path.Key, uploadID)
 		}), &opts),
 	}
-	
+
 	cmd.Flags().StringVar(&uploadID, "upload-id", "", "Specific UploadId to abort. If the object key is omitted, it is auto-resolved by listing uploads under the prefix")
 	return cmd
 }

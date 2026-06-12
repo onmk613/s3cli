@@ -1,13 +1,13 @@
 package httptracer
 
 const (
-	DefaultMaxLogLen   = 64 << 10
+	DefaultMaxLogLen = 64 << 10
 )
 
 // Options 配置调试传输层的行为
 type Options struct {
-	MaxLogLen int
-	Tag string
+	MaxLogLen       int
+	Tag             string
 	DumpRequestBody bool
 }
 

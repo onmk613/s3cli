@@ -85,6 +85,11 @@ func RunStream(ctx context.Context, cfg StreamConfig) error {
 					}
 					pt.AddFailed(fmt.Sprintf("✗ %s → %s (%s): %v", j.Src, j.Dst, utils.FormatBytes(j.Size), err))
 				}
+				// } else {
+				// 	// 静默模式：流式输出每个成功任务的明文（原文）。
+				// 	// 非静默模式由进度条提供可视反馈，Logf 为空操作。
+				// 	pt.Logf("%s: %s -> %s", cfg.Label, j.Src, j.Dst)
+				// }
 				pt.AddTotalDone(1)
 				pt.AddTotalSizeDone(j.Size)
 			}

@@ -50,11 +50,11 @@ func NewDiffCmd() *cobra.Command {
 				return cli, err
 			}
 
-			a, err := action.ParseDiffArg(args[0], aliasExists, makeClient)
+			a, err := action.ParseDiffArg(cmd.Context(), args[0], aliasExists, makeClient)
 			if err != nil {
 				return fmt.Errorf("parse %q: %w", args[0], err)
 			}
-			b, err := action.ParseDiffArg(args[1], aliasExists, makeClient)
+			b, err := action.ParseDiffArg(cmd.Context(), args[1], aliasExists, makeClient)
 			if err != nil {
 				return fmt.Errorf("parse %q: %w", args[1], err)
 			}

@@ -43,6 +43,6 @@ func NewRbCmd() *cobra.Command {
 	}
 
 	cmd.Flags().BoolVar(&opts.Global.Force, "force", false, "Force remove bucket even if not empty")
-	
+
 	return cmd
 }

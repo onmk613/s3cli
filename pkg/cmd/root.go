@@ -10,6 +10,7 @@ import (
 
 	"s3cli/pkg/config"
 	myprint "s3cli/pkg/fmtutil"
+	// "s3cli/pkg/progress"
 
 	"github.com/spf13/cobra"
 )
@@ -94,6 +95,7 @@ func NewRootCmd() {
 	pf.StringVarP(&config.ConfigPath, "conf", "f", "", "Path to configuration file (default ~/.s3cli)")
 	pf.BoolVar(&config.G.Debug, "debug", false, "Print summarized S3 requests")
 	pf.BoolVar(&noColor, "no-color", false, "Disable color output")
+	// pf.BoolVarP(&progress.Quiet, "quiet", "q", false, "Disable progress bar; stream plain text output instead")
 
 	// 从注册表添加所有子命令（带分组显示）
 	for _, g := range cmdRegistry {

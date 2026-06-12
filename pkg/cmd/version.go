@@ -14,7 +14,7 @@ func NewVersionCmd() *cobra.Command {
 		Use:   "version",
 		Short: "Manage bucket versioning",
 	}
-	
+
 	versionCmd.AddCommand(NewVersionEnableCmd(), NewVersionSuspendCmd(), NewVersionInfoCmd())
 	return versionCmd
 }

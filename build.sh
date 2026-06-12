@@ -51,4 +51,3 @@ else
 fi
 
 rm -rf vendor
-

@@ -118,6 +118,9 @@ my-s3                                      -  DIR   my-bucket/logs/
 # 查看磁盘占用
 s3cli du my-s3:my-bucket/logs/
 
+# 按 4K 块向上取整估算实际磁盘占用（适配最小分配块）
+s3cli du -B 4K my-s3:my-bucket/logs/
+
 # 查看对象元信息（JSON 格式）
 s3cli info my-s3:my-bucket/report.pdf --json
 
@@ -336,44 +339,6 @@ multipart_chunk_size_mb = 15            # 分片上传块大小（MB）
 | 路径风格 | `path` | `host_base/bucket/key` |
 | 虚拟主机风格 | `dns` | `bucket.host_base/key` |
 | 自定义模板 | `https://www.%(bucket).example.com` | `https://www.mydata.example.com/key` |
-
-## 项目结构
-
-```
-s3cli/
-├── cmd/s3cli/main.go          # 程序入口
-├── pkg/
-│   ├── action/                # 业务逻辑层（S3 操作）
-│   │   ├── common.go          # S3Client 结构体、S3Path 路径格式化
-│   │   ├── interface.go       # S3 操作接口定义（支持 mock 测试）
-│   │   ├── stream.go          # 通用流式任务框架（生产者-消费者模式）
-│   │   ├── object-*.go        # 对象操作（get/put/list/cat/pipe 等）
-│   │   ├── bucket-*.go        # 桶操作（创建/删除/CORS 等）
-│   │   ├── diff.go            # 文件对比引擎
-│   │   └── utils.go           # API 错误格式化、MIME 类型注册
-│   ├── client/                # S3 客户端工厂 + 缓存
-│   │   ├── client.go          # NewS3Client 构造函数
-│   │   ├── lookup-path.go     # 自定义桶端点解析器
-│   │   └── utils.go           # 路径解析 + 客户端缓存
-│   ├── cmd/                   # CLI 命令定义（cobra 框架）
-│   │   ├── root.go            # 根命令 + 命令自注册机制
-│   │   ├── common.go          # NewRunE / NewRunETwoPaths + 共享类型
-│   │   └── *.go               # 各命令文件
-│   ├── config/                # 配置加载
-│   │   ├── config.go          # 配置结构体 + 桶寻址解析
-│   │   └── loadconf.go        # INI 文件解析
-│   ├── fmtutil/               # 输出格式化
-│   │   ├── color.go           # ANSI 颜色 + 多目标输出
-│   │   ├── print.go           # Printf/Println 封装
-│   │   ├── progress.go        # 终端进度条
-│   │   └── loger.go           # 调试/警告/错误日志
-│   ├── httptracer/            # HTTP 请求/响应调试输出
-│   ├── kvcache/               # 泛型内存缓存
-│   └── utils/                 # 路径解析、文件读写工具
-├── s3cli.ini                  # 示例配置文件
-├── build.sh                   # 跨平台编译脚本
-└── go.mod                     # Go 模块定义
-```
 
 ## 开发指南：新增命令
 

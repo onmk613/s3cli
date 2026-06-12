@@ -10,6 +10,7 @@ import (
 
 	myprint "s3cli/pkg/fmtutil"
 	"s3cli/pkg/progress"
+	"s3cli/pkg/utils"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
@@ -373,25 +374,50 @@ func Mirror(cfg MirrorOptions) error {
 	srcPrefix := cfg.Src.ObjectKey
 	tgtPrefix := cfg.Tgt.ObjectKey
 
+	// 套用与 cp/mv 一致的目标前缀解析规则（mirror 源恒为目录树, appendRel 恒为 true,
+	// 仅前缀可能因 trailing 语义而追加源目录名 —— 见规则 4）。
+	{
+		state, err := tgtClient.DestStateOf(tgtBucket, tgtPrefix)
+		if err != nil {
+			state = utils.DestNone
+		}
+		effPrefix, _ := utils.ResolveDirDestPrefix(
+			srcPrefix, cfg.Src.TrailingSlash,
+			tgtPrefix, cfg.Tgt.TrailingSlash,
+			state,
+		)
+		tgtPrefix = effPrefix
+	}
+
 	// 防止同 client + 同 bucket + 同 prefix 的自映射
 	if sameEndpoint(cfg.Src, cfg.Tgt) && srcBucket == tgtBucket && srcPrefix == tgtPrefix {
 		return fmt.Errorf("mirror: source and target are the same location")
 	}
 
+	verbose := !myprint.Quiet()
+
 	// 1. 列源 / 目标
-	myprint.Printf("Listing source %s ...\n", srcClient.S3Path(srcBucket, srcPrefix))
+	if verbose {
+		myprint.Printf("Listing source %s ...\n", srcClient.S3Path(srcBucket, srcPrefix))
+	}
 	srcRaw, err := listAllObjects(srcClient, srcBucket, srcPrefix)
 	if err != nil {
 		return err
 	}
-	myprint.Printf("  source : %d objects\n", len(srcRaw))
+	if verbose {
+		myprint.Printf("  source : %d objects\n", len(srcRaw))
+	}
 
-	myprint.Printf("Listing target %s ...\n", tgtClient.S3Path(tgtBucket, tgtPrefix))
+	if verbose {
+		myprint.Printf("Listing target %s ...\n", tgtClient.S3Path(tgtBucket, tgtPrefix))
+	}
 	tgtRaw, err := listAllObjects(tgtClient, tgtBucket, tgtPrefix)
 	if err != nil {
 		return err
 	}
-	myprint.Printf("  target : %d objects\n", len(tgtRaw))
+	if verbose {
+		myprint.Printf("  target : %d objects\n", len(tgtRaw))
+	}
 
 	// 2. 转相对路径
 	src := make(map[string]ObjectInfo, len(srcRaw))
@@ -405,7 +431,9 @@ func Mirror(cfg MirrorOptions) error {
 
 	// 3. 差异
 	diff := calcDiff(src, tgt, cfg.Overwrite)
-	myprint.Printf("Plan: %d to copy, %d to delete\n", len(diff.ToCopy), len(diff.ToDelete))
+	if verbose {
+		myprint.Printf("Plan: %d to copy, %d to delete\n", len(diff.ToCopy), len(diff.ToDelete))
+	}
 	if cfg.DryRun {
 		for _, k := range diff.ToCopy {
 			myprint.Printf("  COPY   %s -> %s\n",
@@ -422,10 +450,12 @@ func Mirror(cfg MirrorOptions) error {
 
 	// 4. 并发复制（带进度条）
 	sameEP := sameEndpoint(cfg.Src, cfg.Tgt)
-	if sameEP {
-		myprint.Println("Strategy: server-side CopyObject (same endpoint)")
-	} else {
-		myprint.Println("Strategy: download + upload (cross endpoint)")
+	if verbose {
+		if sameEP {
+			myprint.Println("Strategy: server-side CopyObject (same endpoint)")
+		} else {
+			myprint.Println("Strategy: download + upload (cross endpoint)")
+		}
 	}
 
 	pt := progress.New()
@@ -473,12 +503,12 @@ func Mirror(cfg MirrorOptions) error {
 				msg := fmt.Sprintf("✗ %s → %s", srcClient.S3Path(srcBucket, srcKey), tgtClient.S3Path(tgtBucket, tgtKey))
 				failed.Add(1)
 				pt.AddFailed(msg)
-				// pt.AddDone(1, 0, fmt.Sprintf("✗ %s → %s", srcClient.S3Path(srcBucket, srcKey), tgtClient.S3Path(tgtBucket, tgtKey)))
 				pt.AddTotalDone(1)
 				return
 			}
 			copied.Add(1)
-			// pt.AddDone(1, 0, fmt.Sprintf("✓ %s → %s", srcClient.S3Path(srcBucket, srcKey), tgtClient.S3Path(tgtBucket, tgtKey)))
+			// // 静默模式：流式输出每个成功任务的明文（原文）。
+			// pt.Logf("mirror: %s -> %s", srcClient.S3Path(srcBucket, srcKey), tgtClient.S3Path(tgtBucket, tgtKey))
 			pt.AddTotalDone(1)
 		}(rel)
 	}

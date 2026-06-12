@@ -1,6 +1,8 @@
 package cmd
 
 import (
+	"fmt"
+
 	"s3cli/pkg/action"
 	"s3cli/pkg/utils"
 
@@ -31,14 +33,29 @@ func NewLsCmd() *cobra.Command {
 }
 
 func NewDuCmd() *cobra.Command {
-	return &cobra.Command{
+	var blockSizeStr string
+	opts := newCmdContext()
+	cmd := &cobra.Command{
 		Use:   "du [alias:bucket/path] ...",
 		Short: "Show disk usage of buckets or paths",
 		Args:  cobra.MinimumNArgs(1),
-		RunE: NewRunE(ActionFunc(func(S3 action.S3Client, opts *CmdContext, s3path *utils.S3Path) error {
-			return S3.DuObject(s3path.Bucket, s3path.Key)
-		}), nil),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			var duOpt action.DuOptions
+			if blockSizeStr != "" {
+				bs, err := utils.ParseBytes(blockSizeStr)
+				if err != nil {
+					return fmt.Errorf("--block-size: %w", err)
+				}
+				duOpt.BlockSize = bs
+			}
+			run := NewRunE(ActionFunc(func(S3 action.S3Client, opts *CmdContext, s3path *utils.S3Path) error {
+				return S3.DuObject(duOpt, s3path.Bucket, s3path.Key)
+			}), &opts)
+			return run(cmd, args)
+		},
 	}
+	cmd.Flags().StringVarP(&blockSizeStr, "block-size", "B", "", "Round each object size up to this block size (e.g. 4K, 4096) to estimate on-disk usage")
+	return cmd
 }
 
 func NewInfoCmd() *cobra.Command {
