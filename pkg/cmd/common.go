@@ -12,6 +12,10 @@ import (
 	"github.com/spf13/cobra"
 )
 
+// errAlreadyDisplayed 是一个哨兵错误：表示错误已通过 displayError 输出给用户，
+// 上层（NewRootCmd）不应再次打印，只需据此返回非零退出码。
+var errAlreadyDisplayed = errors.New("error already displayed")
+
 // isCanceled 判断错误是否由用户主动取消（Ctrl+C）引起。
 func isCanceled(ctx context.Context) bool {
 	return errors.Is(ctx.Err(), context.Canceled)
@@ -28,7 +32,7 @@ func formatUserError(err error) string {
 
 // displayError 向用户输出错误（统一入口）。
 func displayError(err error) {
-	myprint.PrintlnRed(formatUserError(err))
+	myprint.PrintlnBoldRed(formatUserError(err))
 }
 
 type ActionFunc func(S3 action.S3Client, opts *CmdContext, s3path *utils.S3Path) error
@@ -78,7 +82,6 @@ type GlobalOptions struct {
 }
 
 // NewRunE 为"单 S3 路径"命令构造 cobra RunE。
-// fn 通过闭包捕获命令自身选项。
 func NewRunE(fn ActionFunc, opts *CmdContext) func(cmd *cobra.Command, args []string) error {
 	if opts == nil {
 		opts = &CmdContext{}
@@ -129,7 +132,7 @@ func NewRunE(fn ActionFunc, opts *CmdContext) func(cmd *cobra.Command, args []st
 			}
 		}
 		if len(errs) > 0 {
-			return errors.Join(errs...)
+			return errAlreadyDisplayed
 		}
 		return nil
 	}
@@ -152,7 +155,7 @@ func NewRunETwoPaths(fn TwoS3ActionFunc, opts *CmdContext) func(cmd *cobra.Comma
 				return nil
 			}
 			displayError(err)
-			return err
+			return errAlreadyDisplayed
 		}
 		dstClient, dstPath, err := client.ParsePathAndNewClient(cmd.Context(), args[1])
 		if err != nil {
@@ -160,7 +163,7 @@ func NewRunETwoPaths(fn TwoS3ActionFunc, opts *CmdContext) func(cmd *cobra.Comma
 				return nil
 			}
 			displayError(err)
-			return err
+			return errAlreadyDisplayed
 		}
 		srcS3 := action.S3Client{S3: srcClient, Alias: srcPath.Alias, Ctx: cmd.Context()}
 		dstS3 := action.S3Client{S3: dstClient, Alias: dstPath.Alias, Ctx: cmd.Context()}
@@ -169,7 +172,7 @@ func NewRunETwoPaths(fn TwoS3ActionFunc, opts *CmdContext) func(cmd *cobra.Comma
 				return nil
 			}
 			displayError(err)
-			return err
+			return errAlreadyDisplayed
 		}
 		return nil
 	}

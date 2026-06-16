@@ -62,6 +62,7 @@ func NewPutCmd() *cobra.Command {
 }
 
 func NewRmCmd() *cobra.Command {
+	var delOpt action.DelOptions
 	opts := newCmdContext()
 	cmd := &cobra.Command{
 		Use:     "rm [s3://bucket/path] ...",
@@ -69,10 +70,11 @@ func NewRmCmd() *cobra.Command {
 		Short:   "Delete object(s) from S3",
 		Args:    cobra.MinimumNArgs(1),
 		RunE: NewRunE(ActionFunc(func(S3 action.S3Client, opts *CmdContext, s3path *utils.S3Path) error {
-			return S3.DeleteObjects(s3path.Bucket, s3path.Key, opts.Global.Recursive)
+			return S3.DeleteObjects(s3path.Bucket, s3path.Key, delOpt)
 		}), &opts),
 	}
-	cmd.Flags().BoolVarP(&opts.Global.Recursive, "recursive", "r", false, "Delete recursively")
+	cmd.Flags().BoolVarP(&delOpt.Recursive, "recursive", "r", false, "Delete recursively")
+	cmd.Flags().StringVarP(&delOpt.VersionID, "version-id", "v", "", "Delete a specific version of the object")
 	return cmd
 }
 

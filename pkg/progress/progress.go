@@ -21,9 +21,8 @@ const (
 	colorStats      = "\033[1;32m" // 统计信息颜色, 加粗绿色
 	colorError      = "\033[31m"   // 错误信息输出颜色, 红色
 	colorDone       = "\033[1;34m" // 完成信息颜色, 加粗蓝色
+	clearLine       = "\r\033[K"   // 清理当前终端行并把光标移到行首
 )
-
-// var Quiet 	bool
 
 type ProgressTracker struct {
 	mu sync.Mutex
@@ -115,7 +114,7 @@ func (pt *ProgressTracker) SetWriter(w io.Writer) error {
 	return nil
 }
 
-// Start 启动进度条显示。终端环境下隐藏光标以减少闪烁。
+// Start 启动进度条显示
 func (pt *ProgressTracker) Start() {
 	pt.sigCh = make(chan os.Signal, 1)
 	signal.Notify(pt.sigCh, syscall.SIGINT, syscall.SIGTERM)
@@ -124,7 +123,7 @@ func (pt *ProgressTracker) Start() {
 			return
 		}
 		pt.mu.Lock()
-		fmt.Fprint(pt.output, "\r\033[K")
+		fmt.Fprint(pt.output, clearLine)
 		pt.mu.Unlock()
 	}(pt.sigCh)
 }
@@ -166,9 +165,8 @@ func (pt *ProgressTracker) Stop() {
 		summary += fmt.Sprintf(", %d failed", f)
 	}
 
-	// 终端环境下先清除进度条行，再输出最终统计。
-	fmt.Fprint(pt.output, "\r\033[K")
-	fmt.Fprintln(pt.output, summary)
+	// 换行打印统计信息
+	fmt.Fprintln(pt.output, "\n  "+summary)
 
 	// 打印失败任务列表
 	for _, s := range pt.failedStrings {

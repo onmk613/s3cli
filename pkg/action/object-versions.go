@@ -24,24 +24,23 @@ func (c *S3Client) ListOjbectVersions(bucket, prefix string) error {
 			if aws.ToBool(v.IsLatest) {
 				flag = "VER*"
 			}
-			myprint.PrintfGreen("%s %s %12d  %s  %s  version=%s\n",
-				flag,
-				v.LastModified.Format("2006-01-02 15:04:05"),
-				aws.ToInt64(v.Size),
-				aws.ToString(v.ETag),
-				c.S3Path(bucket, aws.ToString(v.Key)),
-				aws.ToString(v.VersionId))
+			myprint.Printf("%s ", flag)
+			myprint.PrintfDim("[%s]  ", v.LastModified.Format("2006-01-02 15:04:05"))
+			myprint.Printf("%12d   ", aws.ToInt64(v.Size))
+			myprint.PrintfGreen("%s  ", c.S3Path(bucket, aws.ToString(v.Key)))
+			myprint.PrintfCyan("ID=%s\n", aws.ToString(v.VersionId))
 		}
 		for _, m := range page.DeleteMarkers {
 			flag := "DEL "
 			if aws.ToBool(m.IsLatest) {
 				flag = "DEL*"
 			}
-			myprint.PrintfRed("%s %s              -                                  %s  version=%s\n",
-				flag,
-				m.LastModified.Format("2006-01-02 15:04:05"),
-				c.S3Path(bucket, aws.ToString(m.Key)),
-				aws.ToString(m.VersionId))
+
+			myprint.PrintfRed("%s ", flag)
+			myprint.PrintfDim("[%s]  ", m.LastModified.Format("2006-01-02 15:04:05"))
+			myprint.Printf("%12s   ", "-")
+			myprint.PrintfRed("%s  ", c.S3Path(bucket, aws.ToString(m.Key)))
+			myprint.PrintfCyan("ID=%s\n", aws.ToString(m.VersionId))
 		}
 	}
 	return nil

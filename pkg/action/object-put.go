@@ -3,8 +3,10 @@ package action
 import (
 	"context"
 	"fmt"
+	"io"
 	"mime"
 	"os"
+	"path"
 	"path/filepath"
 	"strings"
 
@@ -43,7 +45,15 @@ func (c *S3Client) PutObject(opt PutOptions, bucket, prefix, localpath string, i
 		opt.Concurrency = 10
 	}
 
-	if isS3Dir {
+	// 判定本地路径是否为目录：目录必须走流式批量上传，且需要 -r。
+	fi, err := os.Stat(localpath)
+	if err != nil {
+		return fmt.Errorf("stat %s: %w", localpath, err)
+	}
+	if fi.IsDir() {
+		if !opt.Recursive {
+			return fmt.Errorf("%s is a directory (use -r to upload recursively)", localpath)
+		}
 		return c.uploadDirStreaming(uploader, opt, bucket, prefix, localpath)
 	}
 
@@ -55,13 +65,17 @@ func (c *S3Client) PutObject(opt PutOptions, bucket, prefix, localpath string, i
 		mimeType = opt.ContentType
 	}
 
+	// 计算目标 key：
+	//   - prefix 为空              -> 用本地文件名
+	//   - S3 路径以 "/" 结尾(目录)  -> prefix/本地文件名
+	//   - 否则                     -> prefix 即完整对象名
 	dstKey := prefix
-	if strings.HasSuffix(prefix, "/") && prefix != "" {
-		dstKey = filepath.Join(prefix, filepath.Base(localpath))
-	} else if prefix == "" {
+	if prefix == "" {
 		dstKey = filepath.Base(localpath)
+	} else if isS3Dir {
+		dstKey = path.Join(prefix, filepath.Base(localpath))
 	}
-	if err := uploadFile(c.Ctx, uploader, opt, mimeType, bucket, dstKey, localpath); err != nil {
+	if err := uploadFile(c.Ctx, uploader, opt, mimeType, bucket, dstKey, localpath, nil); err != nil {
 		return err
 	}
 	myprint.Printf("put: %s --> %s  (%s)\n", localpath, c.S3Path(bucket, dstKey), mimeType)
@@ -73,49 +87,60 @@ func (c *S3Client) uploadDirStreaming(u *manager.Uploader, opt PutOptions, bucke
 	return RunStream(c.Ctx, StreamConfig{
 		Concurrency: opt.Concurrency,
 		Label:       "put",
+		Count: func(ctx context.Context, add func(n, size int64)) error {
+			return countLocalDir(localpath, add)
+		},
 		Scan: func(ctx context.Context, jobs chan<- StreamJob) error {
-			return filepath.Walk(localpath, func(path string, info os.FileInfo, err error) error {
+			return filepath.Walk(localpath, func(p string, info os.FileInfo, err error) error {
 				if err != nil {
 					return err
 				}
 				if info.IsDir() {
 					return nil
 				}
-				relPath, relErr := filepath.Rel(localpath, path)
+				relPath, relErr := filepath.Rel(localpath, p)
 				if relErr != nil {
 					return relErr
 				}
+				// S3 key 一律用正斜杠，且只存"纯 key"（不含 alias/bucket 前缀），
+				// 显示用的完整路径在日志处再由 S3Path 拼接，避免把展示路径误当 key 上传。
 				var dstKey string
 				if strings.HasSuffix(localpath, "/") {
-					dstKey = filepath.Join(key, relPath)
+					dstKey = path.Join(key, filepath.ToSlash(relPath))
 				} else {
-					dstKey = filepath.Join(key, filepath.Base(localpath), relPath)
+					dstKey = path.Join(key, filepath.Base(localpath), filepath.ToSlash(relPath))
 				}
-				jobs <- StreamJob{Src: path, Dst: c.S3Path(bucket, dstKey), Size: info.Size()}
+				jobs <- StreamJob{Src: p, Dst: dstKey, Size: info.Size()}
 				return nil
 			})
 		},
-		Work: func(ctx context.Context, job StreamJob) error {
+		Work: func(ctx context.Context, job StreamJob, report func(n int64)) error {
 			mimeType := detectMime(job.Src, opt.DefaultMimeType)
 			if opt.ContentType != "" {
 				mimeType = opt.ContentType
 			}
-			return uploadFile(ctx, u, opt, mimeType, bucket, job.Dst, job.Src)
+			return uploadFile(ctx, u, opt, mimeType, bucket, job.Dst, job.Src, report)
 		},
 	})
 }
 
-func uploadFile(ctx context.Context, u *manager.Uploader, opt PutOptions, mimeType, bucket, fileKey, filePath string) error {
+func uploadFile(ctx context.Context, u *manager.Uploader, opt PutOptions, mimeType, bucket, fileKey, filePath string, report func(n int64)) error {
 	file, err := os.Open(filePath)
 	if err != nil {
 		return fmt.Errorf("open %s: %w", filePath, err)
 	}
 	defer file.Close()
 
+	// 有进度回调时，用计数包装器包装文件，使 manager 并发读取分片时实时上报字节。
+	var body io.Reader = file
+	if report != nil {
+		body = NewUploadCounter(file, report)
+	}
+
 	in := &s3.PutObjectInput{
 		Bucket:      aws.String(bucket),
 		Key:         aws.String(fileKey),
-		Body:        file,
+		Body:        body,
 		ContentType: aws.String(mimeType),
 	}
 	if opt.StorageClass != "" {
@@ -131,8 +156,8 @@ func uploadFile(ctx context.Context, u *manager.Uploader, opt PutOptions, mimeTy
 	return nil
 }
 
-func detectMime(path string, defaultMime string) string {
-	ext := strings.ToLower(filepath.Ext(path))
+func detectMime(localpath string, defaultMime string) string {
+	ext := strings.ToLower(filepath.Ext(localpath))
 	if m := mime.TypeByExtension(ext); m != "" {
 		return m
 	}
