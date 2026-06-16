@@ -66,6 +66,9 @@ func (c *S3Client) mvDirStreaming(srcBucket, srcKey, destBucket, destPrefix stri
 	return RunStream(c.Ctx, StreamConfig{
 		Concurrency: 10,
 		Label:       "mv",
+		Count: func(ctx context.Context, add func(n, size int64)) error {
+			return c.countS3Prefix(ctx, srcBucket, srcKey, false, add)
+		},
 		Scan: func(ctx context.Context, jobs chan<- StreamJob) error {
 			paginator := s3.NewListObjectsV2Paginator(c.S3, &s3.ListObjectsV2Input{
 				Bucket: aws.String(srcBucket), Prefix: aws.String(srcKey),
@@ -87,7 +90,7 @@ func (c *S3Client) mvDirStreaming(srcBucket, srcKey, destBucket, destPrefix stri
 			}
 			return nil
 		},
-		Work: func(ctx context.Context, job StreamJob) error {
+		Work: func(ctx context.Context, job StreamJob, _ func(n int64)) error {
 			dstKey := buildDestKey(job.Src, srcKey, destPrefix, appendRel)
 			if err := c.copyObject(srcBucket, job.Src, destBucket, dstKey); err != nil {
 				return err

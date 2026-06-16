@@ -30,8 +30,11 @@ var (
 )
 
 type Config struct {
-	S     map[string]Static
-	Debug bool // --debug
+	S               map[string]Static
+	Debug           bool     // --debug
+	UserAgent       string   // --user-agent (覆盖整个 User-Agent)
+	UserAgentSuffix string   // --user-agent-suffix (追加到 User-Agent 末尾)
+	Headers         []string // --header (自定义 HTTP header, 可重复, 格式 key:value)
 }
 
 // SetSections 安全地设置全部 section map
@@ -84,9 +87,12 @@ func (c *Static) GetRegion() string {
 	return DefaultRegion
 }
 
-func (s *Static) GetAccessKey() string    { return strings.TrimSpace(s.AccessKey) }
-func (s *Static) GetSecretKey() string    { return strings.TrimSpace(s.SecretKey) }
-func (s *Static) GetSessionToken() string { return strings.TrimSpace(s.SessionToken) }
-func (s *Static) GetEndpoint() string     { return strings.TrimSpace(s.HostBase) }
-func (s *Static) IsDebug() bool           { return G.Debug }
-func (s *Static) IsVerifySSL() bool       { return s.VerifySSL }
+func (s *Static) GetAccessKey() string       { return strings.TrimSpace(s.AccessKey) }
+func (s *Static) GetSecretKey() string       { return strings.TrimSpace(s.SecretKey) }
+func (s *Static) GetSessionToken() string    { return strings.TrimSpace(s.SessionToken) }
+func (s *Static) GetEndpoint() string        { return strings.TrimSpace(s.HostBase) }
+func (s *Static) IsDebug() bool              { return G.Debug }
+func (s *Static) IsVerifySSL() bool          { return s.VerifySSL }
+func (s *Static) GetUserAgent() string       { return strings.TrimSpace(G.UserAgent) }
+func (s *Static) GetUserAgentSuffix() string { return strings.TrimSpace(G.UserAgentSuffix) }
+func (s *Static) GetHeaders() []string       { return G.Headers }

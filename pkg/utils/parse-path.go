@@ -25,23 +25,15 @@ type S3Path struct {
 	Alias         string // alias 名 (必填)
 	Bucket        string // bucket 名 (必填)
 	Key           string // object key, 可为空; 多级路径会保留中间的 "/"
-	TrailingSlash bool   // 原始输入是否以 "/" 结尾 (用于区分 "目录" / "对象")
+	TrailingSlash bool   // 原始输入是否以 "/" 结尾 (用于区分 "DIR" / "OBJECT")
 }
 
-// ParseS3Path 解析 "alias:bucket/key" 格式的路径。
-//
-//	"mys3:mybucket"              -> {Alias:"mys3", Bucket:"mybucket"}
-//	"mys3:mybucket/"             -> {Alias:"mys3", Bucket:"mybucket"}
-//	"mys3:mybucket/a/b.txt"      -> {Alias:"mys3", Bucket:"mybucket", Key:"a/b.txt"}
-//	"mys3:mybucket/dir/"         -> {Alias:"mys3", Bucket:"mybucket", Key:"dir/", TrailingSlash:true}
-//
-// 返回的 Key 不含前导 "/", 也不含尾部 "/" (尾部 "/" 信息通过 TrailingSlash 表达)。
+// ParseS3Path 解析 "alias:bucket/key" 格式的路径
 func ParseS3Path(s string) (*S3Path, error) {
 	if s == "" {
 		return nil, fmt.Errorf("empty s3 path")
 	}
 
-	// 1. 切 alias
 	colon := strings.Index(s, ":")
 	if colon < 0 {
 		if !AliasNameRegex.MatchString(s) {
@@ -111,15 +103,7 @@ func trimSlash(s string) string {
 	return strings.Trim(s, "/")
 }
 
-// ResolveFileDest 计算「单个文件」源的目标对象 key（cp/mv 单文件场景，规则 5/6）。
-//
-//	destKey      目标 key（可能带尾部 "/"，用于表达 trailing 语义）
-//	destTrailing 目标是否以 "/" 结尾（语义上是目录）
-//	srcBase      源文件名（如 file1.txt）
-//
-// 规则：
-//   - 目标无尾斜杠            -> 直接写到 destKey（覆盖/重命名）；destKey 为空时退化为 srcBase
-//   - 目标有尾斜杠            -> destKey/srcBase
+// ResolveFileDest 计算「单个文件」源的目标对象 key
 func ResolveFileDest(destKey string, destTrailing bool, srcBase string) string {
 	dest := trimSlash(destKey)
 	if destTrailing {
@@ -135,30 +119,6 @@ func ResolveFileDest(destKey string, destTrailing bool, srcBase string) string {
 }
 
 // ResolveDirDestPrefix 计算「目录」源的目标前缀及是否需要追加相对路径
-// （cp/mv/mirror 目录场景，规则 1/2/3/4）。
-//
-//	srcKey       源 key（可能带尾部 "/"）
-//	srcTrailing  源是否以 "/" 结尾
-//	destKey      目标 key（可能带尾部 "/"）
-//	destTrailing 目标是否以 "/" 结尾
-//	state        目标当前状态（none/dir/file）
-//
-// 返回：
-//
-//	destPrefix   目标前缀（不含尾部 "/")
-//	appendRel    是否把源文件相对源前缀的路径拼接到 destPrefix 之下
-//
-// 规则矩阵（srcBase = 源最后一段，如 to1）：
-//
-//	目标 trailing:
-//	  源 trailing  -> (destKey,          appendRel=true)   规则2
-//	  源 no-slash  -> (destKey/srcBase,  appendRel=true)   规则4
-//	目标 no-slash:
-//	  state==file  -> (destKey,          appendRel=false)  规则1/3 (file)
-//	  state==dir   -> (destKey,          appendRel=true)   规则1/3 (dir)
-//	  state==none:
-//	    源 trailing -> (destKey,         appendRel=false)  规则1 (none)
-//	    源 no-slash -> (destKey,         appendRel=true)   规则3 (none)
 func ResolveDirDestPrefix(srcKey string, srcTrailing bool, destKey string, destTrailing bool, state DestState) (destPrefix string, appendRel bool) {
 	dest := trimSlash(destKey)
 	srcBase := lastSegment(srcKey)

@@ -60,6 +60,7 @@ func (pt *ProgressTracker) render() {
 		wd = tw
 		pt.width = wd
 	}
-	// \r 回行首，\033[K 清到行尾，再写进度条。
-	fmt.Fprint(pt.output, "\r\033[K"+pt.buildBar(wd))
+
+	// 清空当前行并打印进度条显示的字符串
+	fmt.Fprint(pt.output, clearLine+pt.buildBar(wd))
 }

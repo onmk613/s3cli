@@ -48,9 +48,6 @@ func (pt *ProgressTracker) buildBar(wd int) string {
 		pct = 100
 	}
 
-	// 左右留空格
-	blankStr := "  "
-
 	// 构建右侧信息（纯文本，用于宽度计算
 	// 已完成/总数
 	countStr := fmt.Sprintf("%d/%d", d, t)
@@ -60,47 +57,65 @@ func (pt *ProgressTracker) buildBar(wd int) string {
 	// 构建右侧信息（纯文本，用于宽度计算
 	var rightStr string
 	if t > 0 && tsz > 0 {
-		rightStr = fmt.Sprintf("%s | %s | %s%s", countStr, sizeStr, eta, blankStr)
+		rightStr = fmt.Sprintf("%s | %s | %s", countStr, sizeStr, eta)
 	}
 	if t > 0 && tsz == 0 {
-		rightStr = countStr + blankStr
+		rightStr = countStr
 	}
 	if t == 0 && tsz > 0 {
-		rightStr = fmt.Sprintf("%s | %s%s", sizeStr, eta, blankStr)
+		rightStr = fmt.Sprintf("%s | %s", sizeStr, eta)
 	}
+
+	// 左/右/中留空格
+	blankStr := "  "
 
 	// 计算进度条可用宽度（含边框占用的列宽）。
 	// 宽度计算使用未着色的纯文本长度，避免 ANSI 序列占位。
 	st := pt.style
 	bracketW := len(st.LeftBracket) + len(st.RightBracket)
-	barArea := wd - len(blankStr) - len(rightStr) - 1 - bracketW
+	barArea := wd - len(blankStr)*3 - len(rightStr) - bracketW
 	if barArea < 10 {
 		// 空间不足，降级显示
 		return colorize(pt.noColor, pt.color.Stats, rightStr)
 	}
 
-	bar := buildStyledBar(st, barArea, pct)
-	return fmt.Sprintf("%s%s %s", blankStr, bar, colorize(pt.noColor, colorStats, rightStr))
+	// 注意：buildStyledBar 期望比例 [0,1]，pct 是百分比 [0,100]，必须归一化，
+	// 否则 filledCols 会放大 100 倍，进度条远超终端宽度而折行、堆叠。
+	bar := buildStyledBar(st, barArea, pct/100)
+
+	return fmt.Sprintf("%s", colorize(
+		pt.noColor,
+		colorStats,
+		fmt.Sprintf("%s%s%s%s%s", blankStr, bar, blankStr, rightStr, blankStr)))
 }
 
 // buildStyledBar 按给定样式绘制进度条主体（含边框与着色）。
 // barArea 为进度条内部可用的显示列宽，frac 为完成比例 [0,1]。
 func buildStyledBar(st *Style, barArea int, frac float64) string {
-	fw := len(st.Filled)
-	ew := len(st.Empty)
-	headW := len(st.Head)
+	if frac < 0 {
+		frac = 0
+	}
+	if frac > 1 {
+		frac = 1
+	}
+
+	// Filled/Head/Empty 单元均按 1 显示列计（▓/█/░/=/# 等）。
+	hasHead := st.Head != ""
 
 	// 以列宽为单位计算已完成列数
 	filledCols := int(frac*float64(barArea) + 0.5)
+	if filledCols > barArea {
+		filledCols = barArea
+	}
 
-	// 预留进度头的列宽：未满且有 Head 时，头占 headW 列
-	useHead := headW > 0 && filledCols < barArea && filledCols >= headW
+	// 预留进度头的 1 列：未满且有 Head 时，头占 1 列
+	useHead := hasHead && filledCols < barArea && filledCols >= 1
 	if useHead {
-		filledCols -= headW
+		filledCols--
 	}
 	emptyCols := barArea - filledCols
 	if useHead {
-		emptyCols -= headW
+		emptyCols--
 	}
 	if emptyCols < 0 {
 		emptyCols = 0
@@ -108,41 +123,33 @@ func buildStyledBar(st *Style, barArea int, frac float64) string {
 
 	var b strings.Builder
 	b.WriteString(st.LeftBracket)
-	b.WriteString(repeatToWidth(st.Filled, fw, filledCols))
+	b.WriteString(repeatToWidth(st.Filled, filledCols))
 	if useHead {
 		b.WriteString(st.Head)
 	}
-	b.WriteString(repeatToWidth(st.Empty, ew, emptyCols))
+	b.WriteString(repeatToWidth(st.Empty, emptyCols))
 	b.WriteString(st.RightBracket)
 	return b.String()
 }
 
-// repeatToWidth 用显示宽度为 unitW 的字符 unit 填满 cols 个显示列。
-// 若 cols 不是 unitW 的整数倍，剩余列用空格补齐，保证总列宽精确等于 cols。
-func repeatToWidth(unit string, unitW, cols int) string {
-	if cols <= 0 || unit == "" {
-		if cols > 0 {
-			return strings.Repeat(" ", cols)
-		}
+// repeatToWidth 用占 1 显示列的 unit 字符填满 cols 个显示列
+// unit 为空时用空格填充, 每个 unit 占 1 列，因此重复 cols 次即可
+func repeatToWidth(unit string, cols int) string {
+	if cols <= 0 {
 		return ""
 	}
-	if unitW < 1 {
-		unitW = 1
+	if unit == "" {
+		return strings.Repeat(" ", cols)
 	}
-	n := cols / unitW
-	rem := cols - n*unitW
 	var b strings.Builder
-	b.Grow(cols)
-	for i := 0; i < n; i++ {
+	b.Grow(cols * len(unit))
+	for i := 0; i < cols; i++ {
 		b.WriteString(unit)
-	}
-	if rem > 0 {
-		b.WriteString(strings.Repeat(" ", rem))
 	}
 	return b.String()
 }
 
-// colorize 用给定 ANSI 颜色包裹文本；noColor 时原样返回。
+// colorize 用给定 ANSI 颜色包裹文本；noColor 时原样返回
 func colorize(noColor bool, color, s string) string {
 	if noColor || color == "" {
 		return s

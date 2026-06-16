@@ -43,7 +43,7 @@ type ObjectReader interface {
 type ObjectWriter interface {
 	PutObject(opt PutOptions, bucket, prefix, localpath string, isS3Dir bool) error
 	PipeUpload(opt PipeOptions, bucket, key string) error
-	DeleteObjects(bucket, prefix string, recursive bool) error
+	DeleteObjects(bucket, prefix string, opt DelOptions) error
 	CopyObjects(srcBucket, srcKey, destBucket, destKey string, recursive bool) error
 	Mv(srcBucket, srcKey, destBucket, destKey string, recursive bool) error
 }

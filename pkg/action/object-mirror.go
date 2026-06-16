@@ -2,6 +2,7 @@ package action
 
 import (
 	"fmt"
+	"io"
 	"path"
 	"strings"
 	"sync"
@@ -150,10 +151,12 @@ func copyObjectSameEndpoint(c *S3Client, srcBucket, srcKey, tgtBucket, tgtKey st
 
 // copyObjectCrossEndpoint 跨 endpoint：download -> upload。
 // 自动处理小文件直传和大文件分片。
+// report 用于在传输过程中实时上报新增字节（增量），可为 nil。
 func copyObjectCrossEndpoint(
 	src, tgt *S3Client,
 	srcBucket, srcKey, tgtBucket, tgtKey string,
 	partSize int64,
+	report func(n int64),
 ) error {
 	headResp, err := src.S3.HeadObject(src.Ctx, &s3.HeadObjectInput{
 		Bucket: aws.String(srcBucket),
@@ -165,14 +168,15 @@ func copyObjectCrossEndpoint(
 
 	totalSize := aws.ToInt64(headResp.ContentLength)
 	if totalSize <= partSize {
-		return copySingleCrossEndpoint(src, tgt, srcBucket, srcKey, tgtBucket, tgtKey)
+		return copySingleCrossEndpoint(src, tgt, srcBucket, srcKey, tgtBucket, tgtKey, report)
 	}
-	return copyMultipartCrossEndpoint(src, tgt, srcBucket, srcKey, tgtBucket, tgtKey, totalSize, partSize, headResp)
+	return copyMultipartCrossEndpoint(src, tgt, srcBucket, srcKey, tgtBucket, tgtKey, totalSize, partSize, headResp, report)
 }
 
 func copySingleCrossEndpoint(
 	src, tgt *S3Client,
 	srcBucket, srcKey, tgtBucket, tgtKey string,
+	report func(n int64),
 ) error {
 	getResp, err := src.S3.GetObject(src.Ctx, &s3.GetObjectInput{
 		Bucket: aws.String(srcBucket),
@@ -183,10 +187,16 @@ func copySingleCrossEndpoint(
 	}
 	defer getResp.Body.Close()
 
+	// 用计数 reader 包装响应体，上传读取时实时上报已传字节。
+	var body io.Reader = getResp.Body
+	if report != nil {
+		body = NewReaderCounter(getResp.Body, report)
+	}
+
 	put := &s3.PutObjectInput{
 		Bucket:             aws.String(tgtBucket),
 		Key:                aws.String(tgtKey),
-		Body:               getResp.Body,
+		Body:               body,
 		ContentLength:      getResp.ContentLength,
 		ContentType:        getResp.ContentType,
 		CacheControl:       getResp.CacheControl,
@@ -206,6 +216,7 @@ func copyMultipartCrossEndpoint(
 	srcBucket, srcKey, tgtBucket, tgtKey string,
 	totalSize, partSize int64,
 	head *s3.HeadObjectOutput,
+	report func(n int64),
 ) (err error) {
 	createResp, err := tgt.S3.CreateMultipartUpload(tgt.Ctx, &s3.CreateMultipartUploadInput{
 		Bucket:             aws.String(tgtBucket),
@@ -269,6 +280,9 @@ func copyMultipartCrossEndpoint(
 			PartNumber: aws.Int32(partNum),
 			ETag:       uploadResp.ETag,
 		})
+		if report != nil {
+			report(end - offset + 1) // 本分片字节数
+		}
 		partNum++
 	}
 
@@ -463,8 +477,15 @@ func Mirror(cfg MirrorOptions) error {
 	pt.Start()
 	defer pt.Stop()
 
-	// 预先设置总数（mirror 是先列完再操作的）
+	// 预先设置总数与总字节（mirror 是先列完再操作的，已知每个对象大小）。
 	pt.AddTotal(int64(len(diff.ToCopy)))
+	var totalBytes int64
+	for _, rel := range diff.ToCopy {
+		if info, ok := src[rel]; ok {
+			totalBytes += info.Size
+		}
+	}
+	pt.AddTotalSize(totalBytes)
 
 	var (
 		wg      sync.WaitGroup
@@ -479,6 +500,8 @@ func Mirror(cfg MirrorOptions) error {
 		if cfg.SizeLimit > 0 {
 			if info, ok := src[rel]; ok && info.Size > cfg.SizeLimit {
 				skipped.Add(1)
+				// 跳过的对象不计入总字节，从 totalSize 中减掉，避免进度永远到不了 100%。
+				pt.AddTotalSize(-info.Size)
 				myprint.Printf("SKIP (size > limit): %s (%s)\n", rel, FormatBytes(info.Size))
 				continue
 			}
@@ -492,23 +515,41 @@ func Mirror(cfg MirrorOptions) error {
 
 			srcKey := joinKey(srcPrefix, rel)
 			tgtKey := joinKey(tgtPrefix, rel)
+			objSize := src[rel].Size
+
+			// report 实时上报本对象传输的字节增量；reported 用于成功对账 / 失败回退。
+			var reported int64
+			report := func(n int64) {
+				if n == 0 {
+					return
+				}
+				atomic.AddInt64(&reported, n)
+				pt.AddTotalSizeDone(n)
+			}
 
 			var cerr error
 			if sameEP {
+				// 服务端 CopyObject 无分片进度，不传 report，靠成功后对账补齐。
 				cerr = copyObjectSameEndpoint(srcClient, srcBucket, srcKey, tgtBucket, tgtKey)
 			} else {
-				cerr = copyObjectCrossEndpoint(srcClient, tgtClient, srcBucket, srcKey, tgtBucket, tgtKey, partSize)
+				cerr = copyObjectCrossEndpoint(srcClient, tgtClient, srcBucket, srcKey, tgtBucket, tgtKey, partSize, report)
 			}
 			if cerr != nil {
+				// 失败：回退已上报字节，避免虚增进度。
+				if r := atomic.LoadInt64(&reported); r != 0 {
+					pt.AddTotalSizeDone(-r)
+				}
 				msg := fmt.Sprintf("✗ %s → %s", srcClient.S3Path(srcBucket, srcKey), tgtClient.S3Path(tgtBucket, tgtKey))
 				failed.Add(1)
 				pt.AddFailed(msg)
 				pt.AddTotalDone(1)
 				return
 			}
+			// 成功：对账，把进度精确补齐到 objSize（适配服务端 copy / 跨端分片偏差）。
+			if diff := objSize - atomic.LoadInt64(&reported); diff != 0 {
+				pt.AddTotalSizeDone(diff)
+			}
 			copied.Add(1)
-			// // 静默模式：流式输出每个成功任务的明文（原文）。
-			// pt.Logf("mirror: %s -> %s", srcClient.S3Path(srcBucket, srcKey), tgtClient.S3Path(tgtBucket, tgtKey))
 			pt.AddTotalDone(1)
 		}(rel)
 	}

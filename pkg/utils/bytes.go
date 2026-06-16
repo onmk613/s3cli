@@ -7,9 +7,7 @@ import (
 	"strings"
 )
 
-// ParseBytes 解析人类可读的字节大小，支持后缀 K/M/G/T/P（不区分大小写，
-// 可带可不带 "B"，如 "4K"、"4KB"、"4096"、"1M"）。按 1024 进制。
-// 纯数字（无后缀）按字节解释。返回的字节数为非负整数。
+// ParseBytes 解析固定格式字符串为字节数
 func ParseBytes(s string) (int64, error) {
 	s = strings.TrimSpace(s)
 	if s == "" {
@@ -49,12 +47,12 @@ func ParseBytes(s string) (int64, error) {
 	return val * mult, nil
 }
 
-// 格式化字节
+// FormatBytes 格式化字节数
 func FormatBytes(bytes int64) string {
 	if bytes <= 0 {
 		return "0 B"
 	}
-	units := []string{"B", "KB", "MB", "GB", "TB", "PB", "EB"}
+	units := []string{"B", "KB", "MB", "GB", "TB", "PB"}
 	base := 1024.0
 	exp := int(math.Log(float64(bytes)) / math.Log(base))
 	if exp >= len(units) {

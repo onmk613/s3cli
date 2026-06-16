@@ -23,8 +23,20 @@ func NewS3Client(ctx context.Context, cfg config.Static) (*s3.Client, error) {
 	var rt http.RoundTripper = transport
 
 	if cfg.IsDebug() {
-		rt = httptracer.New(transport, nil)
+		rt = httptracer.New(rt, nil)
 	}
+
+	// User-Agent 改写放在最外层: 先改写请求, 再交给(可能存在的)tracer dump,
+	// 这样 --debug 输出里看到的就是改写后的最终 User-Agent。
+	rt = newUserAgentTransport(rt, cfg.GetUserAgent(), cfg.GetUserAgentSuffix())
+
+	// 自定义 HTTP header 注入(放在最外层, --debug 可见最终请求头)。
+	customHeaders, err := parseHeaders(cfg.GetHeaders())
+	if err != nil {
+		return nil, err
+	}
+	rt = newCustomHeaderTransport(rt, customHeaders)
+
 	httpClient := &http.Client{
 		Transport: rt,
 	}

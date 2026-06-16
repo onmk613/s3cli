@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"os/signal"
@@ -95,6 +96,9 @@ func NewRootCmd() {
 	pf.StringVarP(&config.ConfigPath, "conf", "f", "", "Path to configuration file (default ~/.s3cli)")
 	pf.BoolVar(&config.G.Debug, "debug", false, "Print summarized S3 requests")
 	pf.BoolVar(&noColor, "no-color", false, "Disable color output")
+	pf.StringVar(&config.G.UserAgent, "user-agent", "", "Override the HTTP User-Agent header")
+	pf.StringVar(&config.G.UserAgentSuffix, "user-agent-suffix", "", "Append extra content to the HTTP User-Agent header")
+	pf.StringArrayVarP(&config.G.Headers, "header", "H", nil, "Add a custom HTTP header (key:value), can repeat")
 	// pf.BoolVarP(&progress.Quiet, "quiet", "q", false, "Disable progress bar; stream plain text output instead")
 
 	// 从注册表添加所有子命令（带分组显示）
@@ -109,7 +113,10 @@ func NewRootCmd() {
 
 	err := rootCmd.Execute()
 	if err != nil {
-		myprint.PrintlnBoldRed(err.Error())
+		// errAlreadyDisplayed 表示错误已在 RunE 内部输出给用户，不再重复打印。
+		if !errors.Is(err, errAlreadyDisplayed) {
+			myprint.PrintlnBoldRed(err.Error())
+		}
 		os.Exit(1)
 	}
 }
