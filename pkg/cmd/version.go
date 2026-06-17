@@ -11,7 +11,7 @@ func init() { Register("config", "Bucket Configuration", NewVersionCmd) }
 
 func NewVersionCmd() *cobra.Command {
 	versionCmd := &cobra.Command{
-		Use:   "version",
+		Use:   "versioning",
 		Short: "Manage bucket versioning",
 	}
 
@@ -32,9 +32,10 @@ func NewVersionEnableCmd() *cobra.Command {
 
 func NewVersionSuspendCmd() *cobra.Command {
 	return &cobra.Command{
-		Use:   "suspended [alias:bucket] ...",
-		Short: "Suspend bucket versioning",
-		Args:  cobra.MinimumNArgs(1),
+		Use:     "suspended [alias:bucket] ...",
+		Aliases: []string{"disabled"},
+		Short:   "Suspend bucket versioning",
+		Args:    cobra.MinimumNArgs(1),
 		RunE: NewRunE(ActionFunc(func(S3 action.S3Client, _ *CmdContext, s3path *utils.S3Path) error {
 			return S3.SetVersioning(s3path.Bucket, false)
 		}), nil),

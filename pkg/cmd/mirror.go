@@ -13,7 +13,7 @@ import (
 func init() {
 	Register("object", "Object Operations", NewCpCmd)
 	Register("object", "Object Operations", NewMvCmd)
-	Register("object", "Object Operations", NewMirrorCmd)
+	Register("sync", "Synchronization", NewMirrorCmd)
 }
 
 // samePath 判断两个 S3 路径是否指向同一对象。

@@ -14,7 +14,7 @@ import (
 )
 
 func init() {
-	Register("object", "Object Operations", NewDiffCmd)
+	Register("read", "Read Commands", NewDiffCmd)
 }
 
 // NewDiffCmd diff 命令：比较两个路径下的文件是否相同。
