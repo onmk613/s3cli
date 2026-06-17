@@ -12,7 +12,7 @@ func init() { Register("config", "Bucket Configuration", NewEncryptionCmd) }
 func NewEncryptionCmd() *cobra.Command {
 	encryptionCmd := &cobra.Command{
 		Use:   "encryption",
-		Short: "set bucket default encryption (SSE-S3 / SSE-KMS)",
+		Short: "Manage bucket(s) default encryption (SSE-S3 / SSE-KMS)",
 	}
 	encryptionCmd.AddCommand(
 		NewSetEncryptionCmd(),
@@ -27,7 +27,7 @@ func NewSetEncryptionCmd() *cobra.Command {
 	opts := newCmdContext()
 	cmd := &cobra.Command{
 		Use:   "set [alias:bucket] ...",
-		Short: "Set bucket default encryption (SSE-S3 / SSE-KMS)",
+		Short: "Set bucket(s) default encryption (SSE-S3 / SSE-KMS)",
 		Args:  cobra.MinimumNArgs(1),
 		RunE: NewRunE(ActionFunc(func(S3 action.S3Client, _ *CmdContext, s3path *utils.S3Path) error {
 			return S3.SetEncryption(encOpt, s3path.Bucket)
@@ -46,7 +46,7 @@ func NewGetEncryptionCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:     "get [alias:bucket] ...",
 		Aliases: []string{"ls", "list"},
-		Short:   "Print bucket default encryption configuration (JSON)",
+		Short:   "Print bucket(s) default encryption configuration (JSON)",
 		Args:    cobra.MinimumNArgs(1),
 		RunE: NewRunE(ActionFunc(func(S3 action.S3Client, _ *CmdContext, s3path *utils.S3Path) error {
 			return S3.GetEncryption(s3path.Bucket)
@@ -58,7 +58,7 @@ func NewDelEncryptionCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:     "del [alias:bucket] ...",
 		Aliases: []string{"delete", "rm", "remove"},
-		Short:   "Delete bucket default encryption configuration",
+		Short:   "Delete bucket(s) default encryption configuration",
 		Args:    cobra.MinimumNArgs(1),
 		RunE: NewRunE(ActionFunc(func(S3 action.S3Client, _ *CmdContext, s3path *utils.S3Path) error {
 			return S3.DelEncryption(s3path.Bucket)

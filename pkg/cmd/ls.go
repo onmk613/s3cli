@@ -62,7 +62,7 @@ func NewInfoCmd() *cobra.Command {
 	opts := newCmdContext()
 	cmd := &cobra.Command{
 		Use:   "info [alias:bucket[/path]] ...",
-		Short: "Show information about a bucket or object",
+		Short: "Show information about bucket(s) or object(s)",
 		Args:  cobra.MinimumNArgs(1),
 		RunE: NewRunE(ActionFunc(func(S3 action.S3Client, opts *CmdContext, s3path *utils.S3Path) error {
 			return S3.Info(s3path.Bucket, s3path.Key)

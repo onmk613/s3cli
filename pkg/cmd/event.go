@@ -23,7 +23,7 @@ func NewSetEventCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:     "set [notification-file] [alias:bucket] ...",
 		Aliases: []string{"s"},
-		Short:   "Set bucket event notifications (SQS/SNS/Lambda, JSON, AWS CLI compatible)",
+		Short:   "Set bucket(s) event notifications (SQS/SNS/Lambda, JSON, AWS CLI compatible)",
 		Args:    cobra.MinimumNArgs(2),
 		RunE: NewRunE(ActionFunc(func(S3 action.S3Client, opts *CmdContext, s3path *utils.S3Path) error {
 			return S3.SetNotification(opts.Global.LocalFile, s3path.Bucket)
@@ -35,7 +35,7 @@ func NewGetEventCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:     "get [alias:bucket] ...",
 		Aliases: []string{"ls", "list", "l"},
-		Short:   "Print bucket event notification configuration (JSON)",
+		Short:   "Print bucket(s) event notification configuration (JSON)",
 		Args:    cobra.MinimumNArgs(1),
 		RunE: NewRunE(ActionFunc(func(S3 action.S3Client, _ *CmdContext, s3path *utils.S3Path) error {
 			return S3.GetNotification(s3path.Bucket)

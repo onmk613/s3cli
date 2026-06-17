@@ -14,7 +14,7 @@ func init() {
 func NewCorsCmd() *cobra.Command {
 	corsCmd := &cobra.Command{
 		Use:   "cors",
-		Short: "Manage CORS configuration for buckets",
+		Short: "Manage CORS configuration for bucket(s)",
 	}
 	corsCmd.AddCommand(
 		NewSetCorsCmd(),

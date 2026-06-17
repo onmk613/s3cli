@@ -7,13 +7,13 @@ import (
 )
 
 func init() {
-	Register("alias", "Server Management", NewAliasCmd)
+	Register("alias", "Endpoint Management", NewAliasCmd)
 }
 
 func NewAliasCmd() *cobra.Command {
 	aliasCmd := &cobra.Command{
 		Use:     "alias",
-		Aliases: []string{"a"},
+		Aliases: []string{"a", "server"},
 		Short:   "Manage aliases (S3 endpoint configurations)",
 	}
 	aliasCmd.AddCommand(setAliasCmd(), listAliasCmd(), delAliasCmd())
