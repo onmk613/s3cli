@@ -117,7 +117,7 @@ func SetAliasConf(ctx context.Context, section string) error {
 		return err
 	}
 
-	myprint.Println("Bucket addressing style? ")
+	myprint.Printf("Bucket addressing style? ")
 	if conf.BucketLookup, err = read("Mode: path / dns / https://www.%(bucket).example.com (default path): "); err != nil {
 		return err
 	}
