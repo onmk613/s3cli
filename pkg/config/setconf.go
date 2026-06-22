@@ -109,6 +109,10 @@ func SetAliasConf(ctx context.Context, section string) error {
 		break
 	}
 
+	if conf.SessionToken, err = read("Enter Session Token (optional): "); err != nil {
+		return err
+	}
+
 	if conf.Region, err = read("Enter Region (default 'us-east-1'): "); err != nil {
 		return err
 	}
@@ -165,6 +169,26 @@ func SetAliasConf(ctx context.Context, section string) error {
 	if err := sec.ReflectFrom(&conf); err != nil {
 		return fmt.Errorf("reflect config: %w", err)
 	}
+
+	if conf.SessionToken == "" {
+		sec.DeleteKey("session_token")
+	}
+	if conf.VerifySSL {
+		sec.DeleteKey("verify_ssl")
+	}
+	if conf.DefaultMimeType == "" {
+		sec.DeleteKey("default_mime_type")
+	}
+	if conf.MultipartChunkSizeMb == 15 {
+		sec.DeleteKey("multipart_chunk_size_mb")
+	}
+	if conf.Region == "" {
+		sec.DeleteKey("region")
+	}
+	if conf.BucketLookup == "" {
+		sec.DeleteKey("bucket_lookup")
+	}
+
 	if err := cfg.SaveTo(ConfigPath); err != nil {
 		return fmt.Errorf("save config: %w", err)
 	}
