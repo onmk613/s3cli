@@ -101,12 +101,22 @@ func NewRootCmd() {
 	pf.StringArrayVarP(&config.G.Headers, "header", "H", nil, "Add a custom HTTP header (key:value), can repeat")
 	// pf.BoolVarP(&progress.Quiet, "quiet", "q", false, "Disable progress bar; stream plain text output instead")
 
-	// 从注册表添加所有子命令（带分组显示）
+	// 从注册表添加所有子命令（带分组显示）。
+	// 同时校验顶层命令名/别名不得重叠：cobra 在命令名与别名冲突时的命中顺序
+	// 依赖注册次序、不可靠，曾导致 `rm`（删对象）被误路由到 `rb`（删桶）。
+	// 此处 fail-fast，避免再次出现这种危险的静默路由。
+	seen := make(map[string]string) // token -> 拥有它的命令 Use
 	for _, g := range cmdRegistry {
 		rootCmd.AddGroup(&cobra.Group{ID: g.ID, Title: g.Title})
 		for _, fn := range g.Commands {
 			cmd := fn()
 			cmd.GroupID = g.ID
+			for _, tok := range append([]string{cmd.Name()}, cmd.Aliases...) {
+				if owner, dup := seen[tok]; dup {
+					panic(fmt.Sprintf("top-level command token %q is claimed by both %q and %q", tok, owner, cmd.Use))
+				}
+				seen[tok] = cmd.Use
+			}
 			rootCmd.AddCommand(cmd)
 		}
 	}

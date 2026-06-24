@@ -34,7 +34,7 @@ func NewRbCmd() *cobra.Command {
 	opts := newCmdContext()
 	cmd := &cobra.Command{
 		Use:     "rb [alias:bucket] ...",
-		Aliases: []string{"remove", "del", "delete", "rm", "d"},
+		Aliases: []string{"remove-bucket"},
 		Short:   "Remove bucket(s)",
 		Args:    cobra.MinimumNArgs(1),
 		RunE: NewRunE(ActionFunc(func(S3 action.S3Client, opts *CmdContext, s3path *utils.S3Path) error {
