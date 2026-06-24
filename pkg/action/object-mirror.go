@@ -1,6 +1,7 @@
 package action
 
 import (
+	"bytes"
 	"fmt"
 	"io"
 	"path"
@@ -187,17 +188,24 @@ func copySingleCrossEndpoint(
 	}
 	defer getResp.Body.Close()
 
-	// 用计数 reader 包装响应体，上传读取时实时上报已传字节。
-	var body io.Reader = getResp.Body
+	// PutObject 在签名前需要计算 payload hash，要求 body 可 seek。
+	// HTTP 响应流不可 seek，故先读入内存再用可 seek 的 bytes.Reader 上传。
+	data, err := io.ReadAll(getResp.Body)
+	if err != nil {
+		return fmt.Errorf("read s3://%s/%s: %v", srcBucket, srcKey, err)
+	}
+
+	// 用计数 reader 包装可 seek 的源，上传读取时实时上报已传字节。
+	var body io.Reader = bytes.NewReader(data)
 	if report != nil {
-		body = NewReaderCounter(getResp.Body, report)
+		body = NewUploadCounter(bytes.NewReader(data), report)
 	}
 
 	put := &s3.PutObjectInput{
 		Bucket:             aws.String(tgtBucket),
 		Key:                aws.String(tgtKey),
 		Body:               body,
-		ContentLength:      getResp.ContentLength,
+		ContentLength:      aws.Int64(int64(len(data))),
 		ContentType:        getResp.ContentType,
 		CacheControl:       getResp.CacheControl,
 		ContentDisposition: getResp.ContentDisposition,
@@ -262,15 +270,22 @@ func copyMultipartCrossEndpoint(
 			return err
 		}
 
+		// UploadPart 同样需要可 seek 的 body 来计算 payload hash。
+		partData, readErr := io.ReadAll(getResp.Body)
+		getResp.Body.Close()
+		if readErr != nil {
+			err = fmt.Errorf("read part %d: %v", partNum, readErr)
+			return err
+		}
+
 		uploadResp, upErr := tgt.S3.UploadPart(tgt.Ctx, &s3.UploadPartInput{
 			Bucket:        aws.String(tgtBucket),
 			Key:           aws.String(tgtKey),
 			UploadId:      aws.String(uploadID),
 			PartNumber:    aws.Int32(partNum),
-			Body:          getResp.Body,
-			ContentLength: getResp.ContentLength,
+			Body:          bytes.NewReader(partData),
+			ContentLength: aws.Int64(int64(len(partData))),
 		})
-		getResp.Body.Close()
 		if upErr != nil {
 			err = fmt.Errorf("upload part %d: %s", partNum, FormatAPIError(upErr))
 			return err
@@ -539,7 +554,7 @@ func Mirror(cfg MirrorOptions) error {
 				if r := atomic.LoadInt64(&reported); r != 0 {
 					pt.AddTotalSizeDone(-r)
 				}
-				msg := fmt.Sprintf("✗ %s → %s", srcClient.S3Path(srcBucket, srcKey), tgtClient.S3Path(tgtBucket, tgtKey))
+				msg := fmt.Sprintf("✗ %s → %s: %v", srcClient.S3Path(srcBucket, srcKey), tgtClient.S3Path(tgtBucket, tgtKey), cerr)
 				failed.Add(1)
 				pt.AddFailed(msg)
 				pt.AddTotalDone(1)

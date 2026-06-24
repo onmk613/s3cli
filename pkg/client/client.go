@@ -46,6 +46,12 @@ func NewS3Client(ctx context.Context, cfg config.Static) (*s3.Client, error) {
 		awscfg.WithRegion(cfg.GetRegion()),
 		awscfg.WithCredentialsProvider(credentials.NewStaticCredentialsProvider(cfg.GetAccessKey(), cfg.GetSecretKey(), cfg.GetSessionToken())),
 		awscfg.WithHTTPClient(httpClient),
+		// aws-sdk-go-v2 默认 WhenSupported, 会在 Put/UploadPart 上强制添加
+		// CRC32 trailer 并使用 aws-chunked 流式编码; 不少非 AWS 网关(如部分
+		// 版本的 SeaweedFS/MinIO)无法识别该 trailer, 导致上传立即失败。
+		// 改为 WhenRequired, 仅在调用方显式要求时才计算/校验, 提升兼容性。
+		awscfg.WithRequestChecksumCalculation(awsv2.RequestChecksumCalculationWhenRequired),
+		awscfg.WithResponseChecksumValidation(awsv2.ResponseChecksumValidationWhenRequired),
 	)
 	if err != nil {
 		return nil, fmt.Errorf("load aws config: %w", err)
