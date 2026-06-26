@@ -52,10 +52,16 @@ func NewDiffCmd() *cobra.Command {
 
 			a, err := action.ParseDiffArg(cmd.Context(), args[0], aliasExists, makeClient)
 			if err != nil {
+				if isCanceled(cmd.Context()) {
+					return nil
+				}
 				return fmt.Errorf("parse %q: %w", args[0], err)
 			}
 			b, err := action.ParseDiffArg(cmd.Context(), args[1], aliasExists, makeClient)
 			if err != nil {
+				if isCanceled(cmd.Context()) {
+					return nil
+				}
 				return fmt.Errorf("parse %q: %w", args[1], err)
 			}
 
@@ -67,6 +73,10 @@ func NewDiffCmd() *cobra.Command {
 				Concurrency: concurrency,
 				BriefOnly:   briefOnly,
 			})
+			// 用户主动取消（Ctrl+C）：静默退出，不打印错误。
+			if isCanceled(cmd.Context()) || action.IsCanceled(err) {
+				return nil
+			}
 			if action.IsDifferErr(err) {
 				// 类似 unix diff：有差异时退出码为 1，但不再额外打印错误
 				os.Exit(1)

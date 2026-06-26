@@ -54,9 +54,14 @@ type ObjectInfo struct {
 	LastModified time.Time
 }
 
-// listAllObjects 列出 bucket 下 prefix 的所有对象。
-func listAllObjects(c *S3Client, bucket, prefix string) (map[string]ObjectInfo, error) {
-	objects := make(map[string]ObjectInfo)
+// streamObjects 流式列出 bucket 下 prefix 的所有对象，把每个对象（相对路径）
+// 按 S3 返回的字典序写入 out。S3 ListObjectsV2 保证 key 字典序递增；去掉
+// 固定前缀后，相对 key 的相对顺序不变，因此 out 也是有序流。
+//
+// 该函数不在内存里缓存全集 —— 列举与下游消费同时进行，内存恒定。
+// 出错时把错误写入 errCh 并提前关闭 out。
+func streamObjects(c *S3Client, bucket, prefix string, out chan<- ObjectInfo, errCh chan<- error) {
+	defer close(out)
 
 	paginator := s3.NewListObjectsV2Paginator(c.S3, &s3.ListObjectsV2Input{
 		Bucket: aws.String(bucket),
@@ -66,47 +71,80 @@ func listAllObjects(c *S3Client, bucket, prefix string) (map[string]ObjectInfo, 
 	for paginator.HasMorePages() {
 		page, err := paginator.NextPage(c.Ctx)
 		if err != nil {
-			return nil, fmt.Errorf("list s3://%s/%s: %s", bucket, prefix, FormatAPIError(err))
+			select {
+			case errCh <- fmt.Errorf("list %s: %s", c.S3Path(bucket, prefix), FormatAPIError(err)):
+			default:
+			}
+			return
 		}
 		for _, obj := range page.Contents {
 			key := aws.ToString(obj.Key)
-			objects[key] = ObjectInfo{
-				Key:          key,
+			info := ObjectInfo{
+				Key:          relKey(key, prefix),
 				Size:         aws.ToInt64(obj.Size),
 				ETag:         strings.Trim(aws.ToString(obj.ETag), `"`),
 				LastModified: aws.ToTime(obj.LastModified),
 			}
+			select {
+			case out <- info:
+			case <-c.Ctx.Done():
+				select {
+				case errCh <- c.Ctx.Err():
+				default:
+				}
+				return
+			}
 		}
 	}
-	return objects, nil
 }
 
-// =============== 差异计算 ===============
+// =============== 差异计算（流式归并）===============
 
-type diffResult struct {
-	ToCopy   []string // 需要 src -> tgt 的 key（相对路径）
-	ToDelete []string // 需要从目标删除的 key（相对路径）
+// diffAction 描述归并产出的单个差异决策。
+type diffAction struct {
+	rel    string // 相对路径
+	delete bool   // true=目标多余需删除；false=需 src->tgt 复制
+	size   int64  // 复制时为源对象大小（用于进度统计）
 }
 
-// calcDiff 计算 src->tgt 的差异。入参的 key 是“相对路径”，便于跨前缀比较。
-func calcDiff(source, target map[string]ObjectInfo, overwrite bool) diffResult {
-	var r diffResult
-	for key, src := range source {
-		tgt, ok := target[key]
-		if !ok {
-			r.ToCopy = append(r.ToCopy, key)
-			continue
-		}
-		if overwrite && needsUpdate(src, tgt) {
-			r.ToCopy = append(r.ToCopy, key)
+// streamDiff 归并两个“有序”对象流，边读边产出差异决策到 actions。
+//
+// 因为两个流都按相对 key 字典序递增，可做经典 merge-join：
+//   - src 当前 key < tgt 当前 key  -> src 独有 -> COPY
+//   - src 当前 key > tgt 当前 key  -> tgt 独有 -> DELETE
+//   - 相等                          -> 两端都有，overwrite 且有变更才 COPY
+//
+// 内存占用 O(1)（仅各持有一个待比较对象），不依赖全集装载。
+func streamDiff(srcCh, tgtCh <-chan ObjectInfo, overwrite bool, actions chan<- diffAction) {
+	defer close(actions)
+
+	src, srcOK := <-srcCh
+	tgt, tgtOK := <-tgtCh
+
+	for srcOK && tgtOK {
+		switch {
+		case src.Key < tgt.Key:
+			actions <- diffAction{rel: src.Key, size: src.Size}
+			src, srcOK = <-srcCh
+		case src.Key > tgt.Key:
+			actions <- diffAction{rel: tgt.Key, delete: true}
+			tgt, tgtOK = <-tgtCh
+		default: // 相等
+			if overwrite && needsUpdate(src, tgt) {
+				actions <- diffAction{rel: src.Key, size: src.Size}
+			}
+			src, srcOK = <-srcCh
+			tgt, tgtOK = <-tgtCh
 		}
 	}
-	for key := range target {
-		if _, ok := source[key]; !ok {
-			r.ToDelete = append(r.ToDelete, key)
-		}
+	for srcOK { // 剩余源对象：目标都没有 -> COPY
+		actions <- diffAction{rel: src.Key, size: src.Size}
+		src, srcOK = <-srcCh
 	}
-	return r
+	for tgtOK { // 剩余目标对象：源都没有 -> DELETE
+		actions <- diffAction{rel: tgt.Key, delete: true}
+		tgt, tgtOK = <-tgtCh
+	}
 }
 
 func needsUpdate(src, tgt ObjectInfo) bool {
@@ -164,7 +202,7 @@ func copyObjectCrossEndpoint(
 		Key:    aws.String(srcKey),
 	})
 	if err != nil {
-		return fmt.Errorf("head s3://%s/%s: %s", srcBucket, srcKey, FormatAPIError(err))
+		return fmt.Errorf("head %s: %s", src.S3Path(srcBucket, srcKey), FormatAPIError(err))
 	}
 
 	totalSize := aws.ToInt64(headResp.ContentLength)
@@ -424,62 +462,12 @@ func Mirror(cfg MirrorOptions) error {
 	}
 
 	verbose := !myprint.Quiet()
-
-	// 1. 列源 / 目标
-	if verbose {
-		myprint.Printf("Listing source %s ...\n", srcClient.S3Path(srcBucket, srcPrefix))
-	}
-	srcRaw, err := listAllObjects(srcClient, srcBucket, srcPrefix)
-	if err != nil {
-		return err
-	}
-	if verbose {
-		myprint.Printf("  source : %d objects\n", len(srcRaw))
-	}
-
-	if verbose {
-		myprint.Printf("Listing target %s ...\n", tgtClient.S3Path(tgtBucket, tgtPrefix))
-	}
-	tgtRaw, err := listAllObjects(tgtClient, tgtBucket, tgtPrefix)
-	if err != nil {
-		return err
-	}
-	if verbose {
-		myprint.Printf("  target : %d objects\n", len(tgtRaw))
-	}
-
-	// 2. 转相对路径
-	src := make(map[string]ObjectInfo, len(srcRaw))
-	for k, v := range srcRaw {
-		src[relKey(k, srcPrefix)] = v
-	}
-	tgt := make(map[string]ObjectInfo, len(tgtRaw))
-	for k, v := range tgtRaw {
-		tgt[relKey(k, tgtPrefix)] = v
-	}
-
-	// 3. 差异
-	diff := calcDiff(src, tgt, cfg.Overwrite)
-	if verbose {
-		myprint.Printf("Plan: %d to copy, %d to delete\n", len(diff.ToCopy), len(diff.ToDelete))
-	}
-	if cfg.DryRun {
-		for _, k := range diff.ToCopy {
-			myprint.Printf("  COPY   %s -> %s\n",
-				srcClient.S3Path(srcBucket, joinKey(srcPrefix, k)),
-				tgtClient.S3Path(tgtBucket, joinKey(tgtPrefix, k)))
-		}
-		if cfg.Remove {
-			for _, k := range diff.ToDelete {
-				myprint.Printf("  DELETE %s\n", tgtClient.S3Path(tgtBucket, joinKey(tgtPrefix, k)))
-			}
-		}
-		return nil
-	}
-
-	// 4. 并发复制（带进度条）
 	sameEP := sameEndpoint(cfg.Src, cfg.Tgt)
+
+	// 1. 流式列举源 / 目标（不缓存全集）
 	if verbose {
+		myprint.Printf("Listing & mirroring %s -> %s ...\n",
+			srcClient.S3Path(srcBucket, srcPrefix), tgtClient.S3Path(tgtBucket, tgtPrefix))
 		if sameEP {
 			myprint.Println("Strategy: server-side CopyObject (same endpoint)")
 		} else {
@@ -487,20 +475,46 @@ func Mirror(cfg MirrorOptions) error {
 		}
 	}
 
+	listErrCh := make(chan error, 2)
+	srcCh := make(chan ObjectInfo, 1024)
+	tgtCh := make(chan ObjectInfo, 1024)
+	go streamObjects(srcClient, srcBucket, srcPrefix, srcCh, listErrCh)
+	go streamObjects(tgtClient, tgtBucket, tgtPrefix, tgtCh, listErrCh)
+
+	// 2. 流式归并差异
+	actions := make(chan diffAction, 1024)
+	go streamDiff(srcCh, tgtCh, cfg.Overwrite, actions)
+
+	// 3. DryRun：边归并边打印，无需缓存。
+	if cfg.DryRun {
+		var nCopy, nDelete int64
+		for a := range actions {
+			if a.delete {
+				if cfg.Remove {
+					myprint.Printf("  DELETE %s\n", tgtClient.S3Path(tgtBucket, joinKey(tgtPrefix, a.rel)))
+				}
+				nDelete++
+				continue
+			}
+			myprint.Printf("  COPY   %s -> %s\n",
+				srcClient.S3Path(srcBucket, joinKey(srcPrefix, a.rel)),
+				tgtClient.S3Path(tgtBucket, joinKey(tgtPrefix, a.rel)))
+			nCopy++
+		}
+		if err := drainListErr(listErrCh); err != nil {
+			return err
+		}
+		if verbose {
+			myprint.Printf("Plan: %d to copy, %d to delete\n", nCopy, nDelete)
+		}
+		return nil
+	}
+
+	// 4. 并发复制（带进度条）。总量随归并进度增量发现，而非预先已知。
 	pt := progress.New()
 	pt.SetLabel("mirror")
 	pt.Start()
 	defer pt.Stop()
-
-	// 预先设置总数与总字节（mirror 是先列完再操作的，已知每个对象大小）。
-	pt.AddTotal(int64(len(diff.ToCopy)))
-	var totalBytes int64
-	for _, rel := range diff.ToCopy {
-		if info, ok := src[rel]; ok {
-			totalBytes += info.Size
-		}
-	}
-	pt.AddTotalSize(totalBytes)
 
 	var (
 		wg      sync.WaitGroup
@@ -509,28 +523,35 @@ func Mirror(cfg MirrorOptions) error {
 		skipped atomic.Int64
 		failed  atomic.Int64
 		startAt = time.Now()
+
+		toDelete []string // 仅 --remove 时累积；O(删除数) 而非 O(全集)
 	)
 
-	for _, rel := range diff.ToCopy {
-		if cfg.SizeLimit > 0 {
-			if info, ok := src[rel]; ok && info.Size > cfg.SizeLimit {
-				skipped.Add(1)
-				// 跳过的对象不计入总字节，从 totalSize 中减掉，避免进度永远到不了 100%。
-				pt.AddTotalSize(-info.Size)
-				myprint.Printf("SKIP (size > limit): %s (%s)\n", rel, FormatBytes(info.Size))
-				continue
+	for a := range actions {
+		if a.delete {
+			if cfg.Remove {
+				toDelete = append(toDelete, joinKey(tgtPrefix, a.rel))
 			}
+			continue
 		}
+
+		if cfg.SizeLimit > 0 && a.size > cfg.SizeLimit {
+			skipped.Add(1)
+			myprint.Printf("SKIP (size > limit): %s (%s)\n", a.rel, FormatBytes(a.size))
+			continue
+		}
+
+		pt.AddTotal(1)
+		pt.AddTotalSize(a.size)
 
 		wg.Add(1)
 		sem <- struct{}{}
-		go func(rel string) {
+		go func(rel string, objSize int64) {
 			defer wg.Done()
 			defer func() { <-sem }()
 
 			srcKey := joinKey(srcPrefix, rel)
 			tgtKey := joinKey(tgtPrefix, rel)
-			objSize := src[rel].Size
 
 			// report 实时上报本对象传输的字节增量；reported 用于成功对账 / 失败回退。
 			var reported int64
@@ -554,6 +575,10 @@ func Mirror(cfg MirrorOptions) error {
 				if r := atomic.LoadInt64(&reported); r != 0 {
 					pt.AddTotalSizeDone(-r)
 				}
+				// 用户主动取消（Ctrl+C）导致的在途错误不计为失败，静默跳过。
+				if IsCanceled(cerr) || srcClient.Ctx.Err() != nil {
+					return
+				}
 				msg := fmt.Sprintf("✗ %s → %s: %v", srcClient.S3Path(srcBucket, srcKey), tgtClient.S3Path(tgtBucket, tgtKey), cerr)
 				failed.Add(1)
 				pt.AddFailed(msg)
@@ -561,27 +586,28 @@ func Mirror(cfg MirrorOptions) error {
 				return
 			}
 			// 成功：对账，把进度精确补齐到 objSize（适配服务端 copy / 跨端分片偏差）。
-			if diff := objSize - atomic.LoadInt64(&reported); diff != 0 {
-				pt.AddTotalSizeDone(diff)
+			if d := objSize - atomic.LoadInt64(&reported); d != 0 {
+				pt.AddTotalSizeDone(d)
 			}
 			copied.Add(1)
 			pt.AddTotalDone(1)
-		}(rel)
+		}(a.rel, a.size)
 	}
 	wg.Wait()
 
+	// 列举过程中若出错，归并会提前结束 —— 优先报告列举错误。
+	if err := drainListErr(listErrCh); err != nil {
+		return err
+	}
+
 	// 5. 删除目标多余对象
 	var deleted int
-	if cfg.Remove && len(diff.ToDelete) > 0 {
-		fullKeys := make([]string, 0, len(diff.ToDelete))
-		for _, rel := range diff.ToDelete {
-			fullKeys = append(fullKeys, joinKey(tgtPrefix, rel))
-		}
-		myprint.Printf("Deleting %d extra objects on target...\n", len(fullKeys))
-		if err := deleteObjectsBatch(tgtClient, tgtBucket, fullKeys); err != nil {
+	if cfg.Remove && len(toDelete) > 0 {
+		myprint.Printf("Deleting %d extra objects on target...\n", len(toDelete))
+		if err := deleteObjectsBatch(tgtClient, tgtBucket, toDelete); err != nil {
 			myprint.PrintfRed("delete error: %v\n", err)
 		} else {
-			deleted = len(fullKeys)
+			deleted = len(toDelete)
 		}
 	}
 
@@ -593,4 +619,18 @@ func Mirror(cfg MirrorOptions) error {
 		return fmt.Errorf("mirror finished with %d failures", failed.Load())
 	}
 	return nil
+}
+
+// drainListErr 非阻塞读取列举阶段的首个错误（若有）。
+// 用户主动取消引起的错误视为正常停止，返回 nil。
+func drainListErr(errCh chan error) error {
+	select {
+	case err := <-errCh:
+		if IsCanceled(err) {
+			return nil
+		}
+		return err
+	default:
+		return nil
+	}
 }
