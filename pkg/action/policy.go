@@ -21,7 +21,8 @@ func (c *S3Client) SetPolicy(policyfile, bucketname string) error {
 		return err
 	}
 	_, err = c.S3.PutBucketPolicy(c.Ctx, &s3.PutBucketPolicyInput{
-		Bucket: aws.String(bucketname), Policy: aws.String(string(data)),
+		Bucket: aws.String(bucketname),
+		Policy: aws.String(string(data)),
 	})
 	if err != nil {
 		return fmt.Errorf("set policy %s: %s", bucketname, FormatAPIError(err))
