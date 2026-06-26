@@ -1,6 +1,7 @@
 package action
 
 import (
+	"errors"
 	"fmt"
 
 	myprint "s3cli/pkg/fmtutil"
@@ -10,26 +11,23 @@ import (
 	s3types "github.com/aws/aws-sdk-go-v2/service/s3/types"
 )
 
-func (c *S3Client) SetVersioning(bucket string, status bool) error {
-	var st s3types.BucketVersioningStatus
-	if status {
-		st = s3types.BucketVersioningStatusEnabled
-	} else {
-		st = s3types.BucketVersioningStatusSuspended
+func (c *S3Client) SetVersioning(bucket string, status string) error {
+	if status == "" {
+		return errors.New("status cannot be empty")
 	}
 
 	_, err := c.S3.PutBucketVersioning(c.Ctx,
 		&s3.PutBucketVersioningInput{
 			Bucket: aws.String(bucket),
 			VersioningConfiguration: &s3types.VersioningConfiguration{
-				Status: s3types.BucketVersioningStatus(st),
+				Status: s3types.BucketVersioningStatus(status),
 			},
 		})
 	if err != nil {
 		return fmt.Errorf("set versioning %s: %s", bucket, FormatAPIError(err))
 	}
 
-	myprint.PrintfBoldGreen("Versioning %s for %s %s\n", st, c.Alias, bucket)
+	myprint.PrintfBoldGreen("Versioning %s for %s %s\n", status, c.Alias, bucket)
 	return nil
 }
 

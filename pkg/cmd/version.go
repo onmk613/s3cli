@@ -15,31 +15,24 @@ func NewVersionCmd() *cobra.Command {
 		Short: "Manage bucket versioning",
 	}
 
-	versionCmd.AddCommand(NewVersionEnableCmd(), NewVersionSuspendCmd(), NewVersionInfoCmd())
+	versionCmd.AddCommand(NewVersionSetCmd(), NewVersionInfoCmd())
 	return versionCmd
 }
 
-func NewVersionEnableCmd() *cobra.Command {
-	return &cobra.Command{
-		Use:   "enabled [alias:bucket] ...",
+func NewVersionSetCmd() *cobra.Command {
+	var set string
+	cmd := &cobra.Command{
+		Use:   "set [alias:bucket] ...",
 		Short: "Enable bucket versioning",
 		Args:  cobra.MinimumNArgs(1),
 		RunE: NewRunE(ActionFunc(func(S3 action.S3Client, _ *CmdContext, s3path *utils.S3Path) error {
-			return S3.SetVersioning(s3path.Bucket, true)
+			return S3.SetVersioning(s3path.Bucket, set)
 		}), nil),
 	}
-}
 
-func NewVersionSuspendCmd() *cobra.Command {
-	return &cobra.Command{
-		Use:     "suspended [alias:bucket] ...",
-		Aliases: []string{"disabled"},
-		Short:   "Suspend bucket versioning",
-		Args:    cobra.MinimumNArgs(1),
-		RunE: NewRunE(ActionFunc(func(S3 action.S3Client, _ *CmdContext, s3path *utils.S3Path) error {
-			return S3.SetVersioning(s3path.Bucket, false)
-		}), nil),
-	}
+	cmd.Flags().StringVar(&set, "status", "", "Set bucket versioning status")
+	_ = cmd.MarkFlagRequired("status")
+	return cmd
 }
 
 func NewVersionInfoCmd() *cobra.Command {

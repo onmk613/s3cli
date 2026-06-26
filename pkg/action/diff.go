@@ -298,6 +298,10 @@ func diffDirectories(opt DiffOptions) error {
 				defer wg.Done()
 				defer func() { <-sem }()
 				equal, err := compareContent(opt.A, rel, opt.B, rel)
+				// 用户主动取消（Ctrl+C）导致的在途错误不计为差异/失败。
+				if IsCanceled(err) || (opt.A.Ctx != nil && opt.A.Ctx.Err() != nil) {
+					return
+				}
 				mu.Lock()
 				defer mu.Unlock()
 				if err != nil {
@@ -322,6 +326,14 @@ func diffDirectories(opt DiffOptions) error {
 	}
 
 	wg.Wait()
+
+	// 用户主动取消（Ctrl+C）：结果不完整，静默返回，不打印误导性的摘要。
+	if opt.A.Ctx != nil && opt.A.Ctx.Err() != nil {
+		return nil
+	}
+	if opt.B.Ctx != nil && opt.B.Ctx.Err() != nil {
+		return nil
+	}
 
 	sort.Strings(onlyA)
 	sort.Strings(onlyB)
