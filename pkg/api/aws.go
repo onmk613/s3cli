@@ -2,112 +2,26 @@ package api
 
 import (
 	"context"
+	"encoding/json"
+	"encoding/xml"
 	"errors"
+	"fmt"
 	"io"
 	"net/url"
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
-	"github.com/aws/aws-sdk-go-v2/service/s3/types"
-	"github.com/aws/smithy-go"
+	s3types "github.com/aws/aws-sdk-go-v2/service/s3/types"
 )
-
-// ============ 数据结构定义 ============
-
-type BucketInfo struct {
-	Name         string
-	CreationDate time.Time
-}
-
-type ObjectInfo struct {
-	Key          string
-	Size         int64
-	ETag         string
-	LastModified time.Time
-	ContentType  string
-	Metadata     map[string]string
-	StorageClass string
-}
-
-type PutOption func(*putOptions)
-
-type putOptions struct {
-	ContentType   string
-	ContentLength int64
-	Metadata      map[string]string
-	StorageClass  string
-}
-
-func WithContentType(ct string) PutOption {
-	return func(o *putOptions) { o.ContentType = ct }
-}
-
-func WithContentLength(length int64) PutOption {
-	return func(o *putOptions) { o.ContentLength = length }
-}
-
-func WithMetadata(meta map[string]string) PutOption {
-	return func(o *putOptions) { o.Metadata = meta }
-}
-
-func WithStorageClass(sc string) PutOption {
-	return func(o *putOptions) { o.StorageClass = sc }
-}
-
-type ListOption func(*listOptions)
-
-type listOptions struct {
-	Delimiter         string
-	MaxKeys           int32
-	ContinuationToken string
-}
-
-func WithDelimiter(delimiter string) ListOption {
-	return func(o *listOptions) { o.Delimiter = delimiter }
-}
-
-func WithMaxKeys(max int32) ListOption {
-	return func(o *listOptions) { o.MaxKeys = max }
-}
-
-func WithContinuationToken(token string) ListOption {
-	return func(o *listOptions) { o.ContinuationToken = token }
-}
-
-type ListObjectsResult struct {
-	Objects        []ObjectInfo
-	CommonPrefixes []string // 目录（配合 Delimiter 使用）
-	IsTruncated    bool
-	NextToken      string
-}
-
-type DeleteError struct {
-	Key     string
-	Code    string
-	Message string
-}
-
-type CompletedPart struct {
-	PartNumber int32
-	ETag       string
-}
-
-type PartInfo struct {
-	PartNumber   int32
-	ETag         string
-	Size         int64
-	LastModified time.Time
-}
-
-// ============ S3GenericAPI 实现 ============
 
 type S3GenericAPI struct {
 	S3 *s3.Client
 }
 
-// ---------- Bucket 操作 ----------
+// ===== Bucket Management and Configuration =====
 
+// Bucket Action
 func (c *S3GenericAPI) CreateBucket(ctx context.Context, bucket string) error {
 	_, err := c.S3.CreateBucket(ctx, &s3.CreateBucketInput{
 		Bucket: aws.String(bucket),
@@ -120,28 +34,6 @@ func (c *S3GenericAPI) DeleteBucket(ctx context.Context, bucket string) error {
 		Bucket: aws.String(bucket),
 	})
 	return err
-}
-
-func (c *S3GenericAPI) HeadBucket(ctx context.Context, bucket string) (bool, error) {
-	_, err := c.S3.HeadBucket(ctx, &s3.HeadBucketInput{
-		Bucket: aws.String(bucket),
-	})
-	if err != nil {
-		var notFound *types.NotFound
-		if errors.As(err, &notFound) {
-			return false, nil
-		}
-		// 兼容部分厂商返回的不同错误类型
-		var apiErr smithy.APIError
-		if errors.As(err, &apiErr) {
-			switch apiErr.ErrorCode() {
-			case "NotFound", "NoSuchBucket", "404":
-				return false, nil
-			}
-		}
-		return false, err
-	}
-	return true, nil
 }
 
 func (c *S3GenericAPI) ListBuckets(ctx context.Context) ([]BucketInfo, error) {
@@ -159,6 +51,234 @@ func (c *S3GenericAPI) ListBuckets(ctx context.Context) ([]BucketInfo, error) {
 	}
 	return buckets, nil
 }
+
+// Bucket Policy
+func (c *S3GenericAPI) SetBucketPolicy(ctx context.Context, bucket string, data []byte) error {
+	_, err := c.S3.PutBucketPolicy(ctx, &s3.PutBucketPolicyInput{
+		Bucket: aws.String(bucket),
+		Policy: aws.String(string(data)),
+	})
+	return err
+}
+
+func (c *S3GenericAPI) GetBucketPolicy(ctx context.Context, bucket string) (string, error) {
+	out, err := c.S3.GetBucketPolicy(ctx, &s3.GetBucketPolicyInput{Bucket: aws.String(bucket)})
+	if err != nil {
+		return "", err
+	}
+	return aws.ToString(out.Policy), nil
+}
+
+func (c *S3GenericAPI) DeleteBucketPolicy(ctx context.Context, bucket string) error {
+	_, err := c.S3.DeleteBucketPolicy(ctx, &s3.DeleteBucketPolicyInput{Bucket: aws.String(bucket)})
+	return err
+}
+
+// Bucket CORS
+func (c *S3GenericAPI) SetBucketCors(ctx context.Context, bucket string, data []byte) error {
+	var x xmlCORSConfiguration
+	if err := xml.Unmarshal(data, &x); err != nil {
+		return err
+	}
+	xmlData := &s3types.CORSConfiguration{CORSRules: make([]s3types.CORSRule, 0, len(x.Rules))}
+	for _, r := range x.Rules {
+		rule := s3types.CORSRule{
+			AllowedMethods: r.AllowedMethods,
+			AllowedOrigins: r.AllowedOrigins,
+			AllowedHeaders: r.AllowedHeaders,
+			ExposeHeaders:  r.ExposeHeaders,
+			MaxAgeSeconds:  r.MaxAgeSeconds,
+		}
+		if r.ID != "" {
+			rule.ID = aws.String(r.ID)
+		}
+		xmlData.CORSRules = append(xmlData.CORSRules, rule)
+	}
+	_, err := c.S3.PutBucketCors(ctx, &s3.PutBucketCorsInput{
+		Bucket:            aws.String(bucket),
+		CORSConfiguration: xmlData,
+	})
+	return err
+}
+
+func (c *S3GenericAPI) GetBucketCors(ctx context.Context, bucket string) ([]byte, error) {
+	out, err := c.S3.GetBucketCors(ctx, &s3.GetBucketCorsInput{
+		Bucket: aws.String(bucket),
+	})
+	if err != nil {
+		return nil, err
+	}
+	return json.MarshalIndent(map[string]any{"CORSRules": out.CORSRules}, "", "  ")
+}
+
+func (c *S3GenericAPI) DeleteBucketCors(ctx context.Context, bucket string) error {
+	_, err := c.S3.DeleteBucketCors(ctx, &s3.DeleteBucketCorsInput{
+		Bucket: aws.String(bucket),
+	})
+	return err
+}
+
+// Bucket Lifecycle
+func (c *S3GenericAPI) SetLifecycle(ctx context.Context, bucket string, data []byte) error {
+	var cfg s3types.BucketLifecycleConfiguration
+	if err := json.Unmarshal(data, &cfg); err != nil {
+		return fmt.Errorf("parse json: %w", err)
+	}
+	//if len(cfg.Rules) == 0 {
+	//	return errors.New("no lifecycle rules found")
+	//}
+	//for i, r := range cfg.Rules {
+	//	if r.Status == "" {
+	//		return fmt.Errorf("rule[%d] missing required field 'Status' (Enabled/Disabled)", i)
+	//	}
+	//	if r.Filter == nil {
+	//		return fmt.Errorf("rule[%d] must specify 'Filter' or legacy 'Prefix'", i)
+	//	}
+	//}
+	_, err := c.S3.PutBucketLifecycleConfiguration(ctx, &s3.PutBucketLifecycleConfigurationInput{
+		Bucket:                 aws.String(bucket),
+		LifecycleConfiguration: &cfg,
+	})
+	return err
+}
+
+func (c *S3GenericAPI) GetLifecycle(ctx context.Context, bucket string) ([]byte, error) {
+	out, err := c.S3.GetBucketLifecycleConfiguration(ctx,
+		&s3.GetBucketLifecycleConfigurationInput{
+			Bucket: aws.String(bucket)})
+	if err != nil {
+		return nil, err
+	}
+	return json.MarshalIndent(map[string]any{"Rules": out.Rules}, "", "  ")
+}
+
+func (c *S3GenericAPI) DelLifecycle(ctx context.Context, bucket string) error {
+	_, err := c.S3.DeleteBucketLifecycle(ctx,
+		&s3.DeleteBucketLifecycleInput{
+			Bucket: aws.String(bucket)})
+	return err
+}
+
+// Bucket Notification
+func (c *S3GenericAPI) SetEvent(ctx context.Context, bucket string, data []byte) error {
+	var cfg s3types.NotificationConfiguration
+	if err := json.Unmarshal(data, &cfg); err != nil {
+		return fmt.Errorf("parse json: %w", err)
+	}
+	_, err := c.S3.PutBucketNotificationConfiguration(ctx, &s3.PutBucketNotificationConfigurationInput{
+		Bucket:                    aws.String(bucket),
+		NotificationConfiguration: &cfg,
+	})
+	return err
+}
+
+func (c *S3GenericAPI) GetEvent(ctx context.Context, bucket string) ([]byte, error) {
+	out, err := c.S3.GetBucketNotificationConfiguration(ctx, &s3.GetBucketNotificationConfigurationInput{
+		Bucket: aws.String(bucket),
+	})
+	if err != nil {
+		return nil, err
+	}
+	return json.MarshalIndent(out, "", "  ")
+}
+
+func (c *S3GenericAPI) DelEvent(ctx context.Context, bucket string) error {
+	_, err := c.S3.PutBucketNotificationConfiguration(ctx, &s3.PutBucketNotificationConfigurationInput{
+		Bucket:                    aws.String(bucket),
+		NotificationConfiguration: &s3types.NotificationConfiguration{},
+	})
+	return err
+}
+
+// Bucket Versioning
+func (c *S3GenericAPI) SetBucketVersioning(ctx context.Context, bucket, status string) error {
+	_, err := c.S3.PutBucketVersioning(ctx,
+		&s3.PutBucketVersioningInput{
+			Bucket: aws.String(bucket),
+			VersioningConfiguration: &s3types.VersioningConfiguration{
+				Status: s3types.BucketVersioningStatus(status)}})
+	return err
+}
+
+func (c *S3GenericAPI) GetBucketVersioning(ctx context.Context, bucket string) (string, error) {
+	out, err := c.S3.GetBucketVersioning(ctx,
+		&s3.GetBucketVersioningInput{Bucket: aws.String(bucket)})
+	return string(out.Status), err
+}
+
+// Bucket Tagging
+func (c *S3GenericAPI) SetTagging(ctx context.Context, bucket, prefix string, tagStr map[string]string) error {
+	tags := make([]s3types.Tag, 0, len(tagStr))
+	for k, v := range tagStr {
+		tags = append(tags, s3types.Tag{
+			Key:   aws.String(k),
+			Value: aws.String(v),
+		})
+	}
+	var err error
+	if prefix == "" {
+		_, err = c.S3.PutBucketTagging(ctx, &s3.PutBucketTaggingInput{
+			Bucket:  aws.String(bucket),
+			Tagging: &s3types.Tagging{TagSet: tags},
+		})
+	} else {
+		_, err = c.S3.PutObjectTagging(ctx, &s3.PutObjectTaggingInput{
+			Bucket:  aws.String(bucket),
+			Key:     aws.String(prefix),
+			Tagging: &s3types.Tagging{TagSet: tags},
+		})
+	}
+	return err
+}
+
+func (c *S3GenericAPI) GetTagging(ctx context.Context, bucket, prefix string) (map[string]string, error) {
+	var tags []s3types.Tag
+	if prefix == "" {
+		out, err := c.S3.GetBucketTagging(ctx, &s3.GetBucketTaggingInput{
+			Bucket: aws.String(bucket)})
+		if err != nil {
+			return nil, err
+		}
+		tags = out.TagSet
+	} else {
+		out, err := c.S3.GetObjectTagging(ctx, &s3.GetObjectTaggingInput{
+			Bucket: aws.String(bucket),
+			Key:    aws.String(prefix),
+		})
+		if err != nil {
+			return nil, err
+		}
+		tags = out.TagSet
+	}
+	if len(tags) == 0 {
+		return nil, errors.New("NoTags")
+	}
+
+	var m map[string]string
+	for _, t := range tags {
+		m = map[string]string{
+			aws.ToString(t.Key): aws.ToString(t.Value),
+		}
+	}
+	return m, nil
+}
+
+func (c *S3GenericAPI) DelTagging(ctx context.Context, bucket, prefix string) error {
+	if prefix == "" {
+		_, err := c.S3.DeleteBucketTagging(ctx, &s3.DeleteBucketTaggingInput{
+			Bucket: aws.String(bucket),
+		})
+		return err
+	}
+
+	_, err := c.S3.DeleteObjectTagging(ctx, &s3.DeleteObjectTaggingInput{
+		Bucket: aws.String(bucket),
+		Key:    aws.String(prefix),
+	})
+	return err
+}
+
+// ============ S3GenericAPI 实现 ============
 
 // ---------- Object 基础操作 ----------
 
@@ -183,7 +303,7 @@ func (c *S3GenericAPI) PutObject(ctx context.Context, bucket, key string, body i
 		input.Metadata = o.Metadata
 	}
 	if o.StorageClass != "" {
-		input.StorageClass = types.StorageClass(o.StorageClass)
+		input.StorageClass = s3types.StorageClass(o.StorageClass)
 	}
 
 	_, err := c.S3.PutObject(ctx, input)
@@ -224,14 +344,14 @@ func (c *S3GenericAPI) DeleteObjects(ctx context.Context, bucket string, keys []
 	if len(keys) == 0 {
 		return nil, nil
 	}
-	objects := make([]types.ObjectIdentifier, 0, len(keys))
+	objects := make([]s3types.ObjectIdentifier, 0, len(keys))
 	for _, k := range keys {
-		objects = append(objects, types.ObjectIdentifier{Key: aws.String(k)})
+		objects = append(objects, s3types.ObjectIdentifier{Key: aws.String(k)})
 	}
 
 	out, err := c.S3.DeleteObjects(ctx, &s3.DeleteObjectsInput{
 		Bucket: aws.String(bucket),
-		Delete: &types.Delete{
+		Delete: &s3types.Delete{
 			Objects: objects,
 			Quiet:   aws.Bool(true), // 只返回错误，成功不返回
 		},
@@ -360,9 +480,9 @@ func (c *S3GenericAPI) UploadPart(ctx context.Context, bucket, key, uploadID str
 }
 
 func (c *S3GenericAPI) CompleteMultipartUpload(ctx context.Context, bucket, key, uploadID string, parts []CompletedPart) error {
-	completed := make([]types.CompletedPart, 0, len(parts))
+	completed := make([]s3types.CompletedPart, 0, len(parts))
 	for _, p := range parts {
-		completed = append(completed, types.CompletedPart{
+		completed = append(completed, s3types.CompletedPart{
 			PartNumber: aws.Int32(p.PartNumber),
 			ETag:       aws.String(p.ETag),
 		})
@@ -372,7 +492,7 @@ func (c *S3GenericAPI) CompleteMultipartUpload(ctx context.Context, bucket, key,
 		Bucket:   aws.String(bucket),
 		Key:      aws.String(key),
 		UploadId: aws.String(uploadID),
-		MultipartUpload: &types.CompletedMultipartUpload{
+		MultipartUpload: &s3types.CompletedMultipartUpload{
 			Parts: completed,
 		},
 	})
@@ -437,25 +557,4 @@ func (c *S3GenericAPI) PresignPutObject(ctx context.Context, bucket, key string,
 		return "", err
 	}
 	return req.URL, nil
-}
-
-func (c *S3GenericAPI) PutBucketPolicy(ctx context.Context, bucket string, data []byte) error {
-	_, err := c.S3.PutBucketPolicy(ctx, &s3.PutBucketPolicyInput{
-		Bucket: aws.String(bucket),
-		Policy: aws.String(string(data)),
-	})
-	return err
-}
-
-func (c *S3GenericAPI) GetBucketPolicy(ctx context.Context, bucket string) (string, error) {
-	out, err := c.S3.GetBucketPolicy(ctx, &s3.GetBucketPolicyInput{Bucket: aws.String(bucket)})
-	if err != nil {
-		return "", err
-	}
-	return aws.ToString(out.Policy), nil
-}
-
-func (c *S3GenericAPI) DeleteBucketPolicy(ctx context.Context, bucket string) error {
-	_, err := c.S3.DeleteBucketPolicy(ctx, &s3.DeleteBucketPolicyInput{Bucket: aws.String(bucket)})
-	return err
 }

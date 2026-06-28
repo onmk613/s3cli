@@ -25,7 +25,8 @@ func (c *S3Client) SetTag(bucket, prefix string, tagStr map[string]string) error
 	}
 
 	_, err := c.S3.PutObjectTagging(c.Ctx, &s3.PutObjectTaggingInput{
-		Bucket: aws.String(bucket), Key: aws.String(prefix),
+		Bucket:  aws.String(bucket),
+		Key:     aws.String(prefix),
 		Tagging: &s3types.Tagging{TagSet: tags},
 	})
 	if err != nil {

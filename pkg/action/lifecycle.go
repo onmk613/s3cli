@@ -38,8 +38,10 @@ func (c *S3Client) SetLifecycle(lifecyclefile, bucket string) error {
 		}
 	}
 
-	_, err = c.S3.PutBucketLifecycleConfiguration(c.Ctx,
-		&s3.PutBucketLifecycleConfigurationInput{Bucket: aws.String(bucket), LifecycleConfiguration: &cfg})
+	_, err = c.S3.PutBucketLifecycleConfiguration(c.Ctx, &s3.PutBucketLifecycleConfigurationInput{
+		Bucket: aws.String(bucket),
+		LifecycleConfiguration: &cfg,
+	})
 	if err != nil {
 		return fmt.Errorf("set lifecycle %s: %s", bucket, FormatAPIError(err))
 	}
