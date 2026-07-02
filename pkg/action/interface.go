@@ -12,7 +12,6 @@ type S3Operations interface {
 	ObjectReader
 	ObjectWriter
 	BucketManager
-	BucketConfigurator
 	MultipartManager
 	TagManager
 	Signer
@@ -98,11 +97,10 @@ type Signer interface {
 // ============================================================================
 
 var (
-	_ ObjectReader       = (*S3Client)(nil)
-	_ ObjectWriter       = (*S3Client)(nil)
-	_ BucketManager      = (*S3Client)(nil)
-	_ BucketConfigurator = (*S3Client)(nil)
-	_ MultipartManager   = (*S3Client)(nil)
-	_ TagManager         = (*S3Client)(nil)
-	_ Signer             = (*S3Client)(nil)
+	_ ObjectReader     = (*S3Client)(nil)
+	_ ObjectWriter     = (*S3Client)(nil)
+	_ BucketManager    = (*S3Client)(nil)
+	_ MultipartManager = (*S3Client)(nil)
+	_ TagManager       = (*S3Client)(nil)
+	_ Signer           = (*S3Client)(nil)
 )
