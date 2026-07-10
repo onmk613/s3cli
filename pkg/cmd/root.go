@@ -11,6 +11,7 @@ import (
 
 	"s3cli/pkg/config"
 	myprint "s3cli/pkg/fmtutil"
+
 	// "s3cli/pkg/progress"
 
 	"github.com/spf13/cobra"
@@ -99,7 +100,7 @@ func NewRootCmd() {
 	pf.StringVar(&config.G.UserAgent, "user-agent", "", "Override the HTTP User-Agent header")
 	pf.StringVar(&config.G.UserAgentSuffix, "user-agent-suffix", "", "Append extra content to the HTTP User-Agent header")
 	pf.StringArrayVarP(&config.G.Headers, "header", "H", nil, "Add a custom HTTP header (key:value), can repeat")
-	// pf.BoolVarP(&progress.Quiet, "quiet", "q", false, "Disable progress bar; stream plain text output instead")
+	pf.BoolVarP(&config.G.Quiet, "quiet", "q", false, "Disable progress bar; stream plain text output instead")
 
 	// 从注册表添加所有子命令（带分组显示）。
 	// 同时校验顶层命令名/别名不得重叠：cobra 在命令名与别名冲突时的命中顺序
@@ -120,6 +121,9 @@ func NewRootCmd() {
 			rootCmd.AddCommand(cmd)
 		}
 	}
+
+	// 禁用help显示completion命令，保留功能，避免用户误以为是功能命令
+	rootCmd.CompletionOptions.HiddenDefaultCmd = true
 
 	err := rootCmd.Execute()
 	if err != nil {

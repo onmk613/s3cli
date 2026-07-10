@@ -20,12 +20,14 @@ func NewGetCmd() *cobra.Command {
 	var getOpt action.GetOptions
 	opts := newCmdContext(ParseS3PathAndLocalFile)
 	cmd := &cobra.Command{
-		Use:   "get [alias:bucket/path] [local-path]",
-		Short: "Download object(s) from S3",
-		Args:  cobra.MatchAll(cobra.MinimumNArgs(1), cobra.MaximumNArgs(2)),
+		Use:               "get [alias:bucket/path] [local-path]",
+		Short:             "Download object(s) from S3",
+		Args:              cobra.MatchAll(cobra.MinimumNArgs(1), cobra.MaximumNArgs(2)),
+		ValidArgsFunction: AutoCompletePath,
 		RunE: NewRunE(ActionFunc(func(S3 action.S3Client, opts *CmdContext, s3path *utils.S3Path) error {
 			g := getOpt
 			g.Recursive = opts.Global.Recursive
+			g.NoProgress = config.G.Quiet
 			return S3.GetObject(g, s3path.Bucket, s3path.Key, opts.Global.LocalFile)
 		}), &opts),
 	}
@@ -40,12 +42,14 @@ func NewPutCmd() *cobra.Command {
 	var putOpt action.PutOptions
 	opts := newCmdContext(ParseLocalFileAndS3Path)
 	cmd := &cobra.Command{
-		Use:   "put [local-path] [alias:bucket/path]",
-		Short: "Upload file(s) to S3",
-		Args:  cobra.ExactArgs(2),
+		Use:               "put [local-path] [alias:bucket/path]",
+		Short:             "Upload file(s) to S3",
+		Args:              cobra.ExactArgs(2),
+		ValidArgsFunction: AutoCompletePath,
 		RunE: NewRunE(ActionFunc(func(S3 action.S3Client, opts *CmdContext, s3path *utils.S3Path) error {
 			p := putOpt
 			p.Recursive = opts.Global.Recursive
+			p.NoProgress = config.G.Quiet
 			if cfg, ok := config.G.S[S3.Alias]; ok && cfg.DefaultMimeType != "" {
 				p.DefaultMimeType = cfg.DefaultMimeType
 			}
@@ -65,10 +69,11 @@ func NewRmCmd() *cobra.Command {
 	var delOpt action.DelOptions
 	opts := newCmdContext()
 	cmd := &cobra.Command{
-		Use:     "rm [s3://bucket/path] ...",
-		Aliases: []string{"delete", "del"},
-		Short:   "Delete object(s) from S3",
-		Args:    cobra.MinimumNArgs(1),
+		Use:               "rm [s3://bucket/path] ...",
+		Aliases:           []string{"delete", "del"},
+		Short:             "Delete object(s) from S3",
+		Args:              cobra.MinimumNArgs(1),
+		ValidArgsFunction: AutoCompletePath,
 		RunE: NewRunE(ActionFunc(func(S3 action.S3Client, opts *CmdContext, s3path *utils.S3Path) error {
 			return S3.DeleteObjects(s3path.Bucket, s3path.Key, delOpt)
 		}), &opts),
@@ -82,9 +87,10 @@ func NewCatCmd() *cobra.Command {
 	var catOpt action.CatOptions
 	opts := newCmdContext()
 	cmd := &cobra.Command{
-		Use:   "cat [alias:bucket/key] ...",
-		Short: "Print object contents to stdout",
-		Args:  cobra.MinimumNArgs(1),
+		Use:               "cat [alias:bucket/key] ...",
+		Short:             "Print object contents to stdout",
+		Args:              cobra.MinimumNArgs(1),
+		ValidArgsFunction: AutoCompletePath,
 		RunE: NewRunE(ActionFunc(func(S3 action.S3Client, _ *CmdContext, s3path *utils.S3Path) error {
 			return S3.CatObject(catOpt, s3path.Bucket, s3path.Key)
 		}), &opts),
@@ -97,9 +103,10 @@ func NewPipeCmd() *cobra.Command {
 	var pipeOpt action.PipeOptions
 	opts := newCmdContext()
 	cmd := &cobra.Command{
-		Use:   "pipe [alias:bucket/key]",
-		Short: "Upload data from stdin to an S3 object",
-		Args:  cobra.ExactArgs(1),
+		Use:               "pipe [alias:bucket/key]",
+		Short:             "Upload data from stdin to an S3 object",
+		Args:              cobra.ExactArgs(1),
+		ValidArgsFunction: AutoCompletePath,
 		RunE: NewRunE(ActionFunc(func(S3 action.S3Client, _ *CmdContext, s3path *utils.S3Path) error {
 			p := pipeOpt
 			if cfg, ok := config.G.S[S3.Alias]; ok && cfg.DefaultMimeType != "" {

@@ -35,7 +35,7 @@ type ObjectReader interface {
 	DuObject(opt DuOptions, bucket, prefix string) error
 	FindObjects(opt FindOptions, bucket, prefix string) error
 	TreeObjects(opt TreeOptions, bucket, prefix string) error
-	ListOjbectVersions(bucket, prefix string) error
+	ListObjectVersions(bucket, prefix string) error
 }
 
 // ObjectWriter 对象写入 / 删除 / 移动操作。
@@ -43,8 +43,8 @@ type ObjectWriter interface {
 	PutObject(opt PutOptions, bucket, prefix, localpath string, isS3Dir bool) error
 	PipeUpload(opt PipeOptions, bucket, key string) error
 	DeleteObjects(bucket, prefix string, opt DelOptions) error
-	CopyObjects(srcBucket, srcKey, destBucket, destKey string, recursive bool) error
-	Mv(srcBucket, srcKey, destBucket, destKey string, recursive bool) error
+	CopyObjects(srcBucket, srcKey, destBucket, destKey string, recursive, noProgress bool) error
+	Mv(srcBucket, srcKey, destBucket, destKey string, recursive, noProgress bool) error
 }
 
 // BucketManager 桶的创建与删除。
@@ -67,7 +67,7 @@ type BucketConfigurator interface {
 	SetEncryption(opt EncryptionOptions, bucket string) error
 	GetEncryption(bucket string) error
 	DelEncryption(bucket string) error
-	SetVersioning(bucket string, status bool) error
+	SetVersioning(bucket string, status string) error
 	GetVersioning(bucket string) error
 	SetNotification(configfile, bucket string) error
 	GetNotification(bucket string) error
@@ -97,10 +97,11 @@ type Signer interface {
 // ============================================================================
 
 var (
-	_ ObjectReader     = (*S3Client)(nil)
-	_ ObjectWriter     = (*S3Client)(nil)
-	_ BucketManager    = (*S3Client)(nil)
-	_ MultipartManager = (*S3Client)(nil)
-	_ TagManager       = (*S3Client)(nil)
-	_ Signer           = (*S3Client)(nil)
+	_ ObjectReader       = (*S3Client)(nil)
+	_ ObjectWriter       = (*S3Client)(nil)
+	_ BucketManager      = (*S3Client)(nil)
+	_ BucketConfigurator = (*S3Client)(nil)
+	_ MultipartManager   = (*S3Client)(nil)
+	_ TagManager         = (*S3Client)(nil)
+	_ Signer             = (*S3Client)(nil)
 )

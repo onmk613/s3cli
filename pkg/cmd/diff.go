@@ -7,9 +7,9 @@ import (
 	"s3cli/pkg/action"
 	"s3cli/pkg/client"
 	"s3cli/pkg/config"
+	"s3cli/pkg/s3api"
 	"s3cli/pkg/utils"
 
-	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/spf13/cobra"
 )
 
@@ -27,9 +27,10 @@ func NewDiffCmd() *cobra.Command {
 	)
 
 	cmd := &cobra.Command{
-		Use:   "diff [path-a] [path-b]",
-		Short: "Compare files/directories between s3 and/or local paths",
-		Args:  cobra.ExactArgs(2),
+		Use:               "diff [path-a] [path-b]",
+		Short:             "Compare files/directories between s3 and/or local paths",
+		Args:              cobra.ExactArgs(2),
+		ValidArgsFunction: AutoCompletePath,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			mode := action.DiffMode(modeFlag)
 			switch mode {
@@ -45,7 +46,7 @@ func NewDiffCmd() *cobra.Command {
 				_, ok := config.G.S[name]
 				return ok
 			}
-			makeClient := func(sp *utils.S3Path) (*s3.Client, error) {
+			makeClient := func(sp *utils.S3Path) (*s3api.Client, error) {
 				cli, _, err := client.ParsePathAndNewClient(cmd.Context(), formatPath(sp))
 				return cli, err
 			}

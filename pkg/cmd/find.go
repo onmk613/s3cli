@@ -16,9 +16,10 @@ func NewFindCmd() *cobra.Command {
 	var findOpt action.FindOptions
 	opts := newCmdContext()
 	cmd := &cobra.Command{
-		Use:   "find [alias:bucket[/prefix]] ...",
-		Short: "Search objects by name pattern, size and modification time",
-		Args:  cobra.MinimumNArgs(1),
+		Use:               "find [alias:bucket[/prefix]] ...",
+		Short:             "Search objects by name pattern, size and modification time",
+		Args:              cobra.MinimumNArgs(1),
+		ValidArgsFunction: AutoCompletePath,
 		RunE: NewRunE(ActionFunc(func(S3 action.S3Client, _ *CmdContext, s3path *utils.S3Path) error {
 			return S3.FindObjects(findOpt, s3path.Bucket, s3path.Key)
 		}), &opts),
@@ -39,9 +40,10 @@ func NewTreeCmd() *cobra.Command {
 	var treeOpt action.TreeOptions
 	opts := newCmdContext()
 	cmd := &cobra.Command{
-		Use:   "tree [alias:bucket[/prefix]] ...",
-		Short: "Display objects as a tree of directories",
-		Args:  cobra.MinimumNArgs(1),
+		Use:               "tree [alias:bucket[/prefix]] ...",
+		Short:             "Display objects as a tree of directories",
+		Args:              cobra.MinimumNArgs(1),
+		ValidArgsFunction: AutoCompletePath,
 		RunE: NewRunE(ActionFunc(func(S3 action.S3Client, _ *CmdContext, s3path *utils.S3Path) error {
 			return S3.TreeObjects(treeOpt, s3path.Bucket, s3path.Key)
 		}), &opts),

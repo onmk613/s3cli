@@ -32,6 +32,7 @@ var (
 type Config struct {
 	S               map[string]Static
 	Debug           bool     // --debug
+	Quiet           bool     // --quiet (关闭进度条, 输出纯文本)
 	UserAgent       string   // --user-agent (覆盖整个 User-Agent)
 	UserAgentSuffix string   // --user-agent-suffix (追加到 User-Agent 末尾)
 	Headers         []string // --header (自定义 HTTP header, 可重复, 格式 key:value)
@@ -57,6 +58,8 @@ type Static struct {
 
 	DefaultMimeType      string `ini:"default_mime_type"`
 	MultipartChunkSizeMb int    `ini:"multipart_chunk_size_mb"`
+	MaxRetries           int    `ini:"max_retries"`
+	Vendor               string `ini:"vendor"` // S3 厂商: aws / cos / oss / minio; 为空时自动探测
 }
 
 func (c *Static) ResolveBucketLookup() (mode string, tpl string, err error) {
@@ -96,3 +99,14 @@ func (s *Static) IsVerifySSL() bool          { return s.VerifySSL }
 func (s *Static) GetUserAgent() string       { return strings.TrimSpace(G.UserAgent) }
 func (s *Static) GetUserAgentSuffix() string { return strings.TrimSpace(G.UserAgentSuffix) }
 func (s *Static) GetHeaders() []string       { return G.Headers }
+func (s *Static) GetMaxRetries() int {
+	if s.MaxRetries > 0 {
+		return s.MaxRetries
+	}
+	return 3
+}
+
+// GetVendor 返回配置的 S3 厂商类型; 为空时交给 s3api 自动探测.
+func (s *Static) GetVendor() string {
+	return strings.TrimSpace(s.Vendor)
+}

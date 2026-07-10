@@ -1,15 +1,8 @@
-s3cli
-s3cli.exe
-output/
+s3cli*
 bin/
-s3cli.ini
 .DS_Store
-Thumbs.db
 .vscode/
 .idea/
-*.swp
-*.swo
 .github/
 vendor/
-test*
-testdata/
+*test/

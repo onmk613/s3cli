@@ -7,9 +7,7 @@ import (
 	"time"
 
 	myprint "s3cli/pkg/fmtutil"
-
-	"github.com/aws/aws-sdk-go-v2/aws"
-	"github.com/aws/aws-sdk-go-v2/service/s3"
+	"s3cli/pkg/s3api"
 )
 
 // FindOptions find 命令参数
@@ -57,53 +55,53 @@ func (c *S3Client) FindObjects(opt FindOptions, bucket, prefix string) error {
 		}
 	}
 
-	paginator := s3.NewListObjectsV2Paginator(c.S3, &s3.ListObjectsV2Input{
-		Bucket: aws.String(bucket), Prefix: aws.String(prefix),
-	})
 	var matched int
 	var totalSize int64
-	for paginator.HasMorePages() {
-		page, err := paginator.NextPage(c.Ctx)
-		if err != nil {
-			return fmt.Errorf("list objects: %s", FormatAPIError(err))
+	var limitReached bool
+	err = c.forEachObject(c.Ctx, bucket, prefix, func(obj s3api.ObjectInfo) error {
+		key := obj.Key
+		size := obj.Size
+
+		if opt.MinSize > 0 && size < opt.MinSize {
+			return nil
 		}
-		for _, obj := range page.Contents {
-			key := aws.ToString(obj.Key)
-			size := aws.ToInt64(obj.Size)
-
-			if opt.MinSize > 0 && size < opt.MinSize {
-				continue
+		if opt.MaxSize > 0 && size > opt.MaxSize {
+			return nil
+		}
+		if !newer.IsZero() && !obj.LastModified.After(newer) {
+			return nil
+		}
+		if !older.IsZero() && !obj.LastModified.Before(older) {
+			return nil
+		}
+		if nameRe != nil {
+			base := key
+			if i := strings.LastIndex(key, "/"); i >= 0 {
+				base = key[i+1:]
 			}
-			if opt.MaxSize > 0 && size > opt.MaxSize {
-				continue
-			}
-			if !newer.IsZero() && (obj.LastModified == nil || !obj.LastModified.After(newer)) {
-				continue
-			}
-			if !older.IsZero() && (obj.LastModified == nil || !obj.LastModified.Before(older)) {
-				continue
-			}
-			if nameRe != nil {
-				base := key
-				if i := strings.LastIndex(key, "/"); i >= 0 {
-					base = key[i+1:]
-				}
-				if !nameRe.MatchString(base) {
-					continue
-				}
-			}
-
-			myprint.PrintfDim("[%s]  ", obj.LastModified.Format("2006-01-02 15:04:05"))
-			myprint.Printf("%12d   ", size)
-			myprint.PrintfGreen("FILE  %s\n", c.S3Path(bucket, key))
-
-			matched++
-			totalSize += size
-			if opt.Limit > 0 && matched >= opt.Limit {
-				myprint.PrintfYellow("\n(limit %d reached)\n", opt.Limit)
+			if !nameRe.MatchString(base) {
 				return nil
 			}
 		}
+
+		myprint.PrintfDim("[%s]  ", obj.LastModified.Format("2006-01-02 15:04:05"))
+		myprint.Printf("%12d   ", size)
+		myprint.PrintfGreen("FILE  %s\n", c.S3Path(bucket, key))
+
+		matched++
+		totalSize += size
+		if opt.Limit > 0 && matched >= opt.Limit {
+			limitReached = true
+			return errStopIteration
+		}
+		return nil
+	})
+	if err != nil {
+		return err
+	}
+	if limitReached {
+		myprint.PrintfYellow("\n(limit %d reached)\n", opt.Limit)
+		return nil
 	}
 	myprint.PrintfBoldBlue("\n%d matching objects (%s)\n", matched, FormatBytes(totalSize))
 	return nil

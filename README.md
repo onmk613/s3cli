@@ -71,7 +71,6 @@ Tools
   signurl     Print pre-signed S3 URLs
 
 Additional Commands:
-  completion  Generate the autocompletion script for the specified shell
   help        Help about any command
 
 Flags:

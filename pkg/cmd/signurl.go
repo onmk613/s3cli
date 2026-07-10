@@ -13,9 +13,10 @@ func NewSignUrlCmd() *cobra.Command {
 	var signOpt action.SignurlOptions
 	opts := newCmdContext()
 	cmd := &cobra.Command{
-		Use:   "signurl [alias:bucket/path] ...",
-		Short: "Print pre-signed S3 URLs",
-		Args:  cobra.MinimumNArgs(1),
+		Use:               "signurl [alias:bucket/path] ...",
+		Short:             "Print pre-signed S3 URLs",
+		Args:              cobra.MinimumNArgs(1),
+		ValidArgsFunction: AutoCompletePath,
 		RunE: NewRunE(ActionFunc(func(S3 action.S3Client, _ *CmdContext, s3path *utils.S3Path) error {
 			return S3.Signurl(signOpt, s3path.Bucket, s3path.Key)
 		}), &opts),

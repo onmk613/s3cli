@@ -6,14 +6,10 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-	"regexp"
 	"strings"
 
 	myprint "s3cli/pkg/fmtutil"
-
-	"github.com/aws/aws-sdk-go-v2/aws"
-	"github.com/aws/aws-sdk-go-v2/feature/s3/manager"
-	"github.com/aws/aws-sdk-go-v2/service/s3"
+	"s3cli/pkg/s3api"
 )
 
 // GetOpt get 命令参数
@@ -22,6 +18,7 @@ type GetOptions struct {
 	Concurrency int
 	PartSizeMB  int
 	Range       string // HTTP Range header (e.g. "bytes=0-1023"); 仅对单文件有效
+	NoProgress  bool   // 不显示进度条（--quiet）
 }
 
 // Get 下载对象
@@ -51,12 +48,13 @@ func (c *S3Client) downloadDirectory(opt GetOptions, bucket, key, localpath stri
 	return RunStream(c.Ctx, StreamConfig{
 		Concurrency: opt.Concurrency,
 		Label:       "get",
+		NoProgress:  opt.NoProgress,
 		Count: func(ctx context.Context, add func(n, size int64)) error {
 			return c.countS3Prefix(ctx, bucket, key, true, add)
 		},
 		Scan: func(ctx context.Context, jobs chan<- StreamJob) error {
-			paginator := s3.NewListObjectsV2Paginator(c.S3, &s3.ListObjectsV2Input{
-				Bucket: aws.String(bucket), Prefix: aws.String(key),
+			paginator := s3api.NewListObjectsV2Paginator(c.S3, bucket, &s3api.ListObjectsV2Options{
+				Prefix: key,
 			})
 			for paginator.HasMorePages() {
 				page, err := paginator.NextPage(ctx)
@@ -64,8 +62,8 @@ func (c *S3Client) downloadDirectory(opt GetOptions, bucket, key, localpath stri
 					return fmt.Errorf("list %s: %s", c.S3Path(bucket, key), FormatAPIError(err))
 				}
 				for _, obj := range page.Contents {
-					objKey := aws.ToString(obj.Key)
-					if strings.HasSuffix(objKey, "/") && aws.ToInt64(obj.Size) == 0 {
+					objKey := obj.Key
+					if strings.HasSuffix(objKey, "/") && obj.Size == 0 {
 						continue
 					}
 					localFilePath, pathErr := buildLocalFilePath(objKey, key, localBasePath)
@@ -75,7 +73,7 @@ func (c *S3Client) downloadDirectory(opt GetOptions, bucket, key, localpath stri
 					jobs <- StreamJob{
 						Src:  objKey,
 						Dst:  localFilePath,
-						Size: aws.ToInt64(obj.Size),
+						Size: obj.Size,
 					}
 				}
 			}
@@ -94,7 +92,7 @@ func (c *S3Client) downloadSingleFile(opt GetOptions, bucket, key, localpath str
 		return err
 	}
 
-	// --range 直接走 GetObject (manager 不支持 Range)
+	// --range 直接走 GetObject
 	if opt.Range != "" {
 		return c.rangeGetObject(bucket, key, localFilePath, opt.Range)
 	}
@@ -113,8 +111,8 @@ func (c *S3Client) rangeGetObject(bucket, key, localFilePath, rng string) error 
 	if err := os.MkdirAll(filepath.Dir(localFilePath), 0o755); err != nil {
 		return fmt.Errorf("mkdir: %w", err)
 	}
-	out, err := c.S3.GetObject(c.Ctx, &s3.GetObjectInput{
-		Bucket: aws.String(bucket), Key: aws.String(key), Range: aws.String(rng),
+	out, err := c.S3.GetObject(c.Ctx, bucket, key, &s3api.GetObjectOptions{
+		Range: rng,
 	})
 	if err != nil {
 		return fmt.Errorf("range get: %s", FormatAPIError(err))
@@ -147,29 +145,39 @@ func (c *S3Client) downloadFile(opt GetOptions, filekey, localfilePath, bucket s
 	}
 	defer file.Close()
 
-	downloader := manager.NewDownloader(c.S3, func(d *manager.Downloader) {
-		if opt.PartSizeMB > 0 {
-			d.PartSize = int64(opt.PartSizeMB) * 1024 * 1024
-		}
-		if opt.Concurrency > 0 {
-			d.Concurrency = opt.Concurrency
-		}
-	})
-
-	// 有进度回调时，用计数包装器包装目标文件，使 manager 并发写入分片时实时上报字节。
-	var dst io.WriterAt = file
-	if report != nil {
-		dst = NewDownloadCounter(file, report)
-	}
-
-	n, err := downloader.Download(c.Ctx, dst, &s3.GetObjectInput{
-		Bucket: aws.String(bucket), Key: aws.String(filekey),
-	})
+	out, err := c.S3.GetObject(c.Ctx, bucket, filekey, nil)
 	if err != nil {
 		os.Remove(localfilePath)
 		return 0, err
 	}
+	defer out.Body.Close()
+
+	// 有进度回调时，用计数 reader 包装 body 流。
+	var body io.Reader = out.Body
+	if report != nil {
+		body = &countingReader{r: out.Body, report: report}
+	}
+
+	n, err := io.Copy(file, body)
+	if err != nil {
+		os.Remove(localfilePath)
+		return 0, fmt.Errorf("write file: %w", err)
+	}
 	return n, nil
+}
+
+// countingReader 包装 io.Reader, 按读取进度实时上报字节增量.
+type countingReader struct {
+	r      io.Reader
+	report func(n int64)
+}
+
+func (cr *countingReader) Read(p []byte) (int, error) {
+	n, err := cr.r.Read(p)
+	if n > 0 && cr.report != nil {
+		cr.report(int64(n))
+	}
+	return n, err
 }
 
 // ---- 路径辅助 ----
@@ -220,11 +228,11 @@ func buildLocalFilePath(s3Key, s3Prefix, localBasePath string) (string, error) {
 	if s3Prefix == "" {
 		return filepath.Join(localBasePath, s3Key), nil
 	}
-	re, err := regexp.Compile("^" + regexp.QuoteMeta(s3Prefix) + "/?")
-	if err != nil {
-		return "", fmt.Errorf("invalid prefix pattern: %w", err)
+	// 去掉前缀及其后可选的斜杠, 等价于原正则 "^s3Prefix/?", 但避免下载热路径重复编译正则.
+	relativePath := s3Key
+	if strings.HasPrefix(s3Key, s3Prefix) {
+		relativePath = strings.TrimPrefix(strings.TrimPrefix(s3Key, s3Prefix), "/")
 	}
-	relativePath := re.ReplaceAllString(s3Key, "")
 	if relativePath == "" {
 		return localBasePath, nil
 	}

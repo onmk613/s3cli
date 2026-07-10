@@ -1,16 +1,11 @@
 package action
 
 import (
-	"encoding/json"
 	"fmt"
 	"strings"
 
 	myprint "s3cli/pkg/fmtutil"
-	"s3cli/pkg/utils"
-
-	"github.com/aws/aws-sdk-go-v2/aws"
-	"github.com/aws/aws-sdk-go-v2/service/s3"
-	s3types "github.com/aws/aws-sdk-go-v2/service/s3/types"
+	"s3cli/pkg/s3api"
 )
 
 // EncryptionOptions setencryption 命令参数
@@ -24,50 +19,42 @@ type EncryptionOptions struct {
 
 // SetEncryption 设置 bucket 默认加密
 func (c *S3Client) SetEncryption(opt EncryptionOptions, bucket string) error {
-	var cfg s3types.ServerSideEncryptionConfiguration
+	var cfg s3api.ServerSideEncryptionConfiguration
 
 	if opt.ConfigFile != "" {
-		data, format, err := utils.LoadAWSConfigFile(opt.ConfigFile)
+		loaded, err := loadJSONConfig[s3api.ServerSideEncryptionConfiguration](opt.ConfigFile, "encryption")
 		if err != nil {
 			return err
 		}
-		if format != "json" {
-			return fmt.Errorf("encryption only supports JSON format (AWS CLI compatible)")
-		}
-		if err := utils.UnmarshalAWS(data, "json", &cfg); err != nil {
-			return fmt.Errorf("parse encryption file %s: %w", opt.ConfigFile, err)
-		}
+		cfg = *loaded
 	} else {
 		algo := strings.TrimSpace(opt.Algorithm)
 		if algo == "" {
 			algo = "AES256"
 		}
-		rule := s3types.ServerSideEncryptionRule{
-			ApplyServerSideEncryptionByDefault: &s3types.ServerSideEncryptionByDefault{
-				SSEAlgorithm: s3types.ServerSideEncryption(algo),
+		rule := s3api.ServerSideEncryptionRule{
+			ApplyServerSideEncryptionByDefault: s3api.ServerSideEncryptionByDefault{
+				SSEAlgorithm: algo,
 			},
 		}
 		if algo == "aws:kms" || algo == "aws:kms:dsse" {
 			if opt.KMSKeyID == "" {
 				return fmt.Errorf("--kms-key-id is required when --algorithm is %s", algo)
 			}
-			rule.ApplyServerSideEncryptionByDefault.KMSMasterKeyID = aws.String(opt.KMSKeyID)
+			rule.ApplyServerSideEncryptionByDefault.KMSMasterKeyID = opt.KMSKeyID
 			if opt.BucketKey {
-				rule.BucketKeyEnabled = aws.Bool(true)
+				bk := true
+				rule.BucketKeyEnabled = &bk
 			}
 		}
-		cfg.Rules = []s3types.ServerSideEncryptionRule{rule}
+		cfg.Rules = []s3api.ServerSideEncryptionRule{rule}
 	}
 
 	if len(cfg.Rules) == 0 {
 		return fmt.Errorf("no encryption rules configured")
 	}
 
-	_, err := c.S3.PutBucketEncryption(c.Ctx, &s3.PutBucketEncryptionInput{
-		Bucket:                            aws.String(bucket),
-		ServerSideEncryptionConfiguration: &cfg,
-	})
-	if err != nil {
+	if err := c.S3.SetBucketEncryption(c.Ctx, bucket, &cfg); err != nil {
 		return fmt.Errorf("set encryption %s: %s", bucket, FormatAPIError(err))
 	}
 
@@ -77,31 +64,15 @@ func (c *S3Client) SetEncryption(opt EncryptionOptions, bucket string) error {
 
 // GetEncryption 打印 bucket 默认加密 (JSON)
 func (c *S3Client) GetEncryption(bucket string) error {
-	out, err := c.S3.GetBucketEncryption(c.Ctx, &s3.GetBucketEncryptionInput{
-		Bucket: aws.String(bucket),
-	})
+	cfg, err := c.S3.GetBucketEncryption(c.Ctx, bucket)
 	if err != nil {
 		return fmt.Errorf("get encryption %s: %s", bucket, FormatAPIError(err))
 	}
-	b, err := json.MarshalIndent(out.ServerSideEncryptionConfiguration, "", "  ")
-	if err != nil {
-		return fmt.Errorf("marshal encryption: %w", err)
-	}
-
-	myprint.PrintfBoldBlue("# %s %s encryption\n", c.Alias, bucket)
-	myprint.PrintlnGreen(string(b))
-	return nil
+	return c.printBucketConfigJSON(bucket, "encryption", cfg)
 }
 
 // DelEncryption 删除 bucket 默认加密配置
 func (c *S3Client) DelEncryption(bucket string) error {
-	_, err := c.S3.DeleteBucketEncryption(c.Ctx, &s3.DeleteBucketEncryptionInput{
-		Bucket: aws.String(bucket),
-	})
-	if err != nil {
-		return fmt.Errorf("delete encryption %s: %s", bucket, FormatAPIError(err))
-	}
-
-	myprint.PrintfBoldGreen("Encryption deleted for %s %s\n", c.Alias, bucket)
-	return nil
+	return c.deleteBucketConfig(bucket, "encryption", "Encryption deleted for %s %s\n",
+		func() error { return c.S3.DeleteBucketEncryption(c.Ctx, bucket) })
 }

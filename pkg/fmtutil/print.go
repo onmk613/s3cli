@@ -50,20 +50,6 @@ func NoColor() bool {
 	return noColor
 }
 
-// SetQuiet 设置全局静默标志（--quiet/-q）。
-func SetQuiet(q bool) {
-	outMu.Lock()
-	defer outMu.Unlock()
-	quiet = q
-}
-
-// Quiet 返回当前是否处于静默模式。
-func Quiet() bool {
-	outMu.RLock()
-	defer outMu.RUnlock()
-	return quiet
-}
-
 // ------- 黑色函数 -------
 func Printf(format string, a ...any) {
 	outMu.RLock()

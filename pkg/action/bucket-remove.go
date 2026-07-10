@@ -3,10 +3,7 @@ package action
 import (
 	"fmt"
 	myprint "s3cli/pkg/fmtutil"
-
-	"github.com/aws/aws-sdk-go-v2/aws"
-	"github.com/aws/aws-sdk-go-v2/service/s3"
-	s3types "github.com/aws/aws-sdk-go-v2/service/s3/types"
+	"s3cli/pkg/s3api"
 )
 
 func (c *S3Client) RemoveBuckets(bucket string, force bool) error {
@@ -17,8 +14,7 @@ func (c *S3Client) RemoveBuckets(bucket string, force bool) error {
 		}
 	}
 
-	_, err := c.S3.DeleteBucket(c.Ctx, &s3.DeleteBucketInput{Bucket: aws.String(bucket)})
-	if err != nil {
+	if err := c.S3.DeleteBucket(c.Ctx, bucket); err != nil {
 		return fmt.Errorf("delete bucket %s: %s", bucket, FormatAPIError(err))
 	}
 
@@ -27,26 +23,24 @@ func (c *S3Client) RemoveBuckets(bucket string, force bool) error {
 }
 
 func (c *S3Client) deleteAllObjects(bucket string) error {
-	paginator := s3.NewListObjectVersionsPaginator(c.S3, &s3.ListObjectVersionsInput{Bucket: aws.String(bucket)})
+	paginator := s3api.NewListObjectVersionsPaginator(c.S3, bucket, &s3api.ListObjectVersionsOptions{})
 
 	for paginator.HasMorePages() {
 		page, err := paginator.NextPage(c.Ctx)
 		if err != nil {
 			return fmt.Errorf("list versions: %s", FormatAPIError(err))
 		}
-		objects := make([]s3types.ObjectIdentifier, 0, len(page.Versions)+len(page.DeleteMarkers))
+		objects := make([]s3api.ObjectIdentifier, 0, len(page.Versions)+len(page.DeleteMarkers))
 		for _, v := range page.Versions {
-			objects = append(objects, s3types.ObjectIdentifier{Key: v.Key, VersionId: v.VersionId})
+			objects = append(objects, s3api.ObjectIdentifier{Key: v.Key, VersionID: v.VersionID})
 		}
 		for _, m := range page.DeleteMarkers {
-			objects = append(objects, s3types.ObjectIdentifier{Key: m.Key, VersionId: m.VersionId})
+			objects = append(objects, s3api.ObjectIdentifier{Key: m.Key, VersionID: m.VersionID})
 		}
 		if len(objects) == 0 {
 			continue
 		}
-		if _, err := c.S3.DeleteObjects(c.Ctx, &s3.DeleteObjectsInput{Bucket: aws.String(bucket),
-			Delete: &s3types.Delete{Objects: objects, Quiet: aws.Bool(true)},
-		}); err != nil {
+		if _, err := c.S3.DeleteObjects(c.Ctx, bucket, objects, true); err != nil {
 			return fmt.Errorf("delete objects: %s", FormatAPIError(err))
 		}
 	}

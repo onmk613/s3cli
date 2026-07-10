@@ -15,15 +15,13 @@ import (
 	"sync/atomic"
 
 	myprint "s3cli/pkg/fmtutil"
+	"s3cli/pkg/s3api"
 	"s3cli/pkg/utils"
-
-	"github.com/aws/aws-sdk-go-v2/aws"
-	"github.com/aws/aws-sdk-go-v2/service/s3"
 )
 
 type DiffEndpoint struct {
 	IsS3          bool
-	S3            *s3.Client
+	S3            *s3api.Client
 	Ctx           context.Context
 	Alias         string
 	Bucket        string
@@ -78,7 +76,7 @@ type fileEntry struct {
 //   - 否则视为本地路径（不要求文件存在；后续会单独检查）
 //
 // 调用方需提供一个判断 alias 是否存在的回调（保持 action 包不依赖 config）。
-func ParseDiffArg(ctx context.Context, arg string, aliasExists func(string) bool, makeClient func(*utils.S3Path) (*s3.Client, error)) (*DiffEndpoint, error) {
+func ParseDiffArg(ctx context.Context, arg string, aliasExists func(string) bool, makeClient func(*utils.S3Path) (*s3api.Client, error)) (*DiffEndpoint, error) {
 	// 先尝试 ParseS3Path
 	if colon := strings.Index(arg, ":"); colon > 0 {
 		alias := arg[:colon]
@@ -419,13 +417,13 @@ func listLocalDir(root string) ([]fileEntry, error) {
 	return out, nil
 }
 
-func listS3Dir(cli *s3.Client, ctx context.Context, alias, bucket, prefix string) ([]fileEntry, error) {
+func listS3Dir(cli *s3api.Client, ctx context.Context, alias, bucket, prefix string) ([]fileEntry, error) {
 	// 规范化 prefix，确保 "目录" 风格
 	if prefix != "" && !strings.HasSuffix(prefix, "/") {
 		prefix += "/"
 	}
-	paginator := s3.NewListObjectsV2Paginator(cli, &s3.ListObjectsV2Input{
-		Bucket: aws.String(bucket), Prefix: aws.String(prefix),
+	paginator := s3api.NewListObjectsV2Paginator(cli, bucket, &s3api.ListObjectsV2Options{
+		Prefix: prefix,
 	})
 	var out []fileEntry
 	for paginator.HasMorePages() {
@@ -434,9 +432,9 @@ func listS3Dir(cli *s3.Client, ctx context.Context, alias, bucket, prefix string
 			return nil, fmt.Errorf("list %s: %s", S3PathStatic(alias, bucket, prefix), FormatAPIError(err))
 		}
 		for _, obj := range page.Contents {
-			key := aws.ToString(obj.Key)
+			key := obj.Key
 			// 跳过 "目录占位符"
-			if strings.HasSuffix(key, "/") && aws.ToInt64(obj.Size) == 0 {
+			if strings.HasSuffix(key, "/") && obj.Size == 0 {
 				continue
 			}
 			rel := strings.TrimPrefix(key, prefix)
@@ -445,9 +443,9 @@ func listS3Dir(cli *s3.Client, ctx context.Context, alias, bucket, prefix string
 			}
 			out = append(out, fileEntry{
 				Path:  rel,
-				Size:  aws.ToInt64(obj.Size),
-				Mtime: aws.ToTime(obj.LastModified).Unix(),
-				ETag:  strings.Trim(aws.ToString(obj.ETag), `"`),
+				Size:  obj.Size,
+				Mtime: obj.LastModified.Unix(),
+				ETag:  obj.ETag,
 			})
 		}
 	}
@@ -479,21 +477,19 @@ func statOneFile(e *DiffEndpoint, rel string) (fileEntry, error) {
 		}
 		key += rel
 	}
-	out, err := e.S3.HeadObject(e.Ctx, &s3.HeadObjectInput{
-		Bucket: aws.String(e.Bucket), Key: aws.String(key),
-	})
+	out, err := e.S3.HeadObject(e.Ctx, e.Bucket, key, "")
 	if err != nil {
 		return fileEntry{}, fmt.Errorf("head %s: %s", S3PathStatic(e.Alias, e.Bucket, key), FormatAPIError(err))
 	}
 	mtime := int64(0)
-	if out.LastModified != nil {
+	if !out.LastModified.IsZero() {
 		mtime = out.LastModified.Unix()
 	}
 	return fileEntry{
 		Path:  rel,
-		Size:  aws.ToInt64(out.ContentLength),
+		Size:  out.ContentLength,
 		Mtime: mtime,
-		ETag:  strings.Trim(aws.ToString(out.ETag), `"`),
+		ETag:  out.ETag,
 	}, nil
 }
 
@@ -570,9 +566,7 @@ func openReader(e *DiffEndpoint, rel string) (io.ReadCloser, error) {
 		}
 		key += rel
 	}
-	out, err := e.S3.GetObject(e.Ctx, &s3.GetObjectInput{
-		Bucket: aws.String(e.Bucket), Key: aws.String(key),
-	})
+	out, err := e.S3.GetObject(e.Ctx, e.Bucket, key, nil)
 	if err != nil {
 		return nil, fmt.Errorf("get %s: %s", S3PathStatic(e.Alias, e.Bucket, key), FormatAPIError(err))
 	}

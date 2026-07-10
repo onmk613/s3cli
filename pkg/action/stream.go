@@ -7,11 +7,8 @@ import (
 	"path/filepath"
 	"sync"
 
-	"s3cli/pkg/progress"
+	"s3cli/pkg/s3api"
 	"s3cli/pkg/utils"
-
-	"github.com/aws/aws-sdk-go-v2/aws"
-	"github.com/aws/aws-sdk-go-v2/service/s3"
 )
 
 // StreamJob 流式操作中的一个任务。
@@ -25,6 +22,7 @@ type StreamJob struct {
 type StreamConfig struct {
 	Concurrency int    // 并发工作数
 	Label       string // 进度条标签（"put"/"get"/"cp"/"mv"）
+	NoProgress  bool   // 为 true 时不显示进度条（--quiet / 非终端场景）
 
 	// Scan 扫描协程：向 jobs 通道写入任务。
 	// 返回 error 表示扫描失败。
@@ -54,7 +52,7 @@ func RunStream(ctx context.Context, cfg StreamConfig) error {
 		cfg.Concurrency = 10
 	}
 
-	pt := progress.New()
+	pt := newProgress(cfg.NoProgress)
 	pt.SetLabel(cfg.Label)
 	pt.Start()
 	defer pt.Stop()
@@ -167,26 +165,17 @@ func RunStream(ctx context.Context, cfg StreamConfig) error {
 // 用作 StreamConfig.Count 的 S3 端实现（get/cp/mv 的预统计）。
 // skipDirMarker=true 时跳过 0 字节的目录占位对象（与 get 的扫描逻辑保持一致）。
 func (c *S3Client) countS3Prefix(ctx context.Context, bucket, prefix string, skipDirMarker bool, add func(n, size int64)) error {
-	paginator := s3.NewListObjectsV2Paginator(c.S3, &s3.ListObjectsV2Input{
-		Bucket: aws.String(bucket), Prefix: aws.String(prefix),
-	})
-	for paginator.HasMorePages() {
-		page, err := paginator.NextPage(ctx)
-		if err != nil {
-			return fmt.Errorf("count %s: %s", c.S3Path(bucket, prefix), FormatAPIError(err))
-		}
-		for _, obj := range page.Contents {
-			size := aws.ToInt64(obj.Size)
-			if skipDirMarker && size == 0 {
-				key := aws.ToString(obj.Key)
-				if len(key) > 0 && key[len(key)-1] == '/' {
-					continue
-				}
+	return c.forEachObject(ctx, bucket, prefix, func(obj s3api.ObjectInfo) error {
+		size := obj.Size
+		if skipDirMarker && size == 0 {
+			key := obj.Key
+			if len(key) > 0 && key[len(key)-1] == '/' {
+				return nil
 			}
-			add(1, size)
 		}
-	}
-	return nil
+		add(1, size)
+		return nil
+	})
 }
 
 // countLocalDir 遍历本地目录 root 下的所有普通文件，通过 add 增量上报文件数与字节数，

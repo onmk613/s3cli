@@ -3,27 +3,21 @@ package client
 import (
 	"context"
 	"crypto/tls"
-	"fmt"
 	"net/http"
-	"s3cli/pkg/httptracer"
-
-	awsv2 "github.com/aws/aws-sdk-go-v2/aws"
-	awscfg "github.com/aws/aws-sdk-go-v2/config"
-	"github.com/aws/aws-sdk-go-v2/credentials"
-	"github.com/aws/aws-sdk-go-v2/service/s3"
 
 	"s3cli/pkg/config"
+	"s3cli/pkg/s3api"
 )
 
-// 构建 S3 客户端
-func NewS3Client(ctx context.Context, cfg config.Static) (*s3.Client, error) {
+// NewS3Client 构建自建的 s3api.Client.
+func NewS3Client(ctx context.Context, cfg config.Static) (*s3api.Client, error) {
 	transport := &http.Transport{
 		TLSClientConfig: &tls.Config{InsecureSkipVerify: !cfg.IsVerifySSL()},
 	}
 	var rt http.RoundTripper = transport
 
 	if cfg.IsDebug() {
-		rt = httptracer.New(rt, nil)
+		rt = NewDumper(rt)
 	}
 
 	// User-Agent 改写放在最外层: 先改写请求, 再交给(可能存在的)tracer dump,
@@ -37,50 +31,43 @@ func NewS3Client(ctx context.Context, cfg config.Static) (*s3.Client, error) {
 	}
 	rt = newCustomHeaderTransport(rt, customHeaders)
 
-	httpClient := &http.Client{
-		Transport: rt,
-	}
-
-	c, err := awscfg.LoadDefaultConfig(
-		ctx,
-		awscfg.WithRegion(cfg.GetRegion()),
-		awscfg.WithCredentialsProvider(credentials.NewStaticCredentialsProvider(cfg.GetAccessKey(), cfg.GetSecretKey(), cfg.GetSessionToken())),
-		awscfg.WithHTTPClient(httpClient),
-		// aws-sdk-go-v2 默认 WhenSupported, 会在 Put/UploadPart 上强制添加
-		// CRC32 trailer 并使用 aws-chunked 流式编码; 不少非 AWS 网关(如部分
-		// 版本的 SeaweedFS/MinIO)无法识别该 trailer, 导致上传立即失败。
-		// 改为 WhenRequired, 仅在调用方显式要求时才计算/校验, 提升兼容性。
-		awscfg.WithRequestChecksumCalculation(awsv2.RequestChecksumCalculationWhenRequired),
-		awscfg.WithResponseChecksumValidation(awsv2.ResponseChecksumValidationWhenRequired),
-	)
-	if err != nil {
-		return nil, fmt.Errorf("load aws config: %w", err)
-	}
-
 	lookup, customTpl, err := cfg.ResolveBucketLookup()
 	if err != nil {
 		return nil, err
 	}
 
-	S3 := s3.NewFromConfig(c, func(o *s3.Options) {
-		o.BaseEndpoint = awsv2.String(cfg.GetEndpoint())
+	var bucketLookup s3api.BucketLookupType
+	var lookupFn s3api.BucketLookupFunc
+	switch lookup {
+	case config.BucketLookupPath:
+		bucketLookup = s3api.BucketLookupPath
+	case config.BucketLookupDNS:
+		bucketLookup = s3api.BucketLookupDNS
+	case config.BucketLookupCustom:
+		bucketLookup = s3api.BucketLookupAuto
+		lookupFn = &CustomBucketLookup{Template: customTpl, BucketPlaceholder: config.BucketPlaceholder}
+	}
 
-		switch lookup {
-		case config.BucketLookupPath:
-			o.UsePathStyle = true
-		case config.BucketLookupDNS:
-			o.UsePathStyle = false
-		case config.BucketLookupCustom:
-			// 自定义寻址: 用 EndpointResolverV2 按模板拼出 endpoint,
-			// 此时 BaseEndpoint 不再生效, 由 resolver 全权决定.
-			o.BaseEndpoint = nil
-			o.UsePathStyle = false
-			o.EndpointResolverV2 = &customBucketResolver{
-				Template:          customTpl,
-				BucketPlaceholder: config.BucketPlaceholder,
-			}
-		}
-	})
+	var notCheckVendor bool
+	var s3apiProvider s3api.Provider
+	if cfg.GetVendor() != "" {
+		notCheckVendor = true
+		s3apiProvider = s3api.Provider(cfg.GetVendor())
+	}
 
-	return S3, nil
+	opts := &s3api.Options{
+		Endpoint:           cfg.GetEndpoint(),
+		AccessKey:          cfg.GetAccessKey(),
+		SecretKey:          cfg.GetSecretKey(),
+		SessionToken:       cfg.GetSessionToken(),
+		Region:             cfg.GetRegion(),
+		Vendor:             s3apiProvider,
+		NotCheckVendor:     notCheckVendor,
+		BucketLookup:       bucketLookup,
+		BucketLookupViaURL: lookupFn,
+		Transport:          rt,
+		MaxRetries:         cfg.GetMaxRetries(),
+	}
+
+	return s3api.New(opts)
 }
