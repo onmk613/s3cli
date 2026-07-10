@@ -3,7 +3,6 @@ package action
 import (
 	"context"
 	"fmt"
-	"io"
 	"mime"
 	"os"
 	"path"
@@ -11,11 +10,7 @@ import (
 	"strings"
 
 	myprint "s3cli/pkg/fmtutil"
-
-	"github.com/aws/aws-sdk-go-v2/aws"
-	"github.com/aws/aws-sdk-go-v2/feature/s3/manager"
-	"github.com/aws/aws-sdk-go-v2/service/s3"
-	"github.com/aws/aws-sdk-go-v2/service/s3/types"
+	"s3cli/pkg/s3api"
 )
 
 // PutOpt put 命令参数
@@ -27,19 +22,11 @@ type PutOptions struct {
 	PartSizeMB      int
 	StorageClass    string            // e.g. "STANDARD_IA", "GLACIER"
 	Metadata        map[string]string // 用户元数据 (x-amz-meta-*)
+	NoProgress      bool              // 不显示进度条（--quiet）
 }
 
-// Put 上传文件
+// PutObject 上传本地文件或目录到 S3
 func (c *S3Client) PutObject(opt PutOptions, bucket, prefix, localpath string, isS3Dir bool) error {
-	uploader := manager.NewUploader(c.S3, func(u *manager.Uploader) {
-		if opt.PartSizeMB > 0 {
-			u.PartSize = int64(opt.PartSizeMB) * 1024 * 1024
-		}
-		if opt.Concurrency > 0 {
-			u.Concurrency = opt.Concurrency
-		}
-	})
-
 	AddMime()
 	if opt.Concurrency <= 0 {
 		opt.Concurrency = 10
@@ -54,7 +41,7 @@ func (c *S3Client) PutObject(opt PutOptions, bucket, prefix, localpath string, i
 		if !opt.Recursive {
 			return fmt.Errorf("%s is a directory (use -r to upload recursively)", localpath)
 		}
-		return c.uploadDirStreaming(uploader, opt, bucket, prefix, localpath)
+		return c.uploadDirStreaming(opt, bucket, prefix, localpath)
 	}
 
 	mimeType := detectMime(localpath, opt.DefaultMimeType)
@@ -75,7 +62,7 @@ func (c *S3Client) PutObject(opt PutOptions, bucket, prefix, localpath string, i
 	} else if isS3Dir {
 		dstKey = path.Join(prefix, filepath.Base(localpath))
 	}
-	if err := uploadFile(c.Ctx, uploader, opt, mimeType, bucket, dstKey, localpath, nil); err != nil {
+	if err := c.uploadFile(c.Ctx, opt, mimeType, bucket, dstKey, localpath, nil); err != nil {
 		return err
 	}
 	myprint.Printf("put: %s --> %s  (%s)\n", localpath, c.S3Path(bucket, dstKey), mimeType)
@@ -83,10 +70,11 @@ func (c *S3Client) PutObject(opt PutOptions, bucket, prefix, localpath string, i
 }
 
 // uploadDirStreaming 流式扫描本地目录并上传，带进度条。
-func (c *S3Client) uploadDirStreaming(u *manager.Uploader, opt PutOptions, bucket, key, localpath string) error {
+func (c *S3Client) uploadDirStreaming(opt PutOptions, bucket, key, localpath string) error {
 	return RunStream(c.Ctx, StreamConfig{
 		Concurrency: opt.Concurrency,
 		Label:       "put",
+		NoProgress:  opt.NoProgress,
 		Count: func(ctx context.Context, add func(n, size int64)) error {
 			return countLocalDir(localpath, add)
 		},
@@ -119,39 +107,35 @@ func (c *S3Client) uploadDirStreaming(u *manager.Uploader, opt PutOptions, bucke
 			if opt.ContentType != "" {
 				mimeType = opt.ContentType
 			}
-			return uploadFile(ctx, u, opt, mimeType, bucket, job.Dst, job.Src, report)
+			return c.uploadFile(ctx, opt, mimeType, bucket, job.Dst, job.Src, report)
 		},
 	})
 }
 
-func uploadFile(ctx context.Context, u *manager.Uploader, opt PutOptions, mimeType, bucket, fileKey, filePath string, report func(n int64)) error {
-	file, err := os.Open(filePath)
+func (c *S3Client) uploadFile(ctx context.Context, opt PutOptions, mimeType, bucket, fileKey, filePath string, report func(n int64)) error {
+	// 流式上传: 打开文件句柄直接传给 s3api, 避免整文件读入内存 (大文件不再 OOM).
+	f, err := os.Open(filePath)
 	if err != nil {
 		return fmt.Errorf("open %s: %w", filePath, err)
 	}
-	defer file.Close()
+	defer f.Close()
 
-	// 有进度回调时，用计数包装器包装文件，使 manager 并发读取分片时实时上报字节。
-	var body io.Reader = file
-	if report != nil {
-		body = NewUploadCounter(file, report)
-	}
-
-	in := &s3.PutObjectInput{
-		Bucket:      aws.String(bucket),
-		Key:         aws.String(fileKey),
-		Body:        body,
-		ContentType: aws.String(mimeType),
-	}
-	if opt.StorageClass != "" {
-		in.StorageClass = types.StorageClass(opt.StorageClass)
-	}
-	if len(opt.Metadata) > 0 {
-		in.Metadata = opt.Metadata
+	fi, err := f.Stat()
+	if err != nil {
+		return fmt.Errorf("stat %s: %w", filePath, err)
 	}
 
-	if _, err := u.Upload(ctx, in); err != nil {
+	putOpts := &s3api.PutObjectOptions{
+		ContentType:  mimeType,
+		StorageClass: opt.StorageClass,
+		Metadata:     opt.Metadata,
+	}
+
+	if _, err := c.S3.PutObjectStream(ctx, bucket, fileKey, f, fi.Size(), putOpts); err != nil {
 		return fmt.Errorf("upload %s: %s", filePath, FormatAPIError(err))
+	}
+	if report != nil {
+		report(fi.Size())
 	}
 	return nil
 }

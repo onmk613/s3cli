@@ -20,10 +20,11 @@ func NewLsCmd() *cobra.Command {
 	opts := newCmdContext()
 	opts.Global.AllowAliasOnly = true // ls 支持只输入 alias 来列出所有 bucket
 	cmd := &cobra.Command{
-		Use:     "ls [alias:[bucket/[path]]]",
-		Aliases: []string{"list", "l"},
-		Short:   "List objects or buckets",
-		Args:    cobra.MinimumNArgs(1),
+		Use:               "ls [alias:[bucket/[path]]]",
+		Aliases:           []string{"list", "l"},
+		Short:             "List objects or buckets",
+		ValidArgsFunction: AutoCompletePath,
+		Args:              cobra.MinimumNArgs(1),
 		RunE: NewRunE(ActionFunc(func(S3 action.S3Client, opts *CmdContext, s3path *utils.S3Path) error {
 			return S3.ListObjects(s3path.Bucket, s3path.Key, opts.Global.ListAll)
 		}), &opts),
@@ -36,9 +37,10 @@ func NewDuCmd() *cobra.Command {
 	var blockSizeStr string
 	opts := newCmdContext()
 	cmd := &cobra.Command{
-		Use:   "du [alias:bucket/path] ...",
-		Short: "Show disk usage of buckets or paths",
-		Args:  cobra.MinimumNArgs(1),
+		Use:               "du [alias:bucket/path] ...",
+		Short:             "Show disk usage of buckets or paths",
+		ValidArgsFunction: AutoCompletePath,
+		Args:              cobra.MinimumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			var duOpt action.DuOptions
 			if blockSizeStr != "" {
@@ -61,9 +63,10 @@ func NewDuCmd() *cobra.Command {
 func NewInfoCmd() *cobra.Command {
 	opts := newCmdContext()
 	cmd := &cobra.Command{
-		Use:   "info [alias:bucket[/path]] ...",
-		Short: "Show information about bucket(s) or object(s)",
-		Args:  cobra.MinimumNArgs(1),
+		Use:               "info [alias:bucket[/path]] ...",
+		Short:             "Show information about bucket(s) or object(s)",
+		ValidArgsFunction: AutoCompletePath,
+		Args:              cobra.MinimumNArgs(1),
 		RunE: NewRunE(ActionFunc(func(S3 action.S3Client, opts *CmdContext, s3path *utils.S3Path) error {
 			return S3.Info(s3path.Bucket, s3path.Key)
 		}), &opts),
@@ -73,12 +76,13 @@ func NewInfoCmd() *cobra.Command {
 
 func NewLsVersionsCmd() *cobra.Command {
 	return &cobra.Command{
-		Use:     "lsv [alias:bucket[/prefix]] ...",
-		Aliases: []string{"ls-versions", "list-versions"},
-		Short:   "List object versions (including delete markers)",
-		Args:    cobra.MinimumNArgs(1),
+		Use:               "lsv [alias:bucket[/prefix]] ...",
+		Aliases:           []string{"ls-versions", "list-versions"},
+		Short:             "List object versions (including delete markers)",
+		ValidArgsFunction: AutoCompletePath,
+		Args:              cobra.MinimumNArgs(1),
 		RunE: NewRunE(ActionFunc(func(S3 action.S3Client, _ *CmdContext, s3path *utils.S3Path) error {
-			return S3.ListOjbectVersions(s3path.Bucket, s3path.Key)
+			return S3.ListObjectVersions(s3path.Bucket, s3path.Key)
 		}), nil),
 	}
 }

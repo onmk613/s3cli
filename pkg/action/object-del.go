@@ -5,10 +5,7 @@ import (
 	"strings"
 
 	myprint "s3cli/pkg/fmtutil"
-
-	"github.com/aws/aws-sdk-go-v2/aws"
-	"github.com/aws/aws-sdk-go-v2/service/s3"
-	"github.com/aws/aws-sdk-go-v2/service/s3/types"
+	"s3cli/pkg/s3api"
 )
 
 // DelOpt Delete 命令参数
@@ -17,7 +14,7 @@ type DelOptions struct {
 	VersionID string
 }
 
-// Rm 删除对象 / 目录
+// DeleteObjects 删除对象 / 目录
 func (c *S3Client) DeleteObjects(bucket, prefix string, opt DelOptions) error {
 	// 指定 versionId 时只删除该对象的特定版本，忽略 recursive / 目录语义。
 	if opt.VersionID != "" {
@@ -59,9 +56,7 @@ func (c *S3Client) DeleteObjects(bucket, prefix string, opt DelOptions) error {
 }
 
 func (c *S3Client) deleteSingleObject(bucket, key string) error {
-	_, err := c.S3.DeleteObject(c.Ctx, &s3.DeleteObjectInput{
-		Bucket: aws.String(bucket), Key: aws.String(key),
-	})
+	_, err := c.S3.DeleteObject(c.Ctx, bucket, key, "")
 	if err != nil {
 		return fmt.Errorf("delete %s: %s", c.S3Path(bucket, key), FormatAPIError(err))
 	}
@@ -71,9 +66,7 @@ func (c *S3Client) deleteSingleObject(bucket, key string) error {
 }
 
 func (c *S3Client) deleteObjectVersion(bucket, key, versionID string) error {
-	_, err := c.S3.DeleteObject(c.Ctx, &s3.DeleteObjectInput{
-		Bucket: aws.String(bucket), Key: aws.String(key), VersionId: aws.String(versionID),
-	})
+	_, err := c.S3.DeleteObject(c.Ctx, bucket, key, versionID)
 	if err != nil {
 		return fmt.Errorf("delete %s (version %s): %s", c.S3Path(bucket, key), versionID, FormatAPIError(err))
 	}
@@ -88,8 +81,9 @@ func (c *S3Client) deleteObjectsWithPrefix(bucket, prefix string) error {
 	// 一并误删（前缀匹配把 ".gitignore" 也命中了）。
 	if prefix != "" && !strings.HasSuffix(prefix, "/") {
 		dirPrefix := prefix + "/"
-		listResp, err := c.S3.ListObjectsV2(c.Ctx, &s3.ListObjectsV2Input{
-			Bucket: aws.String(bucket), Prefix: aws.String(dirPrefix), MaxKeys: aws.Int32(1),
+		listResp, err := c.S3.ListObjectsV2(c.Ctx, bucket, &s3api.ListObjectsV2Options{
+			Prefix:  dirPrefix,
+			MaxKeys: 1,
 		})
 		if err != nil {
 			return fmt.Errorf("list objects: %s", FormatAPIError(err))
@@ -99,11 +93,11 @@ func (c *S3Client) deleteObjectsWithPrefix(bucket, prefix string) error {
 		}
 	}
 
-	paginator := s3.NewListObjectsV2Paginator(c.S3, &s3.ListObjectsV2Input{
-		Bucket: aws.String(bucket), Prefix: aws.String(prefix),
+	paginator := s3api.NewListObjectsV2Paginator(c.S3, bucket, &s3api.ListObjectsV2Options{
+		Prefix: prefix,
 	})
 
-	var toDelete []types.ObjectIdentifier
+	var toDelete []s3api.ObjectIdentifier
 	var total int
 	for paginator.HasMorePages() {
 		page, err := paginator.NextPage(c.Ctx)
@@ -111,7 +105,7 @@ func (c *S3Client) deleteObjectsWithPrefix(bucket, prefix string) error {
 			return fmt.Errorf("list objects: %s", FormatAPIError(err))
 		}
 		for _, item := range page.Contents {
-			toDelete = append(toDelete, types.ObjectIdentifier{Key: item.Key})
+			toDelete = append(toDelete, s3api.ObjectIdentifier{Key: item.Key})
 		}
 		if len(toDelete) >= 1000 {
 			if err := c.deleteBatch(bucket, toDelete); err != nil {
@@ -132,11 +126,8 @@ func (c *S3Client) deleteObjectsWithPrefix(bucket, prefix string) error {
 	return nil
 }
 
-func (c *S3Client) deleteBatch(bucket string, objects []types.ObjectIdentifier) error {
-	_, err := c.S3.DeleteObjects(c.Ctx, &s3.DeleteObjectsInput{
-		Bucket: aws.String(bucket),
-		Delete: &types.Delete{Objects: objects, Quiet: aws.Bool(true)},
-	})
+func (c *S3Client) deleteBatch(bucket string, objects []s3api.ObjectIdentifier) error {
+	_, err := c.S3.DeleteObjects(c.Ctx, bucket, objects, true)
 	if err != nil {
 		return fmt.Errorf("delete batch of %d: %s", len(objects), FormatAPIError(err))
 	}

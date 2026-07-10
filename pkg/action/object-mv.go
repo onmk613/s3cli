@@ -7,15 +7,13 @@ import (
 	"strings"
 
 	myprint "s3cli/pkg/fmtutil"
+	"s3cli/pkg/s3api"
 	"s3cli/pkg/utils"
-
-	"github.com/aws/aws-sdk-go-v2/aws"
-	"github.com/aws/aws-sdk-go-v2/service/s3"
 )
 
 // Mv 移动对象 = copy + delete
 // 处理同对象存储之内的移动
-func (c *S3Client) Mv(srcBucket, srcKey, destBucket, destKey string, recursive bool) error {
+func (c *S3Client) Mv(srcBucket, srcKey, destBucket, destKey string, recursive, noProgress bool) error {
 	srcTrailing := strings.HasSuffix(srcKey, "/")
 	destTrailing := strings.HasSuffix(destKey, "/")
 
@@ -44,7 +42,7 @@ func (c *S3Client) Mv(srcBucket, srcKey, destBucket, destKey string, recursive b
 		state = utils.DestNone
 	}
 	destPrefix, appendRel := utils.ResolveDirDestPrefix(srcKey, srcTrailing, destKey, destTrailing, state)
-	return c.mvDirStreaming(srcBucket, srcKey, destBucket, destPrefix, appendRel)
+	return c.mvDirStreaming(srcBucket, srcKey, destBucket, destPrefix, appendRel, noProgress)
 }
 
 func (c *S3Client) mvObject(srcBucket, srcKey, destBucket, destKey string) error {
@@ -52,9 +50,7 @@ func (c *S3Client) mvObject(srcBucket, srcKey, destBucket, destKey string) error
 		return err
 	}
 
-	_, err := c.S3.DeleteObject(c.Ctx, &s3.DeleteObjectInput{
-		Bucket: aws.String(srcBucket), Key: aws.String(srcKey),
-	})
+	_, err := c.S3.DeleteObject(c.Ctx, srcBucket, srcKey, "")
 	if err != nil {
 		return fmt.Errorf("delete source: %s", FormatAPIError(err))
 	}
@@ -62,16 +58,17 @@ func (c *S3Client) mvObject(srcBucket, srcKey, destBucket, destKey string) error
 }
 
 // mvDirStreaming 流式列出并并发移动，带进度条。
-func (c *S3Client) mvDirStreaming(srcBucket, srcKey, destBucket, destPrefix string, appendRel bool) error {
+func (c *S3Client) mvDirStreaming(srcBucket, srcKey, destBucket, destPrefix string, appendRel, noProgress bool) error {
 	return RunStream(c.Ctx, StreamConfig{
 		Concurrency: 10,
 		Label:       "mv",
+		NoProgress:  noProgress,
 		Count: func(ctx context.Context, add func(n, size int64)) error {
 			return c.countS3Prefix(ctx, srcBucket, srcKey, false, add)
 		},
 		Scan: func(ctx context.Context, jobs chan<- StreamJob) error {
-			paginator := s3.NewListObjectsV2Paginator(c.S3, &s3.ListObjectsV2Input{
-				Bucket: aws.String(srcBucket), Prefix: aws.String(srcKey),
+			paginator := s3api.NewListObjectsV2Paginator(c.S3, srcBucket, &s3api.ListObjectsV2Options{
+				Prefix: srcKey,
 			})
 			for paginator.HasMorePages() {
 				page, err := paginator.NextPage(ctx)
@@ -79,12 +76,12 @@ func (c *S3Client) mvDirStreaming(srcBucket, srcKey, destBucket, destPrefix stri
 					return fmt.Errorf("list %s: %s", c.S3Path(srcBucket, srcKey), FormatAPIError(err))
 				}
 				for _, item := range page.Contents {
-					src := aws.ToString(item.Key)
+					src := item.Key
 					dst := buildDestKey(src, srcKey, destPrefix, appendRel)
 					jobs <- StreamJob{
 						Src:  src,
 						Dst:  c.S3Path(destBucket, dst),
-						Size: aws.ToInt64(item.Size),
+						Size: item.Size,
 					}
 				}
 			}
@@ -95,9 +92,7 @@ func (c *S3Client) mvDirStreaming(srcBucket, srcKey, destBucket, destPrefix stri
 			if err := c.copyObject(srcBucket, job.Src, destBucket, dstKey); err != nil {
 				return err
 			}
-			_, err := c.S3.DeleteObject(ctx, &s3.DeleteObjectInput{
-				Bucket: aws.String(srcBucket), Key: aws.String(job.Src),
-			})
+			_, err := c.S3.DeleteObject(ctx, srcBucket, job.Src, "")
 			if err != nil {
 				return fmt.Errorf("delete source: %s", FormatAPIError(err))
 			}

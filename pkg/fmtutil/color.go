@@ -2,10 +2,6 @@ package fmtutil
 
 var noColor bool
 
-// quiet 全局静默标志：受 --quiet/-q 控制。
-// 为 true 时，进度条等交互式 UI 应退化为流式纯文本输出。
-var quiet bool
-
 type Color int
 
 const (

@@ -24,9 +24,10 @@ func samePath(a, b *utils.S3Path) bool {
 func NewCpCmd() *cobra.Command {
 	opts := newCmdContext()
 	cmd := &cobra.Command{
-		Use:   "cp [src-alias:bucket/key] [dst-alias:bucket/key]",
-		Short: "Copy object(s) within the same S3 endpoint",
-		Args:  cobra.ExactArgs(2),
+		Use:               "cp [src-alias:bucket/key] [dst-alias:bucket/key]",
+		Short:             "Copy object(s) within the same S3 endpoint",
+		Args:              cobra.ExactArgs(2),
+		ValidArgsFunction: AutoCompletePath,
 		RunE: NewRunETwoPaths(func(src, dst action.S3Client, srcPath, dstPath *utils.S3Path, opts *CmdContext) error {
 			if srcPath.Alias != dstPath.Alias {
 				return fmt.Errorf("cp only supports same-alias copy; use `mirror` for cross-endpoint")
@@ -34,7 +35,7 @@ func NewCpCmd() *cobra.Command {
 			if samePath(srcPath, dstPath) {
 				return fmt.Errorf("source and destination are the same: %s", action.S3PathStatic(srcPath.Alias, srcPath.Bucket, srcPath.Key))
 			}
-			return src.CopyObjects(srcPath.Bucket, srcPath.Key, dstPath.Bucket, dstPath.Key, opts.Global.Recursive)
+			return src.CopyObjects(srcPath.Bucket, srcPath.Key, dstPath.Bucket, dstPath.Key, opts.Global.Recursive, config.G.Quiet)
 		}, &opts),
 	}
 	cmd.Flags().BoolVarP(&opts.Global.Recursive, "recursive", "r", false, "Copy recursively")
@@ -44,9 +45,10 @@ func NewCpCmd() *cobra.Command {
 func NewMvCmd() *cobra.Command {
 	opts := newCmdContext()
 	cmd := &cobra.Command{
-		Use:   "mv [src-alias:bucket/key] [dst-alias:bucket/key]",
-		Short: "Move object(s) within the same S3 endpoint",
-		Args:  cobra.ExactArgs(2),
+		Use:               "mv [src-alias:bucket/key] [dst-alias:bucket/key]",
+		Short:             "Move object(s) within the same S3 endpoint",
+		Args:              cobra.ExactArgs(2),
+		ValidArgsFunction: AutoCompletePath,
 		RunE: NewRunETwoPaths(func(src, dst action.S3Client, srcPath, dstPath *utils.S3Path, opts *CmdContext) error {
 			if srcPath.Alias != dstPath.Alias {
 				return fmt.Errorf("mv only supports same-alias move; use `mirror --remove` for cross-endpoint")
@@ -54,7 +56,7 @@ func NewMvCmd() *cobra.Command {
 			if samePath(srcPath, dstPath) {
 				return fmt.Errorf("source and destination are the same: %s", action.S3PathStatic(srcPath.Alias, srcPath.Bucket, srcPath.Key))
 			}
-			return src.Mv(srcPath.Bucket, srcPath.Key, dstPath.Bucket, dstPath.Key, opts.Global.Recursive)
+			return src.Mv(srcPath.Bucket, srcPath.Key, dstPath.Bucket, dstPath.Key, opts.Global.Recursive, config.G.Quiet)
 		}, &opts),
 	}
 	cmd.Flags().BoolVarP(&opts.Global.Recursive, "recursive", "r", false, "Move recursively")
@@ -73,10 +75,11 @@ func NewMirrorCmd() *cobra.Command {
 
 	opts := newCmdContext()
 	cmd := &cobra.Command{
-		Use:     "mirror [src-alias:bucket/prefix] [dst-alias:bucket/prefix]",
-		Aliases: []string{"sync"},
-		Short:   "Synchronize objects from source to target (one-way sync)",
-		Args:    cobra.ExactArgs(2),
+		Use:               "mirror [src-alias:bucket/prefix] [dst-alias:bucket/prefix]",
+		Aliases:           []string{"sync"},
+		Short:             "Synchronize objects from source to target (one-way sync)",
+		Args:              cobra.ExactArgs(2),
+		ValidArgsFunction: AutoCompletePath,
 		RunE: NewRunETwoPaths(func(src, tgt action.S3Client, srcPath, tgtPath *utils.S3Path, opts *CmdContext) error {
 			if srcPath.Bucket == "" || tgtPath.Bucket == "" {
 				return fmt.Errorf("both src and dst must include a bucket")
@@ -104,6 +107,7 @@ func NewMirrorCmd() *cobra.Command {
 				Concurrency: concurrency,
 				PartSizeMB:  partSizeMB,
 				SizeLimit:   sizeLimit,
+				NoProgress:  config.G.Quiet,
 			})
 		}, &opts),
 	}

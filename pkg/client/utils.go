@@ -5,14 +5,13 @@ import (
 	"errors"
 	"s3cli/pkg/config"
 	"s3cli/pkg/kvcache"
+	"s3cli/pkg/s3api"
 	"s3cli/pkg/utils"
-
-	"github.com/aws/aws-sdk-go-v2/service/s3"
 )
 
-var S3Clients = &kvcache.Cache[string, *s3.Client]{}
+var S3Clients = &kvcache.Cache[string, *s3api.Client]{}
 
-func ParsePathAndNewClient(ctx context.Context, arg string) (*s3.Client, *utils.S3Path, error) {
+func ParsePathAndNewClient(ctx context.Context, arg string) (*s3api.Client, *utils.S3Path, error) {
 	s3path, patherr := utils.ParseS3Path(arg)
 
 	// 如果error为 ErrAliasOnly，表明输入只包含 alias，不包含 bucket/key 部分

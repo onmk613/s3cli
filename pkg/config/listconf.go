@@ -12,7 +12,7 @@ import (
 )
 
 // 列出配置文件中的所有别名
-func ListAliasConf() error {
+func ListAliasConf(alias []string) error {
 	if ConfigPath == "" {
 		ConfigPath = DefaultConfigPath
 	}
@@ -80,6 +80,10 @@ func ListAliasConf() error {
 	myprint.Println()
 
 	for i, s := range sections {
+		if len(alias) > 0 && !stringInSlice(s.name, alias) {
+			continue
+		}
+
 		// 标题：[alias_name]
 		myprint.PrintfBoldCyan("[%s]\n", s.name)
 
@@ -108,4 +112,13 @@ func ListAliasConf() error {
 		}
 	}
 	return nil
+}
+
+func stringInSlice(s string, list []string) bool {
+	for _, item := range list {
+		if s == item {
+			return true
+		}
+	}
+	return false
 }

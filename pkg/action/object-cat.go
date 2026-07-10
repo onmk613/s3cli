@@ -5,8 +5,7 @@ import (
 	"io"
 	"os"
 
-	"github.com/aws/aws-sdk-go-v2/aws"
-	"github.com/aws/aws-sdk-go-v2/service/s3"
+	"s3cli/pkg/s3api"
 )
 
 // CatOptions cat 命令参数
@@ -19,15 +18,12 @@ func (c *S3Client) CatObject(opt CatOptions, bucket, key string) error {
 		return fmt.Errorf("cat requires an object key, not a bucket")
 	}
 
-	in := &s3.GetObjectInput{
-		Bucket: aws.String(bucket),
-		Key:    aws.String(key),
-	}
+	opts := &s3api.GetObjectOptions{}
 	if opt.Range != "" {
-		in.Range = aws.String(opt.Range)
+		opts.Range = opt.Range
 	}
 
-	out, err := c.S3.GetObject(c.Ctx, in)
+	out, err := c.S3.GetObject(c.Ctx, bucket, key, opts)
 	if err != nil {
 		return fmt.Errorf("cat %s: %s", c.S3Path(bucket, key), FormatAPIError(err))
 	}

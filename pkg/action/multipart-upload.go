@@ -4,29 +4,26 @@ import (
 	"fmt"
 
 	myprint "s3cli/pkg/fmtutil"
-
-	"github.com/aws/aws-sdk-go-v2/aws"
-	"github.com/aws/aws-sdk-go-v2/service/s3"
+	"s3cli/pkg/s3api"
 )
 
 // MpuList 列出未完成的 multipart upload
 func (c *S3Client) MpuList(bucket, prefix string) error {
-	paginator := s3.NewListMultipartUploadsPaginator(c.S3, &s3.ListMultipartUploadsInput{Bucket: aws.String(bucket), Prefix: aws.String(prefix)})
+	out, err := c.S3.ListMultipartUploads(c.Ctx, bucket, &s3api.ListMultipartUploadsOptions{
+		Prefix: prefix,
+	})
+	if err != nil {
+		return fmt.Errorf("list multipart uploads: %s", FormatAPIError(err))
+	}
 	var count int
-	for paginator.HasMorePages() {
-		page, err := paginator.NextPage(c.Ctx)
-		if err != nil {
-			return fmt.Errorf("list multipart uploads: %s", FormatAPIError(err))
+	for _, u := range out.Uploads {
+		initiated := ""
+		if !u.Initiated.IsZero() {
+			initiated = u.Initiated.Format("2006-01-02 15:04:05")
 		}
-		for _, u := range page.Uploads {
-			initiated := ""
-			if u.Initiated != nil {
-				initiated = u.Initiated.Format("2006-01-02 15:04:05")
-			}
-			myprint.Printf("%s  %s  uploadId=%s\n",
-				initiated, c.S3Path(bucket, aws.ToString(u.Key)), aws.ToString(u.UploadId))
-			count++
-		}
+		myprint.Printf("%s  %s  uploadId=%s\n",
+			initiated, c.S3Path(bucket, u.Key), u.UploadID)
+		count++
 	}
 	if count == 0 {
 		myprint.PrintfBoldYellow("%s: no in-progress multipart uploads\n", c.S3Path(bucket, ""))
@@ -55,10 +52,7 @@ func (c *S3Client) MpuAbort(bucket, prefix, uploadID string) error {
 			key = found
 		}
 
-		_, err := c.S3.AbortMultipartUpload(c.Ctx, &s3.AbortMultipartUploadInput{
-			Bucket: aws.String(bucket), Key: aws.String(key), UploadId: aws.String(uploadID),
-		})
-		if err != nil {
+		if err := c.S3.AbortMultipartUpload(c.Ctx, bucket, key, uploadID); err != nil {
 			return fmt.Errorf("abort mpu: %s", FormatAPIError(err))
 		}
 
@@ -67,23 +61,17 @@ func (c *S3Client) MpuAbort(bucket, prefix, uploadID string) error {
 	}
 
 	// 批量: 找到 prefix 下所有 in-progress, 全部 abort
-	paginator := s3.NewListMultipartUploadsPaginator(c.S3, &s3.ListMultipartUploadsInput{Bucket: aws.String(bucket), Prefix: aws.String(prefix)})
+	out, err := c.S3.ListMultipartUploads(c.Ctx, bucket, &s3api.ListMultipartUploadsOptions{Prefix: prefix})
+	if err != nil {
+		return fmt.Errorf("list mpu: %s", FormatAPIError(err))
+	}
 	var aborted int
-	for paginator.HasMorePages() {
-		page, err := paginator.NextPage(c.Ctx)
-		if err != nil {
-			return fmt.Errorf("list mpu: %s", FormatAPIError(err))
+	for _, u := range out.Uploads {
+		if err := c.S3.AbortMultipartUpload(c.Ctx, bucket, u.Key, u.UploadID); err != nil {
+			myprint.PrintfRed("abort %s/%s: %s\n", bucket, u.Key, FormatAPIError(err))
+			continue
 		}
-		for _, u := range page.Uploads {
-			_, err := c.S3.AbortMultipartUpload(c.Ctx, &s3.AbortMultipartUploadInput{
-				Bucket: aws.String(bucket), Key: u.Key, UploadId: u.UploadId,
-			})
-			if err != nil {
-				myprint.PrintfRed("abort %s/%s: %s\n", bucket, aws.ToString(u.Key), FormatAPIError(err))
-				continue
-			}
-			aborted++
-		}
+		aborted++
 	}
 	myprint.PrintfBoldGreen("aborted %d in-progress uploads under %s\n", aborted, c.S3Path(bucket, prefix))
 	return nil
@@ -91,18 +79,15 @@ func (c *S3Client) MpuAbort(bucket, prefix, uploadID string) error {
 
 // findUploadKey 在 prefix 下列举 in-progress multipart uploads，
 func (c *S3Client) findUploadKey(bucket, prefix, uploadID string) (string, error) {
-	paginator := s3.NewListMultipartUploadsPaginator(c.S3, &s3.ListMultipartUploadsInput{
-		Bucket: aws.String(bucket), Prefix: aws.String(prefix),
+	out, err := c.S3.ListMultipartUploads(c.Ctx, bucket, &s3api.ListMultipartUploadsOptions{
+		Prefix: prefix,
 	})
-	for paginator.HasMorePages() {
-		page, err := paginator.NextPage(c.Ctx)
-		if err != nil {
-			return "", fmt.Errorf("list mpu: %s", FormatAPIError(err))
-		}
-		for _, u := range page.Uploads {
-			if aws.ToString(u.UploadId) == uploadID {
-				return aws.ToString(u.Key), nil
-			}
+	if err != nil {
+		return "", fmt.Errorf("list mpu: %s", FormatAPIError(err))
+	}
+	for _, u := range out.Uploads {
+		if u.UploadID == uploadID {
+			return u.Key, nil
 		}
 	}
 	return "", nil

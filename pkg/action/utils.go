@@ -8,15 +8,11 @@ import (
 	"strings"
 	"sync"
 
+	"s3cli/pkg/s3api"
 	"s3cli/pkg/utils"
-
-	"github.com/aws/smithy-go"
 )
 
 // IsCanceled 判断 err 是否由用户主动取消（Ctrl+C / SIGTERM）或超时引起。
-//
-// 主动取消会让所有在途请求返回 context.Canceled（有时被 SDK 包成 RequestCanceled
-// 等 API 错误）。这类错误不应被当作真正的传输/比对失败上报，调用方据此静默跳过。
 func IsCanceled(err error) bool {
 	if err == nil {
 		return false
@@ -24,24 +20,18 @@ func IsCanceled(err error) bool {
 	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 		return true
 	}
-	var apiErr smithy.APIError
-	if errors.As(err, &apiErr) {
-		switch apiErr.ErrorCode() {
-		case "RequestCanceled", "RequestCanceledError":
-			return true
-		}
-	}
 	// 兜底：部分路径会把 context.Canceled 文本包进普通 error，丢失了可 Is 的链。
 	return strings.Contains(err.Error(), "context canceled")
 }
 
+// FormatAPIError 格式化 S3 错误为对用户友好的字符串.
 func FormatAPIError(err error) string {
 	if err == nil {
 		return ""
 	}
-	var apiErr smithy.APIError
+	var apiErr *s3api.ErrorResponse
 	if errors.As(err, &apiErr) {
-		return fmt.Sprintf("%s: %s", apiErr.ErrorCode(), apiErr.ErrorMessage())
+		return fmt.Sprintf("%s: %s", apiErr.Code, apiErr.Message)
 	}
 	return err.Error()
 }

@@ -6,9 +6,7 @@ import (
 	"strings"
 
 	myprint "s3cli/pkg/fmtutil"
-
-	"github.com/aws/aws-sdk-go-v2/aws"
-	"github.com/aws/aws-sdk-go-v2/service/s3"
+	"s3cli/pkg/s3api"
 )
 
 // TreeOptions tree 命令参数
@@ -26,24 +24,17 @@ func (c *S3Client) TreeObjects(opt TreeOptions, bucket, prefix string) error {
 	var fileCount, dirCount int
 	var totalSize int64
 
-	paginator := s3.NewListObjectsV2Paginator(c.S3, &s3.ListObjectsV2Input{
-		Bucket: aws.String(bucket),
-		Prefix: aws.String(prefix),
+	err := c.forEachObject(c.Ctx, bucket, prefix, func(obj s3api.ObjectInfo) error {
+		rel := strings.TrimPrefix(obj.Key, prefix)
+		rel = strings.TrimPrefix(rel, "/")
+		if rel == "" {
+			return nil
+		}
+		root.insert(strings.Split(rel, "/"), obj.Size)
+		return nil
 	})
-	for paginator.HasMorePages() {
-		page, err := paginator.NextPage(c.Ctx)
-		if err != nil {
-			return fmt.Errorf("list objects: %s", FormatAPIError(err))
-		}
-		for _, obj := range page.Contents {
-			key := aws.ToString(obj.Key)
-			rel := strings.TrimPrefix(key, prefix)
-			rel = strings.TrimPrefix(rel, "/")
-			if rel == "" {
-				continue
-			}
-			root.insert(strings.Split(rel, "/"), aws.ToInt64(obj.Size))
-		}
+	if err != nil {
+		return err
 	}
 
 	header := c.S3Path(bucket, prefix)

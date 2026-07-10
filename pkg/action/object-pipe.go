@@ -1,16 +1,12 @@
 package action
 
 import (
-	"bufio"
 	"fmt"
+	"io"
 	"os"
 
 	myprint "s3cli/pkg/fmtutil"
-
-	"github.com/aws/aws-sdk-go-v2/aws"
-	"github.com/aws/aws-sdk-go-v2/feature/s3/manager"
-	"github.com/aws/aws-sdk-go-v2/service/s3"
-	"github.com/aws/aws-sdk-go-v2/service/s3/types"
+	"s3cli/pkg/s3api"
 )
 
 // PipeOptions pipe 命令参数
@@ -37,29 +33,18 @@ func (c *S3Client) PipeUpload(opt PipeOptions, bucket, key string) error {
 		}
 	}
 
-	uploader := manager.NewUploader(c.S3, func(u *manager.Uploader) {
-		if opt.PartSizeMB > 0 {
-			u.PartSize = int64(opt.PartSizeMB) * 1024 * 1024
-		}
-		if opt.Concurrency > 0 {
-			u.Concurrency = opt.Concurrency
-		}
-	})
-
-	in := &s3.PutObjectInput{
-		Bucket:      aws.String(bucket),
-		Key:         aws.String(key),
-		Body:        bufio.NewReader(os.Stdin),
-		ContentType: aws.String(opt.ContentType),
-	}
-	if opt.StorageClass != "" {
-		in.StorageClass = types.StorageClass(opt.StorageClass)
-	}
-	if len(opt.Metadata) > 0 {
-		in.Metadata = opt.Metadata
+	data, err := io.ReadAll(os.Stdin)
+	if err != nil {
+		return fmt.Errorf("read stdin: %w", err)
 	}
 
-	if _, err := uploader.Upload(c.Ctx, in); err != nil {
+	putOpts := &s3api.PutObjectOptions{
+		ContentType:  opt.ContentType,
+		StorageClass: opt.StorageClass,
+		Metadata:     opt.Metadata,
+	}
+
+	if _, err := c.S3.PutObject(c.Ctx, bucket, key, data, putOpts); err != nil {
 		return fmt.Errorf("pipe upload %s: %s", c.S3Path(bucket, key), FormatAPIError(err))
 	}
 

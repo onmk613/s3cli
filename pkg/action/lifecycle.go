@@ -1,31 +1,19 @@
 package action
 
 import (
-	"encoding/json"
 	"fmt"
 
 	myprint "s3cli/pkg/fmtutil"
-	"s3cli/pkg/utils"
-
-	"github.com/aws/aws-sdk-go-v2/aws"
-	"github.com/aws/aws-sdk-go-v2/service/s3"
-	s3types "github.com/aws/aws-sdk-go-v2/service/s3/types"
+	"s3cli/pkg/s3api/lifecycle"
 )
 
 // SetLifecycle 设置生命周期 (JSON, AWS CLI 兼容)
 func (c *S3Client) SetLifecycle(lifecyclefile, bucket string) error {
-	data, format, err := utils.LoadAWSConfigFile(lifecyclefile)
+	loaded, err := loadJSONConfig[lifecycle.Config](lifecyclefile, "lifecycle")
 	if err != nil {
 		return err
 	}
-	if format != "json" {
-		return fmt.Errorf("lifecycle only supports JSON format (AWS CLI compatible)")
-	}
-
-	var cfg s3types.BucketLifecycleConfiguration
-	if err := utils.UnmarshalAWS(data, "json", &cfg); err != nil {
-		return fmt.Errorf("parse lifecycle file %s: %w", lifecyclefile, err)
-	}
+	cfg := *loaded
 	if len(cfg.Rules) == 0 {
 		return fmt.Errorf("no lifecycle rules found in %s", lifecyclefile)
 	}
@@ -38,9 +26,7 @@ func (c *S3Client) SetLifecycle(lifecyclefile, bucket string) error {
 		}
 	}
 
-	_, err = c.S3.PutBucketLifecycleConfiguration(c.Ctx,
-		&s3.PutBucketLifecycleConfigurationInput{Bucket: aws.String(bucket), LifecycleConfiguration: &cfg})
-	if err != nil {
+	if err := c.S3.SetBucketLifecycle(c.Ctx, bucket, &cfg); err != nil {
 		return fmt.Errorf("set lifecycle %s: %s", bucket, FormatAPIError(err))
 	}
 
@@ -50,26 +36,15 @@ func (c *S3Client) SetLifecycle(lifecyclefile, bucket string) error {
 
 // GetLifecycle 打印生命周期
 func (c *S3Client) GetLifecycle(bucket string) error {
-	out, err := c.S3.GetBucketLifecycleConfiguration(c.Ctx, &s3.GetBucketLifecycleConfigurationInput{Bucket: aws.String(bucket)})
+	cfg, err := c.S3.GetBucketLifecycle(c.Ctx, bucket)
 	if err != nil {
 		return fmt.Errorf("get lifecycle %s: %s", bucket, FormatAPIError(err))
 	}
-	b, err := json.MarshalIndent(map[string]any{"Rules": out.Rules}, "", "  ")
-	if err != nil {
-		return fmt.Errorf("marshal lifecycle: %w", err)
-	}
-
-	myprint.PrintfBoldBlue("# %s %s lifecycle:\n", c.Alias, bucket)
-	myprint.PrintlnGreen(string(b))
-	return nil
+	return c.printBucketConfigJSON(bucket, "lifecycle:", cfg)
 }
 
 // DelLifecycle 删除生命周期
 func (c *S3Client) DelLifecycle(bucket string) error {
-	if _, err := c.S3.DeleteBucketLifecycle(c.Ctx, &s3.DeleteBucketLifecycleInput{Bucket: aws.String(bucket)}); err != nil {
-		return fmt.Errorf("delete lifecycle %s: %s", bucket, FormatAPIError(err))
-	}
-
-	myprint.PrintfBoldGreen("Lifecycle deleted for %s %s\n", c.Alias, bucket)
-	return nil
+	return c.deleteBucketConfig(bucket, "lifecycle", "Lifecycle deleted for %s %s\n",
+		func() error { return c.S3.DeleteBucketLifecycle(c.Ctx, bucket) })
 }

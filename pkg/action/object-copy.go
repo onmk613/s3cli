@@ -4,18 +4,15 @@ import (
 	"context"
 	"fmt"
 	"path"
-	"regexp"
 	"strings"
 
 	myprint "s3cli/pkg/fmtutil"
+	"s3cli/pkg/s3api"
 	"s3cli/pkg/utils"
-
-	"github.com/aws/aws-sdk-go-v2/aws"
-	"github.com/aws/aws-sdk-go-v2/service/s3"
 )
 
 // 处理同对象存储之内的复制
-func (c *S3Client) CopyObjects(srcBucket, srcKey, destBucket, destKey string, recursive bool) error {
+func (c *S3Client) CopyObjects(srcBucket, srcKey, destBucket, destKey string, recursive, noProgress bool) error {
 	srcTrailing := strings.HasSuffix(srcKey, "/")
 	destTrailing := strings.HasSuffix(destKey, "/")
 
@@ -46,15 +43,11 @@ func (c *S3Client) CopyObjects(srcBucket, srcKey, destBucket, destKey string, re
 		state = utils.DestNone
 	}
 	destPrefix, appendRel := utils.ResolveDirDestPrefix(srcKey, srcTrailing, destKey, destTrailing, state)
-	return c.copyDirStreaming(srcBucket, srcKey, destBucket, destPrefix, appendRel)
+	return c.copyDirStreaming(srcBucket, srcKey, destBucket, destPrefix, appendRel, noProgress)
 }
 
 func (c *S3Client) copyObject(srcBucket, srcKey, destBucket, destKey string) error {
-	_, err := c.S3.CopyObject(c.Ctx, &s3.CopyObjectInput{
-		Bucket:     aws.String(destBucket),
-		CopySource: aws.String(srcBucket + "/" + srcKey),
-		Key:        aws.String(destKey),
-	})
+	_, err := c.S3.CopyObject(c.Ctx, srcBucket, srcKey, destBucket, destKey, nil)
 	if err != nil {
 		return fmt.Errorf("copy: %s", FormatAPIError(err))
 	}
@@ -64,16 +57,17 @@ func (c *S3Client) copyObject(srcBucket, srcKey, destBucket, destKey string) err
 // copyDirStreaming 流式列出并并发复制，带进度条。
 // destPrefix 为目标前缀；appendRel=true 时把每个源对象相对源前缀的路径拼到 destPrefix 之下，
 // 否则所有源对象都写到 destPrefix（与规则 1/3 的 trailing-none/file 语义一致）。
-func (c *S3Client) copyDirStreaming(srcBucket, srcKey, destBucket, destPrefix string, appendRel bool) error {
+func (c *S3Client) copyDirStreaming(srcBucket, srcKey, destBucket, destPrefix string, appendRel, noProgress bool) error {
 	return RunStream(c.Ctx, StreamConfig{
 		Concurrency: 10,
 		Label:       "cp",
+		NoProgress:  noProgress,
 		Count: func(ctx context.Context, add func(n, size int64)) error {
 			return c.countS3Prefix(ctx, srcBucket, srcKey, false, add)
 		},
 		Scan: func(ctx context.Context, jobs chan<- StreamJob) error {
-			paginator := s3.NewListObjectsV2Paginator(c.S3, &s3.ListObjectsV2Input{
-				Bucket: aws.String(srcBucket), Prefix: aws.String(srcKey),
+			paginator := s3api.NewListObjectsV2Paginator(c.S3, srcBucket, &s3api.ListObjectsV2Options{
+				Prefix: srcKey,
 			})
 			for paginator.HasMorePages() {
 				page, err := paginator.NextPage(ctx)
@@ -81,12 +75,12 @@ func (c *S3Client) copyDirStreaming(srcBucket, srcKey, destBucket, destPrefix st
 					return fmt.Errorf("list %s: %s", c.S3Path(srcBucket, srcKey), FormatAPIError(err))
 				}
 				for _, item := range page.Contents {
-					src := aws.ToString(item.Key)
+					src := item.Key
 					dst := buildDestKey(src, srcKey, destPrefix, appendRel)
 					jobs <- StreamJob{
 						Src:  src,
 						Dst:  c.S3Path(destBucket, dst),
-						Size: aws.ToInt64(item.Size),
+						Size: item.Size,
 					}
 				}
 			}
@@ -117,9 +111,9 @@ func buildDestKey(srcKey, srcPrefix, destPrefix string, appendRel bool) string {
 	}
 
 	rel := srcKey
-	if srcPrefix != "" {
-		re := regexp.MustCompile("^" + regexp.QuoteMeta(srcPrefix) + "/?")
-		rel = re.ReplaceAllString(srcKey, "")
+	if srcPrefix != "" && strings.HasPrefix(srcKey, srcPrefix) {
+		// 去掉前缀及其后可选的斜杠, 等价于原正则 "^srcPrefix/?", 但避免热路径重复编译正则.
+		rel = strings.TrimPrefix(strings.TrimPrefix(srcKey, srcPrefix), "/")
 	}
 	if rel == "" {
 		return destPrefix
