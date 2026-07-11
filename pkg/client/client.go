@@ -10,7 +10,7 @@ import (
 )
 
 // NewS3Client 构建自建的 s3api.Client.
-func NewS3Client(ctx context.Context, cfg config.Static) (*s3api.Client, error) {
+func NewS3Client(_ context.Context, cfg config.Static) (*s3api.Client, error) {
 	transport := &http.Transport{
 		TLSClientConfig: &tls.Config{InsecureSkipVerify: !cfg.IsVerifySSL()},
 	}

@@ -126,7 +126,7 @@ func (c *S3Client) infoBucket(bucket string) error {
 
 	// URL
 	var url string
-	if cred, err := c.GetCreds(); err == nil {
+	if cred, err := c.GetS3Credentials(); err == nil {
 		url = fmt.Sprintf("%s/%s/", cred.BaseEndpoint, bucket)
 	}
 	info["URL"] = url

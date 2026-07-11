@@ -9,28 +9,28 @@ import (
 	"s3cli/pkg/utils"
 )
 
-func (c *S3Client) SetPolicy(policyfile, bucketname string) error {
-	data, _, err := utils.LoadAWSConfigFile(policyfile)
+func (c *S3Client) SetPolicy(policyFile, bucket string) error {
+	data, _, err := utils.LoadAWSConfigFile(policyFile)
 	if err != nil {
 		return err
 	}
 	if err := utils.ValidateJSON(data); err != nil {
 		return err
 	}
-	if err := c.S3.SetBucketPolicy(c.Ctx, bucketname, data); err != nil {
-		return fmt.Errorf("set policy %s: %s", bucketname, FormatAPIError(err))
+	if err := c.S3.SetBucketPolicy(c.Ctx, bucket, data); err != nil {
+		return fmt.Errorf("set policy %s: %s", bucket, FormatAPIError(err))
 	}
 
-	myprint.PrintfBoldGreen("Policy set for %s\n", c.S3Path(bucketname, ""))
+	myprint.PrintfBoldGreen("Policy set for %s\n", c.S3Path(bucket, ""))
 	return nil
 }
 
-func (c *S3Client) GetPolicy(bucketname string) error {
-	raw, err := c.S3.GetBucketPolicy(c.Ctx, bucketname)
+func (c *S3Client) GetPolicy(bucket string) error {
+	raw, err := c.S3.GetBucketPolicy(c.Ctx, bucket)
 	if err != nil {
-		return fmt.Errorf("get policy %s: %s", bucketname, FormatAPIError(err))
+		return fmt.Errorf("get policy %s: %s", bucket, FormatAPIError(err))
 	}
-	myprint.PrintfBoldBlue("# %s policy:\n", c.S3Path(bucketname, ""))
+	myprint.PrintfBoldBlue("# %s policy:\n", c.S3Path(bucket, ""))
 
 	var pretty bytes.Buffer
 	if err := json.Indent(&pretty, raw, "", "  "); err == nil {
@@ -41,11 +41,11 @@ func (c *S3Client) GetPolicy(bucketname string) error {
 	return nil
 }
 
-func (c *S3Client) DelPolicy(bucketname string) error {
-	if err := c.S3.DeleteBucketPolicy(c.Ctx, bucketname); err != nil {
-		return fmt.Errorf("delete policy %s: %s", bucketname, FormatAPIError(err))
+func (c *S3Client) DelPolicy(bucket string) error {
+	if err := c.S3.DeleteBucketPolicy(c.Ctx, bucket); err != nil {
+		return fmt.Errorf("delete policy %s: %s", bucket, FormatAPIError(err))
 	}
 
-	myprint.PrintfBoldGreen("Policy deleted for %s: success\n", c.S3Path(bucketname, ""))
+	myprint.PrintfBoldGreen("Policy deleted for %s: success\n", c.S3Path(bucket, ""))
 	return nil
 }

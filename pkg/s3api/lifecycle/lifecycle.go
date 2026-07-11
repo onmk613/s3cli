@@ -6,7 +6,7 @@ import (
 	"io"
 )
 
-const defaultXMLNS = "http://s3.amazonaws.com/doc/2006-03-01/"
+const defaultXMLNS = "https://s3.amazonaws.com/doc/2006-03-01/"
 
 // Config 是 bucket 生命周期配置.
 type Config struct {
@@ -90,14 +90,6 @@ type NoncurrentVersionTransition struct {
 type AbortIncompleteMultipartUpload struct {
 	XMLName             xml.Name `xml:"AbortIncompleteMultipartUpload"`
 	DaysAfterInitiation *int     `xml:"DaysAfterInitiation"`
-}
-
-// NewConfig 创建一个新的生命周期配置.
-func NewConfig(rules []Rule) *Config {
-	return &Config{
-		XMLNS: defaultXMLNS,
-		Rules: rules,
-	}
 }
 
 // ParseBucketLifecycleConfig 从 XML 解析生命周期配置.

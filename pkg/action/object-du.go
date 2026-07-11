@@ -17,7 +17,7 @@ func roundUpToBlock(size, block int64) int64 {
 	return ((size + block - 1) / block) * block
 }
 
-// Du 显示磁盘占用, 只支持bucket及以下级别
+// DuObject 显示磁盘占用, 只支持bucket及以下级别
 func (c *S3Client) DuObject(opt DuOptions, bucket, prefix string) error {
 	var totalSize, diskSize, count int64
 	err := c.forEachObject(c.Ctx, bucket, prefix, func(o s3api.ObjectInfo) error {

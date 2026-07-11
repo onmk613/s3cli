@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/xml"
+	"io"
 	"net/http"
 	"net/url"
 )
@@ -34,7 +35,9 @@ func (c *Client) DeleteObject(ctx context.Context, bucket, key, versionID string
 	if err != nil {
 		return nil, err
 	}
-	defer resp.Body.Close()
+	defer func(Body io.ReadCloser) {
+		_ = Body.Close()
+	}(resp.Body)
 
 	return &DeleteObjectOutput{
 		VersionID:    resp.Header.Get("x-amz-version-id"),
@@ -129,7 +132,9 @@ func (c *Client) DeleteObjects(ctx context.Context, bucket string, objects []Obj
 	if err != nil {
 		return nil, err
 	}
-	defer resp.Body.Close()
+	defer func(Body io.ReadCloser) {
+		_ = Body.Close()
+	}(resp.Body)
 
 	var result deleteResult
 	if err := xmlDecoder(resp.Body, &result); err != nil {

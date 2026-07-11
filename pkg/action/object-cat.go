@@ -27,7 +27,9 @@ func (c *S3Client) CatObject(opt CatOptions, bucket, key string) error {
 	if err != nil {
 		return fmt.Errorf("cat %s: %s", c.S3Path(bucket, key), FormatAPIError(err))
 	}
-	defer out.Body.Close()
+	defer func(Body io.ReadCloser) {
+		_ = Body.Close()
+	}(out.Body)
 
 	if _, err := io.Copy(os.Stdout, out.Body); err != nil {
 		return fmt.Errorf("write stdout: %w", err)

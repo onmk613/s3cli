@@ -9,7 +9,7 @@ import (
 	"strings"
 )
 
-// 读取 AWS 配置文件 (CORS/Lifecycle/Policy 等)
+// LoadAWSConfigFile 读取 AWS 配置文件 (CORS/Lifecycle/Policy 等)
 // 同时支持 JSON / XML，并处理 BOM。返回 (data, format)，format 为 "json" 或 "xml"
 func LoadAWSConfigFile(path string) ([]byte, string, error) {
 	data, err := os.ReadFile(path)

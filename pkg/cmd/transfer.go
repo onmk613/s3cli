@@ -24,12 +24,12 @@ func NewGetCmd() *cobra.Command {
 		Short:             "Download object(s) from S3",
 		Args:              cobra.MatchAll(cobra.MinimumNArgs(1), cobra.MaximumNArgs(2)),
 		ValidArgsFunction: AutoCompletePath,
-		RunE: NewRunE(ActionFunc(func(S3 action.S3Client, opts *CmdContext, s3path *utils.S3Path) error {
+		RunE: NewRunE(func(S3 action.S3Client, opts *Context, s3path *utils.S3Path) error {
 			g := getOpt
 			g.Recursive = opts.Global.Recursive
 			g.NoProgress = config.G.Quiet
 			return S3.GetObject(g, s3path.Bucket, s3path.Key, opts.Global.LocalFile)
-		}), &opts),
+		}, &opts),
 	}
 	cmd.Flags().BoolVarP(&opts.Global.Recursive, "recursive", "r", false, "Operate on directories recursively")
 	cmd.Flags().IntVar(&getOpt.Concurrency, "concurrency", config.DefaultConcurrency, "Number of concurrent parts to download")
@@ -46,7 +46,7 @@ func NewPutCmd() *cobra.Command {
 		Short:             "Upload file(s) to S3",
 		Args:              cobra.ExactArgs(2),
 		ValidArgsFunction: AutoCompletePath,
-		RunE: NewRunE(ActionFunc(func(S3 action.S3Client, opts *CmdContext, s3path *utils.S3Path) error {
+		RunE: NewRunE(func(S3 action.S3Client, opts *Context, s3path *utils.S3Path) error {
 			p := putOpt
 			p.Recursive = opts.Global.Recursive
 			p.NoProgress = config.G.Quiet
@@ -54,7 +54,7 @@ func NewPutCmd() *cobra.Command {
 				p.DefaultMimeType = cfg.DefaultMimeType
 			}
 			return S3.PutObject(p, s3path.Bucket, s3path.Key, opts.Global.LocalFile, s3path.TrailingSlash)
-		}), &opts),
+		}, &opts),
 	}
 	cmd.Flags().BoolVarP(&opts.Global.Recursive, "recursive", "r", false, "Upload directories recursively")
 	cmd.Flags().StringVar(&putOpt.ContentType, "content-type", "", "Override Content-Type (single file only)")
@@ -74,9 +74,9 @@ func NewRmCmd() *cobra.Command {
 		Short:             "Delete object(s) from S3",
 		Args:              cobra.MinimumNArgs(1),
 		ValidArgsFunction: AutoCompletePath,
-		RunE: NewRunE(ActionFunc(func(S3 action.S3Client, opts *CmdContext, s3path *utils.S3Path) error {
+		RunE: NewRunE(func(S3 action.S3Client, opts *Context, s3path *utils.S3Path) error {
 			return S3.DeleteObjects(s3path.Bucket, s3path.Key, delOpt)
-		}), &opts),
+		}, &opts),
 	}
 	cmd.Flags().BoolVarP(&delOpt.Recursive, "recursive", "r", false, "Delete recursively")
 	cmd.Flags().StringVarP(&delOpt.VersionID, "version-id", "v", "", "Delete a specific version of the object")
@@ -91,9 +91,9 @@ func NewCatCmd() *cobra.Command {
 		Short:             "Print object contents to stdout",
 		Args:              cobra.MinimumNArgs(1),
 		ValidArgsFunction: AutoCompletePath,
-		RunE: NewRunE(ActionFunc(func(S3 action.S3Client, _ *CmdContext, s3path *utils.S3Path) error {
+		RunE: NewRunE(func(S3 action.S3Client, _ *Context, s3path *utils.S3Path) error {
 			return S3.CatObject(catOpt, s3path.Bucket, s3path.Key)
-		}), &opts),
+		}, &opts),
 	}
 	cmd.Flags().StringVar(&catOpt.Range, "range", "", "HTTP Range header, e.g. 'bytes=0-1023'")
 	return cmd
@@ -107,13 +107,13 @@ func NewPipeCmd() *cobra.Command {
 		Short:             "Upload data from stdin to an S3 object",
 		Args:              cobra.ExactArgs(1),
 		ValidArgsFunction: AutoCompletePath,
-		RunE: NewRunE(ActionFunc(func(S3 action.S3Client, _ *CmdContext, s3path *utils.S3Path) error {
+		RunE: NewRunE(func(S3 action.S3Client, _ *Context, s3path *utils.S3Path) error {
 			p := pipeOpt
 			if cfg, ok := config.G.S[S3.Alias]; ok && cfg.DefaultMimeType != "" {
 				p.DefaultMimeType = cfg.DefaultMimeType
 			}
 			return S3.PipeUpload(p, s3path.Bucket, s3path.Key)
-		}), &opts),
+		}, &opts),
 	}
 	cmd.Flags().StringVar(&pipeOpt.ContentType, "content-type", config.DefaultMimeType, "Content-Type of the uploaded object")
 	cmd.Flags().IntVar(&pipeOpt.Concurrency, "concurrency", config.DefaultConcurrency, "Number of concurrent parts to upload")

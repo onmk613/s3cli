@@ -21,7 +21,7 @@ const (
 	DefaultMimeType    = "binary/octet-stream"
 )
 
-var ConfigPath string
+var ConfPath string
 var DefaultConfigPath = filepath.Join(os.Getenv("HOME"), ".s3cli")
 
 var (
@@ -80,7 +80,7 @@ func (c *Static) ResolveBucketLookup() (mode string, tpl string, err error) {
 		return BucketLookupCustom, raw, nil
 	}
 
-	return "", "", fmt.Errorf("Invalid bucket_lookup %s, expected path / dns / custom-template containing %%(bucket)", raw)
+	return "", "", fmt.Errorf("invalid bucket_lookup %s, expected path / dns / custom-template containing %%(bucket)", raw)
 }
 
 func (c *Static) GetRegion() string {
@@ -90,23 +90,23 @@ func (c *Static) GetRegion() string {
 	return DefaultRegion
 }
 
-func (s *Static) GetAccessKey() string       { return strings.TrimSpace(s.AccessKey) }
-func (s *Static) GetSecretKey() string       { return strings.TrimSpace(s.SecretKey) }
-func (s *Static) GetSessionToken() string    { return strings.TrimSpace(s.SessionToken) }
-func (s *Static) GetEndpoint() string        { return strings.TrimSpace(s.HostBase) }
-func (s *Static) IsDebug() bool              { return G.Debug }
-func (s *Static) IsVerifySSL() bool          { return s.VerifySSL }
-func (s *Static) GetUserAgent() string       { return strings.TrimSpace(G.UserAgent) }
-func (s *Static) GetUserAgentSuffix() string { return strings.TrimSpace(G.UserAgentSuffix) }
-func (s *Static) GetHeaders() []string       { return G.Headers }
-func (s *Static) GetMaxRetries() int {
-	if s.MaxRetries > 0 {
-		return s.MaxRetries
+func (c *Static) GetAccessKey() string       { return strings.TrimSpace(c.AccessKey) }
+func (c *Static) GetSecretKey() string       { return strings.TrimSpace(c.SecretKey) }
+func (c *Static) GetSessionToken() string    { return strings.TrimSpace(c.SessionToken) }
+func (c *Static) GetEndpoint() string        { return strings.TrimSpace(c.HostBase) }
+func (c *Static) IsDebug() bool              { return G.Debug }
+func (c *Static) IsVerifySSL() bool          { return c.VerifySSL }
+func (c *Static) GetUserAgent() string       { return strings.TrimSpace(G.UserAgent) }
+func (c *Static) GetUserAgentSuffix() string { return strings.TrimSpace(G.UserAgentSuffix) }
+func (c *Static) GetHeaders() []string       { return G.Headers }
+func (c *Static) GetMaxRetries() int {
+	if c.MaxRetries > 0 {
+		return c.MaxRetries
 	}
 	return 3
 }
 
 // GetVendor 返回配置的 S3 厂商类型; 为空时交给 s3api 自动探测.
-func (s *Static) GetVendor() string {
-	return strings.TrimSpace(s.Vendor)
+func (c *Static) GetVendor() string {
+	return strings.TrimSpace(c.Vendor)
 }

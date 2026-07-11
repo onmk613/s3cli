@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/xml"
+	"io"
 	"net/http"
 	"net/url"
 )
@@ -43,7 +44,9 @@ func (c *Client) SetObjectTagging(ctx context.Context, bucket, key string, tags 
 	if err != nil {
 		return err
 	}
-	defer resp.Body.Close()
+	defer func(Body io.ReadCloser) {
+		_ = Body.Close()
+	}(resp.Body)
 	return nil
 }
 
@@ -67,7 +70,9 @@ func (c *Client) GetObjectTagging(ctx context.Context, bucket, key, versionID st
 	if err != nil {
 		return nil, err
 	}
-	defer resp.Body.Close()
+	defer func(Body io.ReadCloser) {
+		_ = Body.Close()
+	}(resp.Body)
 
 	var result taggingConfig
 	if err := xmlDecoder(resp.Body, &result); err != nil {
@@ -96,6 +101,8 @@ func (c *Client) DeleteObjectTagging(ctx context.Context, bucket, key, versionID
 	if err != nil {
 		return err
 	}
-	defer resp.Body.Close()
+	defer func(Body io.ReadCloser) {
+		_ = Body.Close()
+	}(resp.Body)
 	return nil
 }

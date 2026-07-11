@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/xml"
+	"io"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -77,7 +78,9 @@ func (c *Client) CreateMultipartUpload(ctx context.Context, bucket, key string, 
 	if err != nil {
 		return nil, err
 	}
-	defer resp.Body.Close()
+	defer func(Body io.ReadCloser) {
+		_ = Body.Close()
+	}(resp.Body)
 
 	var result struct {
 		XMLName  xml.Name `xml:"InitiateMultipartUploadResult"`
@@ -123,7 +126,9 @@ func (c *Client) UploadPart(ctx context.Context, bucket, key, uploadID string, p
 	if err != nil {
 		return nil, err
 	}
-	defer resp.Body.Close()
+	defer func(Body io.ReadCloser) {
+		_ = Body.Close()
+	}(resp.Body)
 
 	return &UploadPartOutput{
 		ETag:                 trimQuotes(resp.Header.Get("ETag")),
@@ -194,7 +199,9 @@ func (c *Client) CompleteMultipartUpload(ctx context.Context, bucket, key, uploa
 	if err != nil {
 		return nil, err
 	}
-	defer resp.Body.Close()
+	defer func(Body io.ReadCloser) {
+		_ = Body.Close()
+	}(resp.Body)
 
 	var result completeMultipartUploadResult
 	if err := xmlDecoder(resp.Body, &result); err != nil {
@@ -227,7 +234,9 @@ func (c *Client) AbortMultipartUpload(ctx context.Context, bucket, key, uploadID
 	if err != nil {
 		return err
 	}
-	defer resp.Body.Close()
+	defer func(Body io.ReadCloser) {
+		_ = Body.Close()
+	}(resp.Body)
 	return nil
 }
 
@@ -307,7 +316,9 @@ func (c *Client) ListMultipartUploads(ctx context.Context, bucket string, opts *
 	if err != nil {
 		return nil, err
 	}
-	defer resp.Body.Close()
+	defer func(Body io.ReadCloser) {
+		_ = Body.Close()
+	}(resp.Body)
 
 	var result listMultipartUploadsResult
 	if err := xmlDecoder(resp.Body, &result); err != nil {
@@ -381,7 +392,9 @@ func (c *Client) ListParts(ctx context.Context, bucket, key, uploadID string, pa
 	if err != nil {
 		return nil, err
 	}
-	defer resp.Body.Close()
+	defer func(Body io.ReadCloser) {
+		_ = Body.Close()
+	}(resp.Body)
 
 	var result listPartsResult
 	if err := xmlDecoder(resp.Body, &result); err != nil {

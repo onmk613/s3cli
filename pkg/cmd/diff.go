@@ -79,7 +79,7 @@ func NewDiffCmd() *cobra.Command {
 				return nil
 			}
 			if action.IsDifferErr(err) {
-				// 类似 unix diff：有差异时退出码为 1，但不再额外打印错误
+				// 类似 Unix diff：有差异时退出码为 1，但不再额外打印错误
 				os.Exit(1)
 			}
 			return err

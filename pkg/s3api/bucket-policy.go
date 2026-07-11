@@ -34,7 +34,9 @@ func (c *Client) SetBucketPolicy(ctx context.Context, bucket string, data []byte
 	if err != nil {
 		return err
 	}
-	defer resp.Body.Close()
+	defer func(Body io.ReadCloser) {
+		_ = Body.Close()
+	}(resp.Body)
 
 	return nil
 }
@@ -56,7 +58,9 @@ func (c *Client) GetBucketPolicy(ctx context.Context, bucket string) ([]byte, er
 	if err != nil {
 		return nil, err
 	}
-	defer resp.Body.Close()
+	defer func(Body io.ReadCloser) {
+		_ = Body.Close()
+	}(resp.Body)
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
@@ -83,7 +87,9 @@ func (c *Client) DeleteBucketPolicy(ctx context.Context, bucket string) error {
 	if err != nil {
 		return err
 	}
-	defer resp.Body.Close()
+	defer func(Body io.ReadCloser) {
+		_ = Body.Close()
+	}(resp.Body)
 
 	return nil
 }

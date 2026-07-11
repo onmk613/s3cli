@@ -2,6 +2,7 @@ package action
 
 import (
 	myprint "s3cli/pkg/fmtutil"
+	"s3cli/pkg/utils"
 )
 
 // 创建存储桶的同时设置cors、policy、lifecycle
@@ -53,5 +54,35 @@ func (c *S3Client) MakeBuckets(opt MakeBucketOptions, bucket string) error {
 		}
 	}
 
+	if opt.Quota != "" {
+		if err := c.SetBucketQuota(bucket, opt.Quota); err != nil {
+			myprint.PrintfBoldYellow("set bucket quota: %v", err)
+		} else {
+			myprint.PrintlnBoldGreen("set bucket quota success")
+		}
+	}
+
+	return nil
+}
+
+func (c *S3Client) SetBucketQuota(bucket string, quota string) error {
+	quotaInt, err := utils.ParseBytes(quota)
+	if err != nil {
+		return err
+	}
+	if err := c.S3.SetBucketQuota(c.Ctx, bucket, quotaInt); err != nil {
+		return err
+	}
+	myprint.PrintfBoldGreen("set bucket %s quota to %s success\n", bucket, quota)
+	return nil
+}
+
+func (c *S3Client) InfoBucketQuota(bucket string) error {
+	quotaInt, err := c.S3.InfoBucketQuota(c.Ctx, bucket)
+	if err != nil {
+		return err
+	}
+	quota := utils.FormatBytes(quotaInt)
+	myprint.PrintfBoldGreen("bucket %s quota: %s\n", bucket, quota)
 	return nil
 }

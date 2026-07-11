@@ -2,6 +2,7 @@ package s3api
 
 import (
 	"context"
+	"io"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -55,7 +56,9 @@ func (c *Client) HeadObject(ctx context.Context, bucket, key string, versionID s
 	if err != nil {
 		return nil, err
 	}
-	defer resp.Body.Close()
+	defer func(Body io.ReadCloser) {
+		_ = Body.Close()
+	}(resp.Body)
 
 	return parseHeadObjectHeaders(resp.Header), nil
 }
@@ -128,7 +131,9 @@ func (c *Client) HeadBucket(ctx context.Context, bucket string) error {
 	if err != nil {
 		return err
 	}
-	defer resp.Body.Close()
+	defer func(Body io.ReadCloser) {
+		_ = Body.Close()
+	}(resp.Body)
 	return nil
 }
 

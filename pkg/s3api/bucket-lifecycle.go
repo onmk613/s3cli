@@ -2,6 +2,7 @@ package s3api
 
 import (
 	"context"
+	"io"
 	"s3cli/pkg/s3api/lifecycle"
 )
 
@@ -24,7 +25,9 @@ func (c *Client) GetBucketLifecycle(ctx context.Context, bucket string) (*lifecy
 	if err != nil {
 		return nil, err
 	}
-	defer resp.Body.Close()
+	defer func(Body io.ReadCloser) {
+		_ = Body.Close()
+	}(resp.Body)
 
 	return lifecycle.ParseBucketLifecycleConfig(resp.Body)
 }

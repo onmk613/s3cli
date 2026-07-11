@@ -44,7 +44,9 @@ func (c *Client) SetBucketQuota(ctx context.Context, bucket string, quota int64)
 	if err != nil {
 		return err
 	}
-	defer resp.Body.Close()
+	defer func(Body io.ReadCloser) {
+		_ = Body.Close()
+	}(resp.Body)
 
 	return nil
 }
@@ -71,7 +73,9 @@ func (c *Client) InfoBucketQuota(ctx context.Context, bucket string) (int64, err
 	if err != nil {
 		return 0, err
 	}
-	defer resp.Body.Close()
+	defer func(Body io.ReadCloser) {
+		_ = Body.Close()
+	}(resp.Body)
 
 	data, err := io.ReadAll(resp.Body)
 	if err != nil {

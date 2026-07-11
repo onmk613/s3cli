@@ -2,6 +2,7 @@ package s3api
 
 import (
 	"context"
+	"io"
 	"s3cli/pkg/s3api/cors"
 )
 
@@ -20,7 +21,9 @@ func (c *Client) GetBucketCors(ctx context.Context, bucketName string) (*cors.Co
 	if err != nil {
 		return nil, err
 	}
-	defer resp.Body.Close()
+	defer func(Body io.ReadCloser) {
+		_ = Body.Close()
+	}(resp.Body)
 
 	return cors.ParseBucketCorsConfig(resp.Body)
 }

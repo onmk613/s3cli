@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/xml"
+	"io"
 	"net/http"
 	"net/url"
 	"s3cli/pkg/s3api/s3utils"
@@ -15,7 +16,9 @@ func (c *Client) ListBuckets(ctx context.Context) ([]BucketInfo, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer resp.Body.Close()
+	defer func(Body io.ReadCloser) {
+		_ = Body.Close()
+	}(resp.Body)
 
 	var result listAllMyBucketsResult
 	if err := xmlDecoder(resp.Body, &result); err != nil {
@@ -61,7 +64,9 @@ func (c *Client) CreateBucket(ctx context.Context, bucketName string, opts *Make
 	if err != nil {
 		return err
 	}
-	defer resp.Body.Close()
+	defer func(Body io.ReadCloser) {
+		_ = Body.Close()
+	}(resp.Body)
 	return nil
 }
 
@@ -79,7 +84,9 @@ func (c *Client) DeleteBucket(ctx context.Context, bucketName string) error {
 	if err != nil {
 		return err
 	}
-	defer resp.Body.Close()
+	defer func(Body io.ReadCloser) {
+		_ = Body.Close()
+	}(resp.Body)
 	return nil
 }
 
@@ -118,7 +125,9 @@ func (c *Client) putBucketSubresource(ctx context.Context, bucket, subresource s
 	if err != nil {
 		return err
 	}
-	defer resp.Body.Close()
+	defer func(Body io.ReadCloser) {
+		_ = Body.Close()
+	}(resp.Body)
 	return nil
 }
 
@@ -146,7 +155,9 @@ func (c *Client) getBucketSubresourceXML(ctx context.Context, bucket, subresourc
 	if err != nil {
 		return err
 	}
-	defer resp.Body.Close()
+	defer func(Body io.ReadCloser) {
+		_ = Body.Close()
+	}(resp.Body)
 	return xmlDecoder(resp.Body, out)
 }
 
@@ -168,7 +179,9 @@ func (c *Client) deleteBucketSubresource(ctx context.Context, bucket, subresourc
 	if err != nil {
 		return err
 	}
-	defer resp.Body.Close()
+	defer func(Body io.ReadCloser) {
+		_ = Body.Close()
+	}(resp.Body)
 	return nil
 }
 

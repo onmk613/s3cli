@@ -50,7 +50,7 @@ func NoColor() bool {
 	return noColor
 }
 
-// ------- 黑色函数 -------
+// Printf ------- 黑色函数 -------
 func Printf(format string, a ...any) {
 	outMu.RLock()
 	defer outMu.RUnlock()
@@ -78,7 +78,7 @@ func Println(a ...any) {
 
 // ------- 颜色函数 -------
 
-// 红色
+// PrintfRed 红色
 func PrintfRed(format string, a ...any) {
 	outMu.RLock()
 	defer outMu.RUnlock()
@@ -90,7 +90,7 @@ func PrintlnRed(a ...any) {
 	printlnColor(output, Red, a...)
 }
 
-// 绿色
+// PrintfGreen 绿色
 func PrintfGreen(format string, a ...any) {
 	outMu.RLock()
 	defer outMu.RUnlock()
@@ -102,7 +102,7 @@ func PrintlnGreen(a ...any) {
 	printlnColor(output, Green, a...)
 }
 
-// 黄色
+// PrintfYellow 黄色
 func PrintfYellow(format string, a ...any) {
 	outMu.RLock()
 	defer outMu.RUnlock()
@@ -114,7 +114,7 @@ func PrintlnYellow(a ...any) {
 	printlnColor(output, Yellow, a...)
 }
 
-// 蓝色
+// PrintfBlue 蓝色
 func PrintfBlue(format string, a ...any) {
 	outMu.RLock()
 	defer outMu.RUnlock()
@@ -126,7 +126,7 @@ func PrintlnBlue(a ...any) {
 	printlnColor(output, Blue, a...)
 }
 
-// 青色
+// PrintfCyan 青色
 func PrintfCyan(format string, a ...any) {
 	outMu.RLock()
 	defer outMu.RUnlock()
@@ -138,7 +138,7 @@ func PrintlnCyan(a ...any) {
 	printlnColor(output, Cyan, a...)
 }
 
-// 浅灰色
+// PrintlnDim 浅灰色
 func PrintlnDim(a ...any) {
 	outMu.RLock()
 	defer outMu.RUnlock()
@@ -152,7 +152,7 @@ func PrintfDim(format string, a ...any) {
 
 // -------- 加粗颜色输出函数 --------
 
-// 加粗青色
+// PrintlnBoldCyan 加粗青色
 func PrintlnBoldCyan(a ...any) {
 	outMu.RLock()
 	defer outMu.RUnlock()
@@ -164,7 +164,7 @@ func PrintfBoldCyan(format string, a ...any) {
 	printfColor(output, BoldCyan, format, a...)
 }
 
-// 加粗红色
+// PrintlnBoldRed 加粗红色
 func PrintlnBoldRed(a ...any) {
 	outMu.RLock()
 	defer outMu.RUnlock()
@@ -176,7 +176,7 @@ func PrintfBoldRed(format string, a ...any) {
 	printfColor(output, BoldRed, format, a...)
 }
 
-// 加粗绿色
+// PrintlnBoldGreen 加粗绿色
 func PrintlnBoldGreen(a ...any) {
 	outMu.RLock()
 	defer outMu.RUnlock()
@@ -188,7 +188,7 @@ func PrintfBoldGreen(format string, a ...any) {
 	printfColor(output, BoldGreen, format, a...)
 }
 
-// 加粗黄色
+// PrintlnBoldYellow 加粗黄色
 func PrintlnBoldYellow(a ...any) {
 	outMu.RLock()
 	defer outMu.RUnlock()
@@ -200,7 +200,7 @@ func PrintfBoldYellow(format string, a ...any) {
 	printfColor(output, BoldYellow, format, a...)
 }
 
-// 加粗蓝色
+// PrintlnBoldBlue 加粗蓝色
 func PrintlnBoldBlue(a ...any) {
 	outMu.RLock()
 	defer outMu.RUnlock()
@@ -212,7 +212,7 @@ func PrintfBoldBlue(format string, a ...any) {
 	printfColor(output, BoldBlue, format, a...)
 }
 
-// 加粗黑色
+// PrintlnBoldBlack 加粗黑色
 func PrintlnBoldBlack(a ...any) {
 	outMu.RLock()
 	defer outMu.RUnlock()

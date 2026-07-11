@@ -106,7 +106,9 @@ func (c *Client) PutObject(ctx context.Context, bucket, key string, body []byte,
 	if err != nil {
 		return nil, err
 	}
-	defer resp.Body.Close()
+	defer func(Body io.ReadCloser) {
+		_ = Body.Close()
+	}(resp.Body)
 
 	return putObjectOutput(resp), nil
 }
@@ -132,7 +134,9 @@ func (c *Client) PutObjectStream(ctx context.Context, bucket, key string, body i
 	if err != nil {
 		return nil, err
 	}
-	defer resp.Body.Close()
+	defer func(Body io.ReadCloser) {
+		_ = Body.Close()
+	}(resp.Body)
 
 	return putObjectOutput(resp), nil
 }

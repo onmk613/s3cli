@@ -3,6 +3,7 @@ package s3api
 import (
 	"context"
 	"encoding/xml"
+	"io"
 	"net/http"
 	"net/url"
 	"s3cli/pkg/s3api/s3utils"
@@ -38,7 +39,9 @@ func (c *Client) GetBucketLocation(ctx context.Context, bucket string) (string, 
 	if err != nil {
 		return "", err
 	}
-	defer resp.Body.Close()
+	defer func(Body io.ReadCloser) {
+		_ = Body.Close()
+	}(resp.Body)
 
 	var result getBucketLocationResult
 	if err := xmlDecoder(resp.Body, &result); err != nil {

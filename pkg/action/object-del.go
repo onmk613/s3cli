@@ -8,7 +8,7 @@ import (
 	"s3cli/pkg/s3api"
 )
 
-// DelOpt Delete 命令参数
+// DelOptions Delete 命令参数
 type DelOptions struct {
 	Recursive bool
 	VersionID string
@@ -31,7 +31,7 @@ func (c *S3Client) DeleteObjects(bucket, prefix string, opt DelOptions) error {
 	// 会报 "Object name contains unsupported characters"），直接按目录前缀处理。
 	if strings.HasSuffix(prefix, "/") {
 		if !opt.Recursive {
-			return fmt.Errorf("%s: is a directory. Use -r/--recursive to delete it.", c.S3Path(bucket, prefix))
+			return fmt.Errorf("%s: is a directory. Use -r/--recursive to delete it", c.S3Path(bucket, prefix))
 		}
 		return c.deleteObjectsWithPrefix(bucket, prefix)
 	}
@@ -46,7 +46,7 @@ func (c *S3Client) DeleteObjects(bucket, prefix string, opt DelOptions) error {
 			return err
 		}
 	case !ok && !opt.Recursive:
-		return fmt.Errorf("%s: not a single object. Use -r/--recursive to delete a directory.", c.S3Path(bucket, prefix))
+		return fmt.Errorf("%s: not a single object. Use -r/--recursive to delete a directory", c.S3Path(bucket, prefix))
 	default:
 		if err := c.deleteSingleObject(bucket, prefix); err != nil {
 			return err

@@ -3,6 +3,7 @@ package s3api
 import (
 	"context"
 	"encoding/xml"
+	"io"
 	"net/http"
 )
 
@@ -112,7 +113,9 @@ func (c *Client) CopyObject(ctx context.Context, srcBucket, srcKey, destBucket, 
 	if err != nil {
 		return nil, err
 	}
-	defer resp.Body.Close()
+	defer func(Body io.ReadCloser) {
+		_ = Body.Close()
+	}(resp.Body)
 
 	var result copyObjectResult
 	if err := xmlDecoder(resp.Body, &result); err != nil {

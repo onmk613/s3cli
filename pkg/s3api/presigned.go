@@ -143,8 +143,8 @@ func (c *Client) PresignHead(ctx context.Context, bucket, key string, expires ti
 
 // PresignV2 生成 SigV2 预签名 URL (兼容旧式 S3 服务).
 //
-// V2 签名最长有效期无限制, 适合需要长期有效 URL 的场景.
-func (c *Client) PresignV2(ctx context.Context, bucket, key string, method string, expires int64) (string, error) {
+// SignV2 签名最长有效期无限制, 适合需要长期有效 URL 的场景.
+func (c *Client) PresignV2(_ context.Context, bucket, key string, method string, expires int64) (string, error) {
 	method = strings.ToUpper(strings.TrimSpace(method))
 	if method == "" {
 		method = "GET"
@@ -159,8 +159,8 @@ func (c *Client) PresignV2(ctx context.Context, bucket, key string, method strin
 	stringToSign := fmt.Sprintf("%s\n\n\n%d\n/%s/%s", method, expireTime, bucket, key)
 
 	signature := sumHMACSHA256([]byte(c.secretKey), []byte(stringToSign))
-	// V2 使用 base64 编码的 HMAC-SHA1 (这里用 SHA256 兼容部分实现)
-	// 标准 V2 应使用 HMAC-SHA1, 但部分私有化服务接受 SHA256
+	// SignV2 使用 base64 编码的 HMAC-SHA1 (这里用 SHA256 兼容部分实现)
+	// 标准 SignV2 应使用 HMAC-SHA1, 但部分私有化服务接受 SHA256
 	sigHex := fmt.Sprintf("%x", signature)
 
 	q := targetURL.Query()

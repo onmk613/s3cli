@@ -24,7 +24,7 @@ const (
 	clearLine       = "\r\033[K"   // 清理当前终端行并把光标移到行首
 )
 
-type ProgressTracker struct {
+type Tracker struct {
 	mu sync.Mutex
 
 	// 输出相关
@@ -50,8 +50,8 @@ type ProgressTracker struct {
 	sigCh chan os.Signal // 信号兜底：被中断时恢复光标
 }
 
-func New() *ProgressTracker {
-	pt := &ProgressTracker{
+func New() *Tracker {
+	pt := &Tracker{
 		output:  os.Stdout,
 		fd:      int(os.Stdout.Fd()),
 		width:   defaultBarWidth,
@@ -66,7 +66,7 @@ func New() *ProgressTracker {
 	return pt
 }
 
-func (pt *ProgressTracker) SetStyle(s *Style) {
+func (pt *Tracker) SetStyle(s *Style) {
 	pt.mu.Lock()
 	defer pt.mu.Unlock()
 	if s.Filled == "" {
@@ -78,11 +78,11 @@ func (pt *ProgressTracker) SetStyle(s *Style) {
 	pt.style = s
 }
 
-func (pt *ProgressTracker) SetLabel(label string) {
+func (pt *Tracker) SetLabel(label string) {
 	pt.label = label
 }
 
-func (pt *ProgressTracker) SetColor(color *Colors) {
+func (pt *Tracker) SetColor(color *Colors) {
 	pt.mu.Lock()
 	defer pt.mu.Unlock()
 	if color == nil {
@@ -92,7 +92,7 @@ func (pt *ProgressTracker) SetColor(color *Colors) {
 	pt.color = color
 }
 
-func (pt *ProgressTracker) SetWriter(w io.Writer) error {
+func (pt *Tracker) SetWriter(w io.Writer) error {
 	f, ok := w.(*os.File)
 	if !ok {
 		return fmt.Errorf("unsupported writer type: %T", w)
@@ -115,7 +115,7 @@ func (pt *ProgressTracker) SetWriter(w io.Writer) error {
 }
 
 // Start 启动进度条显示
-func (pt *ProgressTracker) Start() {
+func (pt *Tracker) Start() {
 	pt.sigCh = make(chan os.Signal, 1)
 	signal.Notify(pt.sigCh, syscall.SIGINT, syscall.SIGTERM)
 	go func(ch chan os.Signal) {
@@ -123,13 +123,13 @@ func (pt *ProgressTracker) Start() {
 			return
 		}
 		pt.mu.Lock()
-		fmt.Fprint(pt.output, clearLine)
+		_, _ = fmt.Fprint(pt.output, clearLine)
 		pt.mu.Unlock()
 	}(pt.sigCh)
 }
 
 // Stop 停止进度条，输出最终统计信息
-func (pt *ProgressTracker) Stop() {
+func (pt *Tracker) Stop() {
 	// 注销信号兜底并唤醒/结束兜底 goroutine。
 	if pt.sigCh != nil {
 		signal.Stop(pt.sigCh)
@@ -166,7 +166,7 @@ func (pt *ProgressTracker) Stop() {
 	}
 
 	// 换行打印统计信息
-	fmt.Fprintln(pt.output, "\n  "+summary)
+	_, _ = fmt.Fprintln(pt.output, "\n  "+summary)
 
 	// 打印失败任务列表
 	for _, s := range pt.failedStrings {
@@ -174,6 +174,6 @@ func (pt *ProgressTracker) Stop() {
 		if !pt.noColor && pt.color.Error != "" {
 			str = pt.color.Error + str + ansiReset
 		}
-		fmt.Fprintln(pt.output, str)
+		_, _ = fmt.Fprintln(pt.output, str)
 	}
 }

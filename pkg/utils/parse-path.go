@@ -15,10 +15,10 @@ import (
 var ErrAliasOnly = errors.New("alias only: no bucket or key specified")
 
 // AliasNameRegex 校验 alias 名
-var AliasNameRegex = regexp.MustCompile(`^[A-Za-z0-9][a-zA-Z0-9\_\-\.]{1,63}[A-Za-z0-9]$`)
+var AliasNameRegex = regexp.MustCompile(`^[A-Za-z0-9][a-zA-Z0-9_\-.]{1,63}[A-Za-z0-9]$`)
 
 // BucketNameRegex 校验 bucket 名
-var BucketNameRegex = regexp.MustCompile(`^[A-Za-z0-9][a-zA-Z0-9\_\-\.]{1,61}[A-Za-z0-9]$`)
+var BucketNameRegex = regexp.MustCompile(`^[A-Za-z0-9][a-zA-Z0-9_\-.]{1,61}[A-Za-z0-9]$`)
 
 // S3Path 表示一条 "alias:bucket/key" 形态的解析结果。
 type S3Path struct {
@@ -53,7 +53,7 @@ func ParseS3Path(s string) (*S3Path, error) {
 	}
 
 	if rest == "" {
-		return nil, fmt.Errorf("invalid s3 path %q: bucket is required after %q:", s, alias)
+		return nil, fmt.Errorf("invalid s3 path %q: bucket is required after %q", s, alias)
 	}
 
 	var bucket, key string

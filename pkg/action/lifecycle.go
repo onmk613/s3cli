@@ -8,14 +8,14 @@ import (
 )
 
 // SetLifecycle 设置生命周期 (JSON, AWS CLI 兼容)
-func (c *S3Client) SetLifecycle(lifecyclefile, bucket string) error {
-	loaded, err := loadJSONConfig[lifecycle.Config](lifecyclefile, "lifecycle")
+func (c *S3Client) SetLifecycle(lifecycleFile, bucket string) error {
+	loaded, err := loadJSONConfig[lifecycle.Config](lifecycleFile, "lifecycle")
 	if err != nil {
 		return err
 	}
 	cfg := *loaded
 	if len(cfg.Rules) == 0 {
-		return fmt.Errorf("no lifecycle rules found in %s", lifecyclefile)
+		return fmt.Errorf("no lifecycle rules found in %s", lifecycleFile)
 	}
 	for i, r := range cfg.Rules {
 		if r.Status == "" {
