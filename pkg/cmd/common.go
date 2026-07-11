@@ -21,7 +21,7 @@ func isCanceled(ctx context.Context) bool {
 	return errors.Is(ctx.Err(), context.Canceled)
 }
 
-// formatUserError 将内部 error 转换为对用户友好的显示信息。
+// formatUserError 将内部 error 转换为对用户友好地显示信息。
 func formatUserError(err error) string {
 	if err == nil {
 		return ""
@@ -35,7 +35,7 @@ func displayError(err error) {
 	myprint.PrintlnBoldRed(formatUserError(err))
 }
 
-type ActionFunc func(S3 action.S3Client, opts *CmdContext, s3path *utils.S3Path) error
+type ActionFunc func(S3 action.S3Client, opts *Context, s3path *utils.S3Path) error
 
 // ArgParseMode 定义 args 参数的格式
 type ArgParseMode int
@@ -44,26 +44,26 @@ const (
 	ParseS3OnlyPath         ArgParseMode = iota // 所有 args 都是 S3 路径
 	ParseLocalFileAndS3Path                     // args[0] 是本地文件，args[1:] 是 S3 路径
 	ParseS3PathAndLocalFile                     // args[0] 是 S3 路径，args[1] 是本地文件
-	ParseTwoS3Paths                             // 用于 cp/mv: args[0] 和 args[1] 都是 S3 路径
+	// ParseTwoS3Paths                             // 用于 cp/mv: args[0] 和 args[1] 都是 S3 路径
 )
 
-// CmdContext 承载跨命令共享的"全局"选项和路径解析模式。
-type CmdContext struct {
+// Context 承载跨命令共享的"全局"选项和路径解析模式。
+type Context struct {
 	Global       *GlobalOptions
 	ArgParseMode ArgParseMode
 }
 
 // ensureInit 保证 Global 指针非 nil。
-func (c *CmdContext) ensureInit() *CmdContext {
+func (c *Context) ensureInit() *Context {
 	if c.Global == nil {
 		c.Global = &GlobalOptions{}
 	}
 	return c
 }
 
-// newCmdContext 创建已初始化的 CmdContext，可选指定 args 解析模式。
-func newCmdContext(mode ...ArgParseMode) CmdContext {
-	c := CmdContext{}
+// newCmdContext 创建已初始化的 Context，可选指定 args 解析模式。
+func newCmdContext(mode ...ArgParseMode) Context {
+	c := Context{}
 	c.ensureInit()
 	if len(mode) > 0 {
 		c.ArgParseMode = mode[0]
@@ -82,9 +82,9 @@ type GlobalOptions struct {
 }
 
 // NewRunE 为"单 S3 路径"命令构造 cobra RunE。
-func NewRunE(fn ActionFunc, opts *CmdContext) func(cmd *cobra.Command, args []string) error {
+func NewRunE(fn ActionFunc, opts *Context) func(cmd *cobra.Command, args []string) error {
 	if opts == nil {
-		opts = &CmdContext{}
+		opts = &Context{}
 	}
 	opts.ensureInit()
 
@@ -139,12 +139,12 @@ func NewRunE(fn ActionFunc, opts *CmdContext) func(cmd *cobra.Command, args []st
 }
 
 // TwoS3ActionFunc 用于需要两个 S3 路径的操作（cp/mv/diff/mirror）。
-type TwoS3ActionFunc func(src, dst action.S3Client, srcPath, dstPath *utils.S3Path, opts *CmdContext) error
+type TwoS3ActionFunc func(src, dst action.S3Client, srcPath, dstPath *utils.S3Path, opts *Context) error
 
 // NewRunETwoPaths 为双 S3 路径命令构造 RunE。
-func NewRunETwoPaths(fn TwoS3ActionFunc, opts *CmdContext) func(cmd *cobra.Command, args []string) error {
+func NewRunETwoPaths(fn TwoS3ActionFunc, opts *Context) func(cmd *cobra.Command, args []string) error {
 	if opts == nil {
-		opts = &CmdContext{}
+		opts = &Context{}
 	}
 	opts.ensureInit()
 

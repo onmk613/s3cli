@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/xml"
+	"io"
 	"net/http"
 	"net/url"
 	"s3cli/pkg/s3api/s3utils"
@@ -101,7 +102,9 @@ func (c *Client) SetBucketACL(ctx context.Context, bucket string, policy *Access
 	if err != nil {
 		return err
 	}
-	defer resp.Body.Close()
+	defer func(Body io.ReadCloser) {
+		_ = Body.Close()
+	}(resp.Body)
 	return nil
 }
 
@@ -128,7 +131,9 @@ func (c *Client) SetBucketACLWithCanned(ctx context.Context, bucket, cannedACL s
 	if err != nil {
 		return err
 	}
-	defer resp.Body.Close()
+	defer func(Body io.ReadCloser) {
+		_ = Body.Close()
+	}(resp.Body)
 	return nil
 }
 
@@ -150,7 +155,9 @@ func (c *Client) GetBucketACL(ctx context.Context, bucket string) (*AccessContro
 	if err != nil {
 		return nil, err
 	}
-	defer resp.Body.Close()
+	defer func(Body io.ReadCloser) {
+		_ = Body.Close()
+	}(resp.Body)
 
 	var result AccessControlPolicy
 	if err := xmlDecoder(resp.Body, &result); err != nil {
@@ -179,7 +186,9 @@ func (c *Client) GetObjectACL(ctx context.Context, bucket, key, versionID string
 	if err != nil {
 		return nil, err
 	}
-	defer resp.Body.Close()
+	defer func(Body io.ReadCloser) {
+		_ = Body.Close()
+	}(resp.Body)
 
 	var result AccessControlPolicy
 	if err := xmlDecoder(resp.Body, &result); err != nil {
@@ -216,7 +225,9 @@ func (c *Client) SetObjectACL(ctx context.Context, bucket, key string, policy *A
 	if err != nil {
 		return err
 	}
-	defer resp.Body.Close()
+	defer func(Body io.ReadCloser) {
+		_ = Body.Close()
+	}(resp.Body)
 	return nil
 }
 
@@ -238,6 +249,8 @@ func (c *Client) SetObjectACLWithCanned(ctx context.Context, bucket, key, canned
 	if err != nil {
 		return err
 	}
-	defer resp.Body.Close()
+	defer func(Body io.ReadCloser) {
+		_ = Body.Close()
+	}(resp.Body)
 	return nil
 }

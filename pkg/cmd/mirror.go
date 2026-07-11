@@ -28,7 +28,7 @@ func NewCpCmd() *cobra.Command {
 		Short:             "Copy object(s) within the same S3 endpoint",
 		Args:              cobra.ExactArgs(2),
 		ValidArgsFunction: AutoCompletePath,
-		RunE: NewRunETwoPaths(func(src, dst action.S3Client, srcPath, dstPath *utils.S3Path, opts *CmdContext) error {
+		RunE: NewRunETwoPaths(func(src, dst action.S3Client, srcPath, dstPath *utils.S3Path, opts *Context) error {
 			if srcPath.Alias != dstPath.Alias {
 				return fmt.Errorf("cp only supports same-alias copy; use `mirror` for cross-endpoint")
 			}
@@ -49,7 +49,7 @@ func NewMvCmd() *cobra.Command {
 		Short:             "Move object(s) within the same S3 endpoint",
 		Args:              cobra.ExactArgs(2),
 		ValidArgsFunction: AutoCompletePath,
-		RunE: NewRunETwoPaths(func(src, dst action.S3Client, srcPath, dstPath *utils.S3Path, opts *CmdContext) error {
+		RunE: NewRunETwoPaths(func(src, dst action.S3Client, srcPath, dstPath *utils.S3Path, opts *Context) error {
 			if srcPath.Alias != dstPath.Alias {
 				return fmt.Errorf("mv only supports same-alias move; use `mirror --remove` for cross-endpoint")
 			}
@@ -80,7 +80,7 @@ func NewMirrorCmd() *cobra.Command {
 		Short:             "Synchronize objects from source to target (one-way sync)",
 		Args:              cobra.ExactArgs(2),
 		ValidArgsFunction: AutoCompletePath,
-		RunE: NewRunETwoPaths(func(src, tgt action.S3Client, srcPath, tgtPath *utils.S3Path, opts *CmdContext) error {
+		RunE: NewRunETwoPaths(func(src, tgt action.S3Client, srcPath, tgtPath *utils.S3Path, opts *Context) error {
 			if srcPath.Bucket == "" || tgtPath.Bucket == "" {
 				return fmt.Errorf("both src and dst must include a bucket")
 			}

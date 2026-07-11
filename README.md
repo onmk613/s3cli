@@ -5,7 +5,7 @@
 ## 特性
 
 - 通过命名别名管理多个 S3 端点
-- 支持 Path-style、DNS、自定义模板三种桶寻址方式
+- 支持 ConfPath-style、DNS、自定义模板三种桶寻址方式
 - 上传 / 下载 / 复制 / 移动 / 删除，支持递归整个目录树
 - 实时进度条、分片上传下载
 - 桶配置管理：CORS、生命周期、策略、加密、版本控制、事件通知
@@ -74,7 +74,7 @@ Additional Commands:
   help        Help about any command
 
 Flags:
-  -f, --conf string                Path to configuration file (default ~/.s3cli)
+  -f, --conf string                ConfPath to configuration file (default ~/.s3cli)
       --debug                      Print summarized S3 requests
   -H, --header stringArray         Add a custom HTTP header (key:value), can repeat
   -h, --help                       help for s3cli

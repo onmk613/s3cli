@@ -25,9 +25,9 @@ func NewLsCmd() *cobra.Command {
 		Short:             "List objects or buckets",
 		ValidArgsFunction: AutoCompletePath,
 		Args:              cobra.MinimumNArgs(1),
-		RunE: NewRunE(ActionFunc(func(S3 action.S3Client, opts *CmdContext, s3path *utils.S3Path) error {
+		RunE: NewRunE(func(S3 action.S3Client, opts *Context, s3path *utils.S3Path) error {
 			return S3.ListObjects(s3path.Bucket, s3path.Key, opts.Global.ListAll)
-		}), &opts),
+		}, &opts),
 	}
 	cmd.Flags().BoolVarP(&opts.Global.ListAll, "all", "a", false, "Recursively list all objects in all (or specified) buckets")
 	return cmd
@@ -50,9 +50,9 @@ func NewDuCmd() *cobra.Command {
 				}
 				duOpt.BlockSize = bs
 			}
-			run := NewRunE(ActionFunc(func(S3 action.S3Client, opts *CmdContext, s3path *utils.S3Path) error {
+			run := NewRunE(func(S3 action.S3Client, opts *Context, s3path *utils.S3Path) error {
 				return S3.DuObject(duOpt, s3path.Bucket, s3path.Key)
-			}), &opts)
+			}, &opts)
 			return run(cmd, args)
 		},
 	}
@@ -67,9 +67,9 @@ func NewInfoCmd() *cobra.Command {
 		Short:             "Show information about bucket(s) or object(s)",
 		ValidArgsFunction: AutoCompletePath,
 		Args:              cobra.MinimumNArgs(1),
-		RunE: NewRunE(ActionFunc(func(S3 action.S3Client, opts *CmdContext, s3path *utils.S3Path) error {
+		RunE: NewRunE(func(S3 action.S3Client, opts *Context, s3path *utils.S3Path) error {
 			return S3.Info(s3path.Bucket, s3path.Key)
-		}), &opts),
+		}, &opts),
 	}
 	return cmd
 }
@@ -81,8 +81,8 @@ func NewLsVersionsCmd() *cobra.Command {
 		Short:             "List object versions (including delete markers)",
 		ValidArgsFunction: AutoCompletePath,
 		Args:              cobra.MinimumNArgs(1),
-		RunE: NewRunE(ActionFunc(func(S3 action.S3Client, _ *CmdContext, s3path *utils.S3Path) error {
+		RunE: NewRunE(func(S3 action.S3Client, _ *Context, s3path *utils.S3Path) error {
 			return S3.ListObjectVersions(s3path.Bucket, s3path.Key)
-		}), nil),
+		}, nil),
 	}
 }

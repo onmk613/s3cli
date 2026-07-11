@@ -11,7 +11,7 @@ import (
 	"s3cli/pkg/utils"
 )
 
-// 处理同对象存储之内的复制
+// CopyObjects 处理同对象存储之内的复制
 func (c *S3Client) CopyObjects(srcBucket, srcKey, destBucket, destKey string, recursive, noProgress bool) error {
 	srcTrailing := strings.HasSuffix(srcKey, "/")
 	destTrailing := strings.HasSuffix(destKey, "/")

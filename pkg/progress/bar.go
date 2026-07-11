@@ -9,7 +9,7 @@ import (
 )
 
 // buildBar 构建进度条字符串
-func (pt *ProgressTracker) buildBar(wd int) string {
+func (pt *Tracker) buildBar(wd int) string {
 	t := pt.total.Load()
 	d := pt.done.Load()
 

@@ -17,7 +17,7 @@ import (
 // 2. autoCompleteBucket: 补全alias和bucket，用于 bucket 相关命令补全
 // 3. autoCompletePath: 通用的 S3 路径补全函数，支持补全 alias、bucket、key 前缀。
 
-// test: ./s3cli __complete ls "minio:"
+// test: ./s3cli __complete ls "myServer:"
 
 // completeMaxKeys 限制单次补全返回的最大候选数
 const completeMaxKeys = 50
@@ -27,7 +27,7 @@ const completeMaxKeys = 50
 const completeTimeout = 10 * time.Second
 
 // AutoCompleteAlias 补全 alias，用于 alias 相关命令补全
-func AutoCompleteAlias(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+func AutoCompleteAlias(_ *cobra.Command, _ []string, toComplete string) ([]string, cobra.ShellCompDirective) {
 	if config.G.S == nil {
 		if err := config.LoadConf(); err != nil {
 			return nil, cobra.ShellCompDirectiveNoFileComp
@@ -44,7 +44,7 @@ func AutoCompleteAlias(cmd *cobra.Command, args []string, toComplete string) ([]
 }
 
 // AutoCompleteBucket 补全alias和bucket，用于 bucket 相关命令补全
-func AutoCompleteBucket(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+func AutoCompleteBucket(cmd *cobra.Command, _ []string, toComplete string) ([]string, cobra.ShellCompDirective) {
 	if config.G.S == nil {
 		if err := config.LoadConf(); err != nil {
 			return nil, cobra.ShellCompDirectiveNoFileComp
@@ -86,7 +86,7 @@ func AutoCompleteBucket(cmd *cobra.Command, args []string, toComplete string) ([
 }
 
 // AutoCompletePath 补全alias和bucket和key前缀，用于通用的 S3 路径补全
-func AutoCompletePath(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+func AutoCompletePath(cmd *cobra.Command, _ []string, toComplete string) ([]string, cobra.ShellCompDirective) {
 	// 确保配置已加载（补全可能在 PersistentPreRunE 之前触发）
 	if config.G.S == nil {
 		if err := config.LoadConf(); err != nil {

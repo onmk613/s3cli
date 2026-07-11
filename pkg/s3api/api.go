@@ -346,7 +346,7 @@ func (c *Client) Do(ctx context.Context, method string, meta requestMetadata) (*
 
 		// 解析 S3 XML 错误
 		apiErr := parseErrorResponse(resp, meta.bucketName, meta.objectName)
-		resp.Body.Close()
+		_ = resp.Body.Close()
 		lastErr = apiErr
 
 		if !isRetryable(resp.StatusCode, apiErr) {
@@ -363,12 +363,12 @@ func (c *Client) Do(ctx context.Context, method string, meta requestMetadata) (*
 // retryBackoff 指数退避 + 抖动.
 func retryBackoff(attempt int) time.Duration {
 	const (
-		base = 200 * time.Millisecond
-		cap  = 10 * time.Second
+		base     = 200 * time.Millisecond
+		retryCap = 10 * time.Second
 	)
 	d := base << uint(attempt)
-	if d > cap {
-		d = cap
+	if d > retryCap {
+		d = retryCap
 	}
 	// 加入 0~50% 抖动
 	jitter := time.Duration(rand.Int63n(int64(d) / 2))

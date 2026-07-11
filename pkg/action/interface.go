@@ -16,10 +16,10 @@ type S3Operations interface {
 	TagManager
 	Signer
 
-	// Path helpers
+	// S3Path Path helpers
 	S3Path(bucket, key string) string
 	IsS3File(bucket, key string) (bool, error)
-	GetCreds() (Cred, error)
+	GetS3Credentials() (Cred, error)
 }
 
 // ============================================================================
@@ -29,7 +29,7 @@ type S3Operations interface {
 // ObjectReader 对象读取操作。
 type ObjectReader interface {
 	ListObjects(bucket, prefix string, listAll bool) error
-	GetObject(opt GetOptions, bucket, prefix, localpath string) error
+	GetObject(opt GetOptions, bucket, prefix, localPath string) error
 	CatObject(opt CatOptions, bucket, key string) error
 	Info(bucket, prefix string) error
 	DuObject(opt DuOptions, bucket, prefix string) error
@@ -40,7 +40,7 @@ type ObjectReader interface {
 
 // ObjectWriter 对象写入 / 删除 / 移动操作。
 type ObjectWriter interface {
-	PutObject(opt PutOptions, bucket, prefix, localpath string, isS3Dir bool) error
+	PutObject(opt PutOptions, bucket, prefix, localPath string, isS3Dir bool) error
 	PipeUpload(opt PipeOptions, bucket, key string) error
 	DeleteObjects(bucket, prefix string, opt DelOptions) error
 	CopyObjects(srcBucket, srcKey, destBucket, destKey string, recursive, noProgress bool) error
@@ -49,7 +49,7 @@ type ObjectWriter interface {
 
 // BucketManager 桶的创建与删除。
 type BucketManager interface {
-	MakeBuckets(opt MakeBucketOptions, bucketname string) error
+	MakeBuckets(opt MakeBucketOptions, bucket string) error
 	RemoveBuckets(bucket string, force bool) error
 }
 
@@ -58,18 +58,18 @@ type BucketConfigurator interface {
 	SetCors(corsFile string, bucket string) error
 	GetCors(bucket string) error
 	DelCors(bucket string) error
-	SetLifecycle(lifecyclefile, bucketname string) error
+	SetLifecycle(lifecycleFile, bucket string) error
 	GetLifecycle(bucket string) error
 	DelLifecycle(bucket string) error
-	SetPolicy(policyfile, bucketname string) error
-	GetPolicy(bucketname string) error
-	DelPolicy(bucketname string) error
+	SetPolicy(policyFile, bucket string) error
+	GetPolicy(bucket string) error
+	DelPolicy(bucket string) error
 	SetEncryption(opt EncryptionOptions, bucket string) error
 	GetEncryption(bucket string) error
 	DelEncryption(bucket string) error
 	SetVersioning(bucket string, status string) error
 	GetVersioning(bucket string) error
-	SetNotification(configfile, bucket string) error
+	SetNotification(configFile, bucket string) error
 	GetNotification(bucket string) error
 	DelNotification(bucket string) error
 }
@@ -89,7 +89,7 @@ type TagManager interface {
 
 // Signer 预签名 URL 生成。
 type Signer interface {
-	Signurl(opt SignurlOptions, bucketname, key string) error
+	Share(opt ShareOptions, bucket, key string) error
 }
 
 // ============================================================================

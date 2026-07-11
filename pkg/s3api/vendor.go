@@ -2,6 +2,7 @@ package s3api
 
 import (
 	"context"
+	"io"
 	"net/http"
 	"strings"
 	"time"
@@ -49,7 +50,9 @@ func detectVendor(ctx context.Context, endpoint, accessKey, secretKey, sessionTo
 	if err != nil {
 		return ProviderAws
 	}
-	defer resp.Body.Close()
+	defer func(Body io.ReadCloser) {
+		_ = Body.Close()
+	}(resp.Body)
 
 	return classifyByServerHeader(resp.Header.Get("Server"))
 }

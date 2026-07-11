@@ -8,7 +8,7 @@ import (
 	"s3cli/pkg/s3api"
 )
 
-// EncryptionOptions setencryption 命令参数
+// EncryptionOptions set encryption 命令参数
 type EncryptionOptions struct {
 	// Algorithm: AES256 (SSE-S3) 或 aws:kms (SSE-KMS)
 	Algorithm  string

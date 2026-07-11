@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/md5"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -239,7 +240,7 @@ func diffSingleFile(a, b *DiffEndpoint, mode DiffMode) error {
 var errDiffer = fmt.Errorf("differences found")
 
 // IsDifferErr 命令层用它来识别“存在差异”这一非错误异常。
-func IsDifferErr(err error) bool { return err == errDiffer }
+func IsDifferErr(err error) bool { return errors.Is(err, errDiffer) }
 
 // =============== 目录 diff ===============
 
@@ -502,13 +503,17 @@ func compareContent(a *DiffEndpoint, relA string, b *DiffEndpoint, relB string) 
 	if err != nil {
 		return false, err
 	}
-	defer ra.Close()
+	defer func(ra io.ReadCloser) {
+		_ = ra.Close()
+	}(ra)
 
 	rb, err := openReader(b, relB)
 	if err != nil {
 		return false, err
 	}
-	defer rb.Close()
+	defer func(rb io.ReadCloser) {
+		_ = rb.Close()
+	}(rb)
 
 	const bufSize = 1 << 20 // 1MB
 	bufA := make([]byte, bufSize)
@@ -533,8 +538,8 @@ func compareContent(a *DiffEndpoint, relA string, b *DiffEndpoint, relB string) 
 		}
 
 		// 处理结束条件
-		endA := errA == io.EOF || errA == io.ErrUnexpectedEOF
-		endB := errB == io.EOF || errB == io.ErrUnexpectedEOF
+		endA := errA == io.EOF || errors.Is(errA, io.ErrUnexpectedEOF)
+		endB := errB == io.EOF || errors.Is(errB, io.ErrUnexpectedEOF)
 		if endA && endB {
 			return hex.EncodeToString(hA.Sum(nil)) == hex.EncodeToString(hB.Sum(nil)), nil
 		}

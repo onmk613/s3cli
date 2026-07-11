@@ -29,12 +29,12 @@ func SetAliasConf(ctx context.Context, section string) error {
 	var conf Static
 	var cfg *ini.File
 
-	if ConfigPath == "" {
-		ConfigPath = DefaultConfigPath
+	if ConfPath == "" {
+		ConfPath = DefaultConfigPath
 	}
 
-	if _, err := os.Stat(ConfigPath); err == nil {
-		cfg, err = ini.Load(ConfigPath)
+	if _, err := os.Stat(ConfPath); err == nil {
+		cfg, err = ini.Load(ConfPath)
 		if err != nil {
 			return fmt.Errorf("load existing config: %w", err)
 		}
@@ -74,7 +74,7 @@ func SetAliasConf(ctx context.Context, section string) error {
 
 	var err error
 	for {
-		conf.HostBase, err = read("Enter Host Base (e.g. http://s3.example.com): ")
+		conf.HostBase, err = read("Enter Host Base (e.g. https://s3.example.com): ")
 		if err != nil {
 			return err
 		}
@@ -124,9 +124,9 @@ func SetAliasConf(ctx context.Context, section string) error {
 
 	// 只能为 True / true / False / False 或者不输入
 	for {
-		input, rerr := read("Verify SSL certificate? (default True): ")
-		if rerr != nil {
-			return rerr
+		input, err := read("Verify SSL certificate? (default True): ")
+		if err != nil {
+			return err
 		}
 		switch strings.ToLower(input) {
 		case "true", "":
@@ -145,9 +145,9 @@ func SetAliasConf(ctx context.Context, section string) error {
 	}
 
 	for {
-		input, rerr := read("Multipart Chunk Size (default 15): ")
-		if rerr != nil {
-			return rerr
+		input, err := read("Multipart Chunk Size (default 15): ")
+		if err != nil {
+			return err
 		}
 		if input != "" {
 			m, err := strconv.Atoi(input)
@@ -189,9 +189,9 @@ func SetAliasConf(ctx context.Context, section string) error {
 		sec.DeleteKey("bucket_lookup")
 	}
 
-	if err := cfg.SaveTo(ConfigPath); err != nil {
+	if err := cfg.SaveTo(ConfPath); err != nil {
 		return fmt.Errorf("save config: %w", err)
 	}
-	myprint.PrintfGreen("S3 configuration saved to %s\n", ConfigPath)
+	myprint.PrintfGreen("S3 configuration saved to %s\n", ConfPath)
 	return nil
 }

@@ -12,7 +12,7 @@ import (
 	"s3cli/pkg/s3api"
 )
 
-// GetOpt get 命令参数
+// GetOptions get 命令参数
 type GetOptions struct {
 	Recursive   bool
 	Concurrency int
@@ -21,8 +21,8 @@ type GetOptions struct {
 	NoProgress  bool   // 不显示进度条（--quiet）
 }
 
-// Get 下载对象
-func (c *S3Client) GetObject(opt GetOptions, bucket, prefix, localpath string) error {
+// GetObject 下载对象
+func (c *S3Client) GetObject(opt GetOptions, bucket, prefix, localPath string) error {
 	ok, err := c.IsS3File(bucket, prefix)
 	if err != nil {
 		return fmt.Errorf("check s3 path: %s", FormatAPIError(err))
@@ -34,13 +34,13 @@ func (c *S3Client) GetObject(opt GetOptions, bucket, prefix, localpath string) e
 		if opt.Range != "" {
 			return fmt.Errorf("--range cannot be used with --recursive")
 		}
-		return c.downloadDirectory(opt, bucket, prefix, localpath)
+		return c.downloadDirectory(opt, bucket, prefix, localPath)
 	}
-	return c.downloadSingleFile(opt, bucket, prefix, localpath)
+	return c.downloadSingleFile(opt, bucket, prefix, localPath)
 }
 
-func (c *S3Client) downloadDirectory(opt GetOptions, bucket, key, localpath string) error {
-	localBasePath, err := determineLocalBasePath(localpath, bucket, key)
+func (c *S3Client) downloadDirectory(opt GetOptions, bucket, key, localPath string) error {
+	localBasePath, err := determineLocalBasePath(localPath, bucket, key)
 	if err != nil {
 		return err
 	}
@@ -80,14 +80,14 @@ func (c *S3Client) downloadDirectory(opt GetOptions, bucket, key, localpath stri
 			return nil
 		},
 		Work: func(ctx context.Context, job StreamJob, report func(n int64)) error {
-			_, err := c.downloadFile(opt, job.Src, job.Dst, bucket, report)
+			_, err := c.downloadFile(job.Src, job.Dst, bucket, report)
 			return err
 		},
 	})
 }
 
-func (c *S3Client) downloadSingleFile(opt GetOptions, bucket, key, localpath string) error {
-	localFilePath, err := determineLocalFilePath(localpath, key)
+func (c *S3Client) downloadSingleFile(opt GetOptions, bucket, key, localPath string) error {
+	localFilePath, err := determineLocalFilePath(localPath, key)
 	if err != nil {
 		return err
 	}
@@ -98,7 +98,7 @@ func (c *S3Client) downloadSingleFile(opt GetOptions, bucket, key, localpath str
 	}
 
 	myprint.Printf("get: %s --> %s ", c.S3Path(bucket, key), localFilePath)
-	size, err := c.downloadFile(opt, key, localFilePath, bucket, nil)
+	size, err := c.downloadFile(key, localFilePath, bucket, nil)
 	if err != nil {
 		myprint.Println("FAILED")
 		return fmt.Errorf("download: %s", FormatAPIError(err))
@@ -117,17 +117,21 @@ func (c *S3Client) rangeGetObject(bucket, key, localFilePath, rng string) error 
 	if err != nil {
 		return fmt.Errorf("range get: %s", FormatAPIError(err))
 	}
-	defer out.Body.Close()
+	defer func(Body io.ReadCloser) {
+		_ = Body.Close()
+	}(out.Body)
 
 	file, err := os.Create(localFilePath)
 	if err != nil {
 		return fmt.Errorf("create file: %w", err)
 	}
-	defer file.Close()
+	defer func(file *os.File) {
+		_ = file.Close()
+	}(file)
 
 	written, err := file.ReadFrom(out.Body)
 	if err != nil {
-		os.Remove(localFilePath)
+		_ = os.Remove(localFilePath)
 		return fmt.Errorf("write file: %w", err)
 	}
 	myprint.Printf("get: %s [%s] --> %s (%s)\n",
@@ -135,22 +139,26 @@ func (c *S3Client) rangeGetObject(bucket, key, localFilePath, rng string) error 
 	return nil
 }
 
-func (c *S3Client) downloadFile(opt GetOptions, filekey, localfilePath, bucket string, report func(n int64)) (int64, error) {
-	if err := os.MkdirAll(filepath.Dir(localfilePath), 0o755); err != nil {
+func (c *S3Client) downloadFile(key, localPath, bucket string, report func(n int64)) (int64, error) {
+	if err := os.MkdirAll(filepath.Dir(localPath), 0o755); err != nil {
 		return 0, fmt.Errorf("mkdir: %w", err)
 	}
-	file, err := os.Create(localfilePath)
+	file, err := os.Create(localPath)
 	if err != nil {
 		return 0, fmt.Errorf("create file: %w", err)
 	}
-	defer file.Close()
+	defer func(file *os.File) {
+		_ = file.Close()
+	}(file)
 
-	out, err := c.S3.GetObject(c.Ctx, bucket, filekey, nil)
+	out, err := c.S3.GetObject(c.Ctx, bucket, key, nil)
 	if err != nil {
-		os.Remove(localfilePath)
+		_ = os.Remove(localPath)
 		return 0, err
 	}
-	defer out.Body.Close()
+	defer func(Body io.ReadCloser) {
+		_ = Body.Close()
+	}(out.Body)
 
 	// 有进度回调时，用计数 reader 包装 body 流。
 	var body io.Reader = out.Body
@@ -160,7 +168,7 @@ func (c *S3Client) downloadFile(opt GetOptions, filekey, localfilePath, bucket s
 
 	n, err := io.Copy(file, body)
 	if err != nil {
-		os.Remove(localfilePath)
+		_ = os.Remove(localPath)
 		return 0, fmt.Errorf("write file: %w", err)
 	}
 	return n, nil
@@ -182,16 +190,16 @@ func (cr *countingReader) Read(p []byte) (int, error) {
 
 // ---- 路径辅助 ----
 
-func determineLocalBasePath(localpath, bucket, key string) (string, error) {
-	if localpath != "" {
-		info, err := os.Stat(localpath)
+func determineLocalBasePath(localPath, bucket, key string) (string, error) {
+	if localPath != "" {
+		info, err := os.Stat(localPath)
 		if err != nil && !os.IsNotExist(err) {
 			return "", fmt.Errorf("stat path: %w", err)
 		}
 		if err == nil && !info.IsDir() {
-			return "", fmt.Errorf("%s is not a directory", localpath)
+			return "", fmt.Errorf("%s is not a directory", localPath)
 		}
-		return localpath, nil
+		return localPath, nil
 	}
 	if key != "" {
 		return filepath.Base(key), nil
@@ -199,25 +207,25 @@ func determineLocalBasePath(localpath, bucket, key string) (string, error) {
 	return bucket, nil
 }
 
-func determineLocalFilePath(localpath, key string) (string, error) {
-	if localpath == "" {
+func determineLocalFilePath(localPath, key string) (string, error) {
+	if localPath == "" {
 		return filepath.Base(key), nil
 	}
-	info, err := os.Stat(localpath)
+	info, err := os.Stat(localPath)
 	if err == nil {
 		if info.IsDir() {
-			return filepath.Join(localpath, filepath.Base(key)), nil
+			return filepath.Join(localPath, filepath.Base(key)), nil
 		}
-		return localpath, nil
+		return localPath, nil
 	}
 	if os.IsNotExist(err) {
-		parent := filepath.Dir(localpath)
+		parent := filepath.Dir(localPath)
 		if parent != "." && parent != "/" {
-			if pinfo, perr := os.Stat(parent); perr != nil || !pinfo.IsDir() {
+			if fileInfo, err := os.Stat(parent); err != nil || !fileInfo.IsDir() {
 				return "", fmt.Errorf("parent directory %s does not exist", parent)
 			}
 		}
-		return localpath, nil
+		return localPath, nil
 	}
 	return "", fmt.Errorf("stat path: %w", err)
 }

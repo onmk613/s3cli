@@ -115,7 +115,9 @@ func (c *Client) ListObjectsV2(ctx context.Context, bucket string, opts *ListObj
 	if err != nil {
 		return nil, err
 	}
-	defer resp.Body.Close()
+	defer func(Body io.ReadCloser) {
+		_ = Body.Close()
+	}(resp.Body)
 
 	var result listObjectsV2Result
 	if err := xmlDecoder(resp.Body, &result); err != nil {
@@ -289,7 +291,9 @@ func (c *Client) ListObjectVersions(ctx context.Context, bucket string, opts *Li
 	if err != nil {
 		return nil, err
 	}
-	defer resp.Body.Close()
+	defer func(Body io.ReadCloser) {
+		_ = Body.Close()
+	}(resp.Body)
 
 	var result listObjectVersionsResult
 	if err := xmlDecoder(resp.Body, &result); err != nil {

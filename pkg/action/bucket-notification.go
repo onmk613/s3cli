@@ -8,15 +8,15 @@ import (
 )
 
 // SetNotification 设置桶事件通知 (JSON, AWS CLI 兼容)
-func (c *S3Client) SetNotification(configfile, bucket string) error {
-	loaded, err := loadJSONConfig[s3api.NotificationConfiguration](configfile, "notification")
+func (c *S3Client) SetNotification(configure, bucket string) error {
+	loaded, err := loadJSONConfig[s3api.NotificationConfiguration](configure, "notification")
 	if err != nil {
 		return err
 	}
 	cfg := *loaded
 	total := len(cfg.TopicConfigurations) + len(cfg.QueueConfigurations) + len(cfg.LambdaFunctionConfigurations)
 	if total == 0 {
-		return fmt.Errorf("no notification configurations found in %s", configfile)
+		return fmt.Errorf("no notification configurations found in %s", configure)
 	}
 
 	if err := c.S3.SetBucketNotification(c.Ctx, bucket, &cfg); err != nil {

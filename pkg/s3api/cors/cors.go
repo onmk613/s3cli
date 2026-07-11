@@ -7,35 +7,23 @@ import (
 	"strings"
 )
 
-const defaultXMLNS = "http://s3.amazonaws.com/doc/2006-03-01/"
+const defaultXMLNS = "https://s3.amazonaws.com/doc/2006-03-01/"
 
 // Config is the container for a CORS configuration for a bucket.
 type Config struct {
-	XMLNS     string     `xml:"xmlns,attr,omitempty"`
-	XMLName   xml.Name   `xml:"CORSConfiguration"`
-	CORSRules []CORSRule `xml:"CORSRule"`
+	XMLNS     string   `xml:"xmlns,attr,omitempty"`
+	XMLName   xml.Name `xml:"CORSConfiguration"`
+	CORSRules []Rule   `xml:"CORSRule"`
 }
 
 // Rule is a single rule in a CORS configuration.
-type CORSRule struct {
+type Rule struct {
 	AllowedHeader []string `xml:"AllowedHeader,omitempty"`
 	AllowedMethod []string `xml:"AllowedMethod,omitempty"`
 	AllowedOrigin []string `xml:"AllowedOrigin,omitempty"`
 	ExposeHeader  []string `xml:"ExposeHeader,omitempty"`
 	ID            string   `xml:"ID,omitempty"`
 	MaxAgeSeconds int      `xml:"MaxAgeSeconds,omitempty"`
-}
-
-// NewConfig creates a new CORS configuration with the given rules.
-func NewConfig(rules []CORSRule) *Config {
-	return &Config{
-		XMLNS: defaultXMLNS,
-		XMLName: xml.Name{
-			Local: "CORSConfiguration",
-			Space: defaultXMLNS,
-		},
-		CORSRules: rules,
-	}
 }
 
 // ParseBucketCorsConfig parses a CORS configuration in XML from an io.Reader.

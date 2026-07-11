@@ -94,7 +94,7 @@ func NewRootCmd() {
 	rootCmd.SetContext(ctx)
 
 	pf := rootCmd.PersistentFlags()
-	pf.StringVarP(&config.ConfigPath, "conf", "f", "", "Path to configuration file (default ~/.s3cli)")
+	pf.StringVarP(&config.ConfPath, "conf", "f", "", "ConfPath to configuration file (default ~/.s3cli)")
 	pf.BoolVar(&config.G.Debug, "debug", false, "Print summarized S3 requests")
 	pf.BoolVar(&noColor, "no-color", false, "Disable color output")
 	pf.StringVar(&config.G.UserAgent, "user-agent", "", "Override the HTTP User-Agent header")

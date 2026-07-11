@@ -157,8 +157,8 @@ func needsUpdate(src, tgt ObjectInfo) bool {
 
 // sameEndpoint 判断源/目标是否同一 endpoint，是的话可用服务端 CopyObject。
 func sameEndpoint(src, tgt *S3PathOptions) bool {
-	sc, err1 := src.Client.GetCreds()
-	tc, err2 := tgt.Client.GetCreds()
+	sc, err1 := src.Client.GetS3Credentials()
+	tc, err2 := tgt.Client.GetS3Credentials()
 	if err1 != nil || err2 != nil {
 		return false
 	}
@@ -192,21 +192,19 @@ func copyObjectCrossEndpoint(
 
 	totalSize := headResp.ContentLength
 	if totalSize <= partSize {
-		return copySingleCrossEndpoint(src, tgt, srcBucket, srcKey, tgtBucket, tgtKey, report)
+		return copySingleCrossEndpoint(src, tgt, srcBucket, srcKey, tgtBucket, tgtKey)
 	}
 	return copyMultipartCrossEndpoint(src, tgt, srcBucket, srcKey, tgtBucket, tgtKey, totalSize, partSize, headResp, report)
 }
 
-func copySingleCrossEndpoint(
-	src, tgt *S3Client,
-	srcBucket, srcKey, tgtBucket, tgtKey string,
-	report func(n int64),
-) error {
+func copySingleCrossEndpoint(src, tgt *S3Client, srcBucket, srcKey, tgtBucket, tgtKey string) error {
 	getResp, err := src.S3.GetObject(src.Ctx, srcBucket, srcKey, nil)
 	if err != nil {
 		return fmt.Errorf("get s3://%s/%s: %s", srcBucket, srcKey, FormatAPIError(err))
 	}
-	defer getResp.Body.Close()
+	defer func(Body io.ReadCloser) {
+		_ = Body.Close()
+	}(getResp.Body)
 
 	// PutObject 在签名前需要计算 payload hash，要求 body 可 seek。
 	// HTTP 响应流不可 seek，故先读入内存再用可 seek 的 bytes.Reader 上传。
@@ -271,7 +269,7 @@ func copyMultipartCrossEndpoint(
 
 		// UploadPart 同样需要可 seek 的 body 来计算 payload hash。
 		partData, readErr := io.ReadAll(getResp.Body)
-		getResp.Body.Close()
+		_ = getResp.Body.Close()
 		if readErr != nil {
 			err = fmt.Errorf("read part %d: %v", partNum, readErr)
 			return err
@@ -573,23 +571,23 @@ func (p *mirrorPlan) copyOne(pt progressReporter, rel string, objSize int64, cop
 		pt.AddTotalSizeDone(n)
 	}
 
-	var cerr error
+	var err error
 	if p.sameEP {
 		// 服务端 CopyObject 无分片进度，不传 report，靠成功后对账补齐。
-		cerr = copyObjectSameEndpoint(p.srcClient, p.srcBucket, srcKey, p.tgtBucket, tgtKey)
+		err = copyObjectSameEndpoint(p.srcClient, p.srcBucket, srcKey, p.tgtBucket, tgtKey)
 	} else {
-		cerr = copyObjectCrossEndpoint(p.srcClient, p.tgtClient, p.srcBucket, srcKey, p.tgtBucket, tgtKey, p.partSize, report)
+		err = copyObjectCrossEndpoint(p.srcClient, p.tgtClient, p.srcBucket, srcKey, p.tgtBucket, tgtKey, p.partSize, report)
 	}
-	if cerr != nil {
+	if err != nil {
 		// 失败：回退已上报字节，避免虚增进度。
 		if r := atomic.LoadInt64(&reported); r != 0 {
 			pt.AddTotalSizeDone(-r)
 		}
 		// 用户主动取消（Ctrl+C）导致的在途错误不计为失败，静默跳过。
-		if IsCanceled(cerr) || p.srcClient.Ctx.Err() != nil {
+		if IsCanceled(err) || p.srcClient.Ctx.Err() != nil {
 			return
 		}
-		msg := fmt.Sprintf("✗ %s → %s: %v", p.srcClient.S3Path(p.srcBucket, srcKey), p.tgtClient.S3Path(p.tgtBucket, tgtKey), cerr)
+		msg := fmt.Sprintf("✗ %s → %s: %v", p.srcClient.S3Path(p.srcBucket, srcKey), p.tgtClient.S3Path(p.tgtBucket, tgtKey), err)
 		failed.Add(1)
 		pt.AddFailed(msg)
 		pt.AddTotalDone(1)

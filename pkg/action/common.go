@@ -56,7 +56,7 @@ func (c *S3Client) IsS3File(bucket, key string) (bool, error) {
 			return false, fmt.Errorf("access denied to bucket '%s'", bucket)
 		}
 	}
-	return false, fmt.Errorf("S3 error: %w", err)
+	return false, fmt.Errorf("s3 error: %w", err)
 }
 
 // checkIfDirectory 在 HeadObject 返回 404 后判断 key 是否为目录前缀。
@@ -115,10 +115,10 @@ func (c *S3Client) DestStateOf(bucket, key string) (utils.DestState, error) {
 		case "AccessDenied", "Forbidden", "403":
 			return utils.DestNone, fmt.Errorf("access denied to bucket '%s'", bucket)
 		default:
-			return utils.DestNone, fmt.Errorf("S3 error: %w", err)
+			return utils.DestNone, fmt.Errorf("s3 error: %w", err)
 		}
 	} else {
-		return utils.DestNone, fmt.Errorf("S3 error: %w", err)
+		return utils.DestNone, fmt.Errorf("s3 error: %w", err)
 	}
 
 	// 2) 目录探测：prefix = key + "/"
@@ -144,9 +144,9 @@ type Cred struct {
 	BaseEndpoint    string
 }
 
-func (c *S3Client) GetCreds() (Cred, error) {
+func (c *S3Client) GetS3Credentials() (Cred, error) {
 	if c.S3 == nil {
-		return Cred{}, fmt.Errorf("S3 client is nil")
+		return Cred{}, fmt.Errorf("s3 client is nil")
 	}
 	return Cred{
 		AccessKeyID:     c.S3.AccessKey(),

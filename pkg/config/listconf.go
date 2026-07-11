@@ -11,26 +11,26 @@ import (
 	"gopkg.in/ini.v1"
 )
 
-// 列出配置文件中的所有别名
+// ListAliasConf 列出配置文件中的所有别名
 func ListAliasConf(alias []string) error {
-	if ConfigPath == "" {
-		ConfigPath = DefaultConfigPath
+	if ConfPath == "" {
+		ConfPath = DefaultConfigPath
 	}
 
-	info, err := os.Stat(ConfigPath)
+	info, err := os.Stat(ConfPath)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return fmt.Errorf("config file not found: %s (run `s3cmd alias set <name>` to create one)", ConfigPath)
+			return fmt.Errorf("config file not found: %s (run `s3cmd alias set <name>` to create one)", ConfPath)
 		}
-		return fmt.Errorf("stat config %s: %w", ConfigPath, err)
+		return fmt.Errorf("stat config %s: %w", ConfPath, err)
 	}
 	if info.Size() == 0 {
-		return fmt.Errorf("config file is empty: %s", ConfigPath)
+		return fmt.Errorf("config file is empty: %s", ConfPath)
 	}
 
-	cfg, err := ini.Load(ConfigPath)
+	cfg, err := ini.Load(ConfPath)
 	if err != nil {
-		return fmt.Errorf("load config %s: %w", ConfigPath, err)
+		return fmt.Errorf("load config %s: %w", ConfPath, err)
 	}
 
 	// 收集有效 section（排除空的 DEFAULT 与全部空值的 section）
@@ -76,7 +76,7 @@ func ListAliasConf(alias []string) error {
 	})
 
 	myprint.PrintfDim("Config:")
-	myprint.Printf(" %s\n", ConfigPath)
+	myprint.Printf(" %s\n", ConfPath)
 	myprint.Println()
 
 	for i, s := range sections {

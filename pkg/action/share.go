@@ -9,27 +9,27 @@ import (
 	"s3cli/pkg/s3api"
 )
 
-// SignurlOpt signurl 参数
-type SignurlOptions struct {
+// ShareOptions Share 参数
+type ShareOptions struct {
 	ExpireSeconds int
 	Method        string // GET / PUT / DELETE / HEAD
-	SignurlV2     bool
+	SignV2        bool
 }
 
-// Signurl 生成预签名 URL
-func (c *S3Client) Signurl(opt SignurlOptions, bucketname, key string) error {
+// Share 生成预签名 URL
+func (c *S3Client) Share(opt ShareOptions, bucket, key string) error {
 	method := strings.ToUpper(strings.TrimSpace(opt.Method))
 	if method == "" {
 		method = "GET"
 	}
 
 	if method == "GET" || method == "HEAD" {
-		ok, err := c.IsS3File(bucketname, key)
+		ok, err := c.IsS3File(bucket, key)
 		if err != nil {
 			return fmt.Errorf("check s3 path: %s", FormatAPIError(err))
 		}
 		if !ok {
-			return fmt.Errorf("%s: not a file", c.S3Path(bucketname, key))
+			return fmt.Errorf("%s: not a file", c.S3Path(bucket, key))
 		}
 	}
 
@@ -37,13 +37,13 @@ func (c *S3Client) Signurl(opt SignurlOptions, bucketname, key string) error {
 
 	var signed string
 	var err error
-	if opt.SignurlV2 {
-		signed, err = c.S3.PresignV2(c.Ctx, bucketname, key, method, int64(opt.ExpireSeconds))
+	if opt.SignV2 {
+		signed, err = c.S3.PresignV2(c.Ctx, bucket, key, method, int64(opt.ExpireSeconds))
 	} else {
 		if opt.ExpireSeconds > 604800 {
 			myprint.PrintfYellow("Warning: v4 signature maximum validity is 7 days (604800s), the generated URL may expire earlier\n")
 		}
-		signed, err = c.S3.PresignedURL(c.Ctx, bucketname, key, &s3api.PresignOptions{
+		signed, err = c.S3.PresignedURL(c.Ctx, bucket, key, &s3api.PresignOptions{
 			Method:  method,
 			Expires: time.Duration(opt.ExpireSeconds) * time.Second,
 		})

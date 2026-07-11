@@ -9,7 +9,7 @@ type Style struct {
 	Empty        string
 }
 
-// 深浅阴影风格：▓▓▓▓█░░░░
+// DefaultStyle 深浅阴影风格：▓▓▓▓█░░░░
 func DefaultStyle() *Style {
 	return &Style{
 		LeftBracket:  "",
@@ -27,7 +27,7 @@ type Colors struct {
 	Done  string
 }
 
-// 默认着色
+// DefaultColors 默认着色
 func DefaultColors() *Colors {
 	return &Colors{
 		Stats: colorStats,
