@@ -59,5 +59,8 @@ func FormatBytes(bytes int64) string {
 		exp = len(units) - 1
 	}
 	value := float64(bytes) / math.Pow(base, float64(exp))
-	return fmt.Sprintf("%.2f %s", value, units[exp])
+	s := fmt.Sprintf("%.2f", value)
+	s = strings.TrimRight(s, "0")
+	s = strings.TrimRight(s, ".")
+	return fmt.Sprintf("%s %s", s, units[exp])
 }

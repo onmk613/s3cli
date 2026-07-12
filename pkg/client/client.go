@@ -3,7 +3,9 @@ package client
 import (
 	"context"
 	"crypto/tls"
+	"net"
 	"net/http"
+	"time"
 
 	"s3cli/pkg/config"
 	"s3cli/pkg/s3api"
@@ -12,7 +14,13 @@ import (
 // NewS3Client 构建自建的 s3api.Client.
 func NewS3Client(_ context.Context, cfg config.Static) (*s3api.Client, error) {
 	transport := &http.Transport{
-		TLSClientConfig: &tls.Config{InsecureSkipVerify: !cfg.IsVerifySSL()},
+		TLSClientConfig:       &tls.Config{MinVersion: tls.VersionTLS12, InsecureSkipVerify: !cfg.IsVerifySSL()},
+		DialContext:           (&net.Dialer{Timeout: 10 * time.Second, KeepAlive: 30 * time.Second}).DialContext,
+		TLSHandshakeTimeout:   10 * time.Second,
+		ResponseHeaderTimeout: 30 * time.Second,
+		IdleConnTimeout:       90 * time.Second,
+		MaxIdleConns:          100,
+		MaxIdleConnsPerHost:   10,
 	}
 	var rt http.RoundTripper = transport
 

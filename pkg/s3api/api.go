@@ -179,21 +179,24 @@ func (c *Client) buildURL(host, scheme, bucketName, objectName string, queryValu
 		host = bucketName + "." + host
 		p = "/"
 		if objectName != "" {
-			p += encodePath(objectName)
+			p += objectName
 		}
 	default: // BucketLookupPath
 		p = "/" + bucketName
 		if objectName != "" {
-			p += "/" + encodePath(objectName)
+			p += "/" + objectName
 		}
 		// objectName 为空时保持 "/test-bucket"，不加尾斜杠
 	}
 
 	u := &url.URL{
-		Scheme:  scheme,
-		Host:    host,
-		Path:    p,
-		RawPath: p,
+		Scheme: scheme,
+		Host:   host,
+		Path:   p,
+		// Path must remain unescaped. RawPath is the matching escaped form used
+		// by url.URL and SigV4; assigning an already escaped path to Path makes
+		// '%' become '%25' on the wire.
+		RawPath: encodePath(p),
 	}
 	if len(queryValues) > 0 {
 		u.RawQuery = s3EncodeQuery(queryValues)
@@ -225,7 +228,7 @@ type requestMetadata struct {
 }
 
 // newRequest 构建一个已签名 (SigV4) 的 *http.Request.
-func (c *Client) newRequest(ctx context.Context, method string, meta requestMetadata) (*http.Request, error) {
+func (c *Client) newRequest(ctx context.Context, method string, meta requestMetadata, signingRegion string) (*http.Request, error) {
 	if method == "" {
 		method = http.MethodGet
 	}
@@ -287,7 +290,10 @@ func (c *Client) newRequest(ctx context.Context, method string, meta requestMeta
 	}
 
 	// SigV4 签名
-	signV4(req, c.accessKey, c.secretKey, c.region, shaHex, time.Now().UTC())
+	if signingRegion == "" {
+		signingRegion = c.region
+	}
+	signV4(req, c.accessKey, c.secretKey, signingRegion, shaHex, time.Now().UTC())
 	return req, nil
 }
 
@@ -306,6 +312,8 @@ func (c *Client) Do(ctx context.Context, method string, meta requestMetadata) (*
 
 	attempts := c.maxRetries + 1
 	var lastErr error
+	signingRegion := c.region
+	redirects := 0
 
 	for attempt := 0; attempt < attempts; attempt++ {
 		if attempt > 0 {
@@ -325,7 +333,7 @@ func (c *Client) Do(ctx context.Context, method string, meta requestMetadata) (*
 			}
 		}
 
-		req, err := c.newRequest(ctx, method, meta)
+		req, err := c.newRequest(ctx, method, meta, signingRegion)
 		if err != nil {
 			return nil, err
 		}
@@ -337,6 +345,18 @@ func (c *Client) Do(ctx context.Context, method string, meta requestMetadata) (*
 				return nil, ctx.Err()
 			}
 			continue // 网络层错误, 重试
+		}
+
+		// S3 can require a bucket-specific region. Re-sign only this request
+		// with the advertised region; do not mutate the shared client.
+		if (resp.StatusCode == http.StatusMovedPermanently || resp.StatusCode == http.StatusTemporaryRedirect || resp.StatusCode == http.StatusBadRequest) && redirects < 3 {
+			if redirectedRegion := resp.Header.Get("X-Amz-Bucket-Region"); redirectedRegion != "" && redirectedRegion != signingRegion {
+				_ = resp.Body.Close()
+				signingRegion = redirectedRegion
+				redirects++
+				lastErr = fmt.Errorf("redirected to S3 region %s", redirectedRegion)
+				continue
+			}
 		}
 
 		// 成功

@@ -56,6 +56,12 @@ func LoadConf() error {
 		if err := sec.MapTo(&s); err != nil {
 			return fmt.Errorf("parse section [%s]: %w", name, err)
 		}
+		// The interactive writer omits verify_ssl when it is true. Preserve the
+		// documented secure default for both newly created and legacy aliases;
+		// only an explicit false may disable certificate verification.
+		if !sec.HasKey("verify_ssl") {
+			s.VerifySSL = true
+		}
 		newS[name] = s
 	}
 	SetSections(newS)

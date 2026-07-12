@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"s3cli/pkg/progress"
 	"sync"
 
 	"s3cli/pkg/s3api"
@@ -52,7 +53,10 @@ func RunStream(ctx context.Context, cfg StreamConfig) error {
 		cfg.Concurrency = 10
 	}
 
-	pt := newProgress(cfg.NoProgress)
+	pt := progress.New()
+	if cfg.NoProgress {
+		pt.SetQuiet()
+	}
 	pt.SetLabel(cfg.Label)
 	pt.Start()
 	defer pt.Stop()
@@ -130,6 +134,7 @@ func RunStream(ctx context.Context, cfg StreamConfig) error {
 					pt.AddTotalSizeDone(n)
 				}
 
+				msg := fmt.Sprintf("%s → %s (%s)", j.Src, j.Dst, utils.FormatBytes(j.Size))
 				if err := cfg.Work(ctx, j, report); err != nil {
 					if ctx.Err() != nil {
 						return
@@ -138,15 +143,15 @@ func RunStream(ctx context.Context, cfg StreamConfig) error {
 					if reported != 0 {
 						pt.AddTotalSizeDone(-reported)
 					}
-					pt.AddFailed(fmt.Sprintf("✗ %s → %s (%s): %v", j.Src, j.Dst, utils.FormatBytes(j.Size), err))
+					pt.AddFailed(1, fmt.Sprintf("Fialed %s: %s", msg, err))
 				} else {
 					// 成功：对账，把进度精确补齐到 job.Size。
 					// 适配无分片进度的操作（report 未被调用，reported==0）。
 					if diff := j.Size - reported; diff != 0 {
 						pt.AddTotalSizeDone(diff)
 					}
+					pt.AddTotalDone(1, msg)
 				}
-				pt.AddTotalDone(1)
 			}
 		}()
 	}

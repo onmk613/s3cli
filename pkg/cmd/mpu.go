@@ -2,6 +2,8 @@ package cmd
 
 import (
 	"s3cli/pkg/action"
+	"s3cli/pkg/config"
+	myprint "s3cli/pkg/fmtutil"
 	"s3cli/pkg/utils"
 
 	"github.com/spf13/cobra"
@@ -15,8 +17,37 @@ func NewMpuCmd() *cobra.Command {
 		Short: "Manage in-progress multipart uploads",
 	}
 
-	cmd.AddCommand(newMpuListCmd(), newMpuAbortCmd())
+	cmd.AddCommand(newMpuListCmd(), newMpuAbortCmd(), newMpuLocalListCmd(), newMpuLocalClearCmd())
 	return cmd
+}
+
+func newMpuLocalListCmd() *cobra.Command {
+	return &cobra.Command{Use: "local-list", Aliases: []string{"ls-local"}, Short: "List local resumable multipart states", RunE: func(_ *cobra.Command, _ []string) error {
+		states, err := action.ListLocalMultipartStates()
+		if err != nil {
+			return err
+		}
+		if config.G.OutputFormat == "json" {
+			return myprint.PrintResult(states)
+		}
+		for _, state := range states {
+			myprint.Printf("%s  %s/%s  uploadId=%s  %s\n", state.CreatedAt, state.Bucket, state.Key, state.UploadID, state.StatePath)
+		}
+		return nil
+	}}
+}
+
+func newMpuLocalClearCmd() *cobra.Command {
+	return &cobra.Command{Use: "local-clear [state-file]", Aliases: []string{"rm-local"}, Short: "Remove one local resumable multipart state", Args: cobra.ExactArgs(1), RunE: func(_ *cobra.Command, args []string) error {
+		if err := action.ClearLocalMultipartState(args[0]); err != nil {
+			return err
+		}
+		if config.G.OutputFormat == "json" {
+			return myprint.PrintResult(map[string]string{"cleared": args[0]})
+		}
+		myprint.PrintfGreen("removed local multipart state %s\n", args[0])
+		return nil
+	}}
 }
 
 func newMpuListCmd() *cobra.Command {

@@ -10,11 +10,35 @@ import (
 
 type Provider string
 
+// ProviderCapabilities records behavior that differs across S3-compatible
+// implementations. Unknown endpoints deliberately receive the conservative
+// AWS-compatible defaults until a dedicated provider profile is added.
+type ProviderCapabilities struct {
+	SupportsSigV4            bool
+	SupportsVirtualHostStyle bool
+	SupportsObjectLock       bool
+	SupportsBucketQuota      bool
+}
+
 const (
 	ProviderAws       Provider = "aws"
 	ProviderMinIO     Provider = "minio"
 	ProviderSeaweedFS Provider = "seaweedfs"
 )
+
+var providerCapabilities = map[Provider]ProviderCapabilities{
+	ProviderAws:       {SupportsSigV4: true, SupportsVirtualHostStyle: true, SupportsObjectLock: true},
+	ProviderMinIO:     {SupportsSigV4: true, SupportsVirtualHostStyle: true, SupportsObjectLock: true, SupportsBucketQuota: true},
+	ProviderSeaweedFS: {SupportsSigV4: true, SupportsVirtualHostStyle: true},
+}
+
+// Capabilities returns a stable, conservative compatibility profile.
+func (c *Client) Capabilities() ProviderCapabilities {
+	if capabilities, ok := providerCapabilities[c.vendor]; ok {
+		return capabilities
+	}
+	return providerCapabilities[ProviderAws]
+}
 
 // detectVendor 通过发送一个轻量级 HEAD 请求探测 S3 厂商类型.
 // 根据 Server 响应头判断
