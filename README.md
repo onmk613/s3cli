@@ -91,6 +91,37 @@ s3cli alias help
 
 > 路径格式统一为 `别名:桶/路径`，例如 `my-s3:my-bucket/dir/file.txt`。
 
+大于等于 64 MiB 的本地文件会自动使用 Multipart Upload。传输中断后，保持本地文件内容和修改时间不变，再次执行相同的 `put` 命令会从 `$HOME/.s3cli/mpu/` 中保存的安全状态恢复；服务端已上传分片会重新校验后再继续。
+
+`mirror --remove` 可配合以下保护项使用：
+
+```bash
+s3cli --request-timeout 10m mirror source:bucket/ target:bucket/ \
+  --include 'logs/*' --exclude '*.tmp' --max-delete 100
+```
+
+## 测试
+
+```bash
+make test
+make test-race
+make coverage
+make build
+```
+
+使用 MinIO 运行 S3 兼容性冒烟测试：
+
+```bash
+docker compose -f docker-compose.integration.yml up -d minio
+S3_TEST_ENDPOINT=http://127.0.0.1:9000 \
+S3_TEST_ACCESS_KEY=minioadmin \
+S3_TEST_SECRET_KEY=minioadmin \
+go test -tags=integration ./tests/integration
+docker compose -f docker-compose.integration.yml down
+```
+
+同一套集成测试也可用于 Ceph RGW 或 AWS S3；设置对应 endpoint、access key、secret key，必要时设置 `S3_TEST_REGION`。测试会创建并清理一个唯一 bucket，因此只应使用专用的测试账号。
+
 ## 许可证
 
 MIT License，详见 [LICENSE](LICENSE)。

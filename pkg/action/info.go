@@ -31,16 +31,6 @@ func (c *S3Client) infoObject(bucket, key string) error {
 	}
 	myprint.PrintfBoldBlue("# %s info(object):\n", c.S3Path(bucket, key))
 
-	// ACL
-	var aclOwner any
-	var aclGrants any
-	if a, err := c.S3.GetObjectACL(c.Ctx, bucket, key, ""); err == nil {
-		aclOwner = a.Owner
-		aclGrants = a.Grants
-	} else {
-		myprint.PrintfBoldYellow("Cannot read ACL for %s: %s", c.S3Path(bucket, key), FormatAPIError(err))
-	}
-
 	// Tagging
 	tags := map[string]string{}
 	if t, err := c.S3.GetObjectTagging(c.Ctx, bucket, key, ""); err == nil {
@@ -70,8 +60,6 @@ func (c *S3Client) infoObject(bucket, key string) error {
 		"ReplicationStatus":     head.ReplicationStatus,
 		"ObjectLockMode":        head.ObjectLockMode,
 		"ObjectLockRetainUntil": head.ObjectLockRetainUntilDate,
-		"ACLOwner":              aclOwner,
-		"ACLGrants":             aclGrants,
 		"Tags":                  tags,
 	}
 	b, err := json.MarshalIndent(m, "", "  ")
@@ -113,16 +101,6 @@ func (c *S3Client) infoBucket(bucket string) error {
 		corsRules = cors.CORSRules
 	}
 	info["CORS"] = corsRules
-
-	// ACL
-	var aclOwner any
-	var aclGrants any
-	if acl, err := c.S3.GetBucketACL(c.Ctx, bucket); err == nil {
-		aclOwner = acl.Owner
-		aclGrants = acl.Grants
-	}
-	info["ACLOwner"] = aclOwner
-	info["ACLGrants"] = aclGrants
 
 	// URL
 	var url string

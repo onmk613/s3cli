@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"time"
 )
 
 // Defaults 集中管理硬编码默认值，避免散落各处。
@@ -31,11 +32,13 @@ var (
 
 type Config struct {
 	S               map[string]Static
-	Debug           bool     // --debug
-	Quiet           bool     // --quiet (关闭进度条, 输出纯文本)
-	UserAgent       string   // --user-agent (覆盖整个 User-Agent)
-	UserAgentSuffix string   // --user-agent-suffix (追加到 User-Agent 末尾)
-	Headers         []string // --header (自定义 HTTP header, 可重复, 格式 key:value)
+	Debug           bool          // --debug
+	Quiet           bool          // --quiet (关闭进度条, 输出纯文本)
+	UserAgent       string        // --user-agent (覆盖整个 User-Agent)
+	UserAgentSuffix string        // --user-agent-suffix (追加到 User-Agent 末尾)
+	Headers         []string      // --header (自定义 HTTP header, 可重复, 格式 key:value)
+	RequestTimeout  time.Duration // --request-timeout，0 表示不设置总请求期限
+	OutputFormat    string        // --output: text / json
 }
 
 // SetSections 安全地设置全部 section map
@@ -90,15 +93,42 @@ func (c *Static) GetRegion() string {
 	return DefaultRegion
 }
 
-func (c *Static) GetAccessKey() string       { return strings.TrimSpace(c.AccessKey) }
-func (c *Static) GetSecretKey() string       { return strings.TrimSpace(c.SecretKey) }
-func (c *Static) GetSessionToken() string    { return strings.TrimSpace(c.SessionToken) }
-func (c *Static) GetEndpoint() string        { return strings.TrimSpace(c.HostBase) }
-func (c *Static) IsDebug() bool              { return G.Debug }
-func (c *Static) IsVerifySSL() bool          { return c.VerifySSL }
-func (c *Static) GetUserAgent() string       { return strings.TrimSpace(G.UserAgent) }
-func (c *Static) GetUserAgentSuffix() string { return strings.TrimSpace(G.UserAgentSuffix) }
-func (c *Static) GetHeaders() []string       { return G.Headers }
+func (c *Static) GetAccessKey() string {
+	return strings.TrimSpace(c.AccessKey)
+}
+
+func (c *Static) GetSecretKey() string {
+	return strings.TrimSpace(c.SecretKey)
+}
+
+func (c *Static) GetSessionToken() string {
+	return strings.TrimSpace(c.SessionToken)
+}
+
+func (c *Static) GetEndpoint() string {
+	return strings.TrimSpace(c.HostBase)
+}
+
+func (c *Static) IsDebug() bool {
+	return G.Debug
+}
+
+func (c *Static) IsVerifySSL() bool {
+	return c.VerifySSL
+}
+
+func (c *Static) GetUserAgent() string {
+	return strings.TrimSpace(G.UserAgent)
+}
+
+func (c *Static) GetUserAgentSuffix() string {
+	return strings.TrimSpace(G.UserAgentSuffix)
+}
+
+func (c *Static) GetHeaders() []string {
+	return G.Headers
+}
+
 func (c *Static) GetMaxRetries() int {
 	if c.MaxRetries > 0 {
 		return c.MaxRetries

@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io"
 	"path"
+	"s3cli/pkg/progress"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -32,13 +33,18 @@ type MirrorOptions struct {
 	Src *S3PathOptions
 	Tgt *S3PathOptions
 
-	Remove      bool  // 是否删除目标端多余的对象
-	Overwrite   bool  // 已存在时是否依据 ETag/Size 覆盖
-	DryRun      bool  // 仅打印将要做的事，不实际执行
-	Concurrency int   // 并发数 (默认 8)
-	PartSizeMB  int   // 分片大小 MB (默认 64)
-	SizeLimit   int64 // 单对象大小上限 (字节)，0 表示不限制
-	NoProgress  bool  // 为 true 时不显示进度条（--quiet / 非终端场景）
+	Remove       bool     // 是否删除目标端多余的对象
+	Overwrite    bool     // 已存在时是否依据 ETag/Size 覆盖
+	DryRun       bool     // 仅打印将要做的事，不实际执行
+	Concurrency  int      // 并发数 (默认 8)
+	PartSizeMB   int      // 分片大小 MB (默认 64)
+	SizeLimit    int64    // 单对象大小上限 (字节)，0 表示不限制
+	MaxDelete    int      // --remove 时允许删除的最大对象数，0 表示不限制
+	Include      []string // 仅同步匹配任一 glob 的相对 key；为空表示全部
+	Exclude      []string // 不同步匹配任一 glob 的相对 key
+	ManifestPath string   // 成功复制的相对 key 追加写入此文件
+	Resume       bool     // 跳过 manifest 中已成功复制的 key
+	NoProgress   bool     // 为 true 时不显示进度条（--quiet / 非终端场景）
 }
 
 // =============== 对象信息 ===============
@@ -138,6 +144,47 @@ func streamDiff(srcCh, tgtCh <-chan ObjectInfo, overwrite bool, actions chan<- d
 		actions <- diffAction{rel: tgt.Key, delete: true}
 		tgt, tgtOK = <-tgtCh
 	}
+}
+
+func matchesMirrorFilters(key string, include, exclude []string) bool {
+	for _, pattern := range exclude {
+		if matchMirrorGlob(pattern, key) {
+			return false
+		}
+	}
+	if len(include) == 0 {
+		return true
+	}
+	for _, pattern := range include {
+		if matchMirrorGlob(pattern, key) {
+			return true
+		}
+	}
+	return false
+}
+
+func matchMirrorGlob(pattern, key string) bool {
+	if ok, _ := path.Match(pattern, key); ok {
+		return true
+	}
+	if !strings.Contains(pattern, "/") {
+		ok, _ := path.Match(pattern, path.Base(key))
+		return ok
+	}
+	return false
+}
+
+func filterObjects(in <-chan ObjectInfo, include, exclude []string) <-chan ObjectInfo {
+	out := make(chan ObjectInfo, 1024)
+	go func() {
+		defer close(out)
+		for obj := range in {
+			if matchesMirrorFilters(obj.Key, include, exclude) {
+				out <- obj
+			}
+		}
+	}()
+	return out
 }
 
 func needsUpdate(src, tgt ObjectInfo) bool {
@@ -376,6 +423,13 @@ func Mirror(cfg MirrorOptions) error {
 	if err != nil {
 		return err
 	}
+	manifest, err := openMirrorManifest(cfg.ManifestPath, cfg.Resume)
+	if err != nil {
+		return fmt.Errorf("mirror manifest: %w", err)
+	}
+	defer func(manifest *mirrorManifest) {
+		_ = manifest.close()
+	}(manifest)
 
 	if plan.verbose {
 		myprint.Printf("Listing & mirroring %s -> %s ...\n",
@@ -394,10 +448,12 @@ func Mirror(cfg MirrorOptions) error {
 	tgtCh := make(chan ObjectInfo, 1024)
 	go streamObjects(plan.srcClient, plan.srcBucket, plan.srcPrefix, srcCh, listErrCh)
 	go streamObjects(plan.tgtClient, plan.tgtBucket, plan.tgtPrefix, tgtCh, listErrCh)
+	filteredSrc := filterObjects(srcCh, cfg.Include, cfg.Exclude)
+	filteredTgt := filterObjects(tgtCh, cfg.Include, cfg.Exclude)
 
 	// 2. 流式归并差异
 	actions := make(chan diffAction, 1024)
-	go streamDiff(srcCh, tgtCh, cfg.Overwrite, actions)
+	go streamDiff(filteredSrc, filteredTgt, cfg.Overwrite, actions)
 
 	// 3. DryRun：边归并边打印，无需缓存。
 	if cfg.DryRun {
@@ -405,7 +461,7 @@ func Mirror(cfg MirrorOptions) error {
 	}
 
 	// 4. 并发复制 + 5. 删除多余对象
-	return plan.copyAndDelete(actions, listErrCh)
+	return plan.copyAndDelete(actions, listErrCh, manifest)
 }
 
 // resolveMirrorPlan 校验入参并解析目标前缀, 返回可执行的 mirrorPlan。
@@ -486,9 +542,12 @@ func (p *mirrorPlan) dryRun(actions <-chan diffAction, listErrCh chan error) err
 }
 
 // copyAndDelete 并发复制（带进度条），随后删除目标多余对象。
-func (p *mirrorPlan) copyAndDelete(actions <-chan diffAction, listErrCh chan error) error {
-	pt := newProgress(p.cfg.NoProgress)
+func (p *mirrorPlan) copyAndDelete(actions <-chan diffAction, listErrCh chan error, manifest *mirrorManifest) error {
+	pt := progress.New()
 	pt.SetLabel("mirror")
+	if p.cfg.NoProgress {
+		pt.SetQuiet()
+	}
 	pt.Start()
 	defer pt.Stop()
 
@@ -510,6 +569,10 @@ func (p *mirrorPlan) copyAndDelete(actions <-chan diffAction, listErrCh chan err
 			}
 			continue
 		}
+		if p.cfg.Resume && manifest.has(a.rel) {
+			skipped.Add(1)
+			continue
+		}
 
 		if p.cfg.SizeLimit > 0 && a.size > p.cfg.SizeLimit {
 			skipped.Add(1)
@@ -525,7 +588,12 @@ func (p *mirrorPlan) copyAndDelete(actions <-chan diffAction, listErrCh chan err
 		go func(rel string, objSize int64) {
 			defer wg.Done()
 			defer func() { <-sem }()
-			p.copyOne(pt, rel, objSize, &copied, &failed)
+			if p.copyOne(pt, rel, objSize, &copied, &failed) && manifest != nil {
+				if err := manifest.mark(rel); err != nil {
+					failed.Add(1)
+					pt.AddFailed(1, fmt.Sprintf("✗ persist mirror manifest for %s: %v", rel, err))
+				}
+			}
 		}(a.rel, a.size)
 	}
 	wg.Wait()
@@ -534,10 +602,19 @@ func (p *mirrorPlan) copyAndDelete(actions <-chan diffAction, listErrCh chan err
 	if err := drainListErr(listErrCh); err != nil {
 		return err
 	}
+	if p.srcClient.Ctx.Err() != nil || p.tgtClient.Ctx.Err() != nil {
+		return p.srcClient.Ctx.Err()
+	}
+	if failed.Load() > 0 {
+		return fmt.Errorf("mirror finished with %d copy failures; target deletions were skipped", failed.Load())
+	}
 
 	// 删除目标多余对象
 	var deleted int
 	if p.cfg.Remove && len(toDelete) > 0 {
+		if p.cfg.MaxDelete > 0 && len(toDelete) > p.cfg.MaxDelete {
+			return fmt.Errorf("mirror planned to delete %d objects, exceeding --max-delete=%d", len(toDelete), p.cfg.MaxDelete)
+		}
 		myprint.Printf("Deleting %d extra objects on target...\n", len(toDelete))
 		if err := deleteObjectsBatch(p.tgtClient, p.tgtBucket, toDelete); err != nil {
 			myprint.PrintfRed("delete error: %v\n", err)
@@ -550,14 +627,11 @@ func (p *mirrorPlan) copyAndDelete(actions <-chan diffAction, listErrCh chan err
 		time.Since(startAt).Truncate(time.Millisecond),
 		copied.Load(), skipped.Load(), failed.Load(), deleted,
 	)
-	if failed.Load() > 0 {
-		return fmt.Errorf("mirror finished with %d failures", failed.Load())
-	}
 	return nil
 }
 
 // copyOne 复制单个对象并维护进度 / 计数（在 worker goroutine 中调用）。
-func (p *mirrorPlan) copyOne(pt progressReporter, rel string, objSize int64, copied, failed *atomic.Int64) {
+func (p *mirrorPlan) copyOne(pt *progress.Tracker, rel string, objSize int64, copied, failed *atomic.Int64) bool {
 	srcKey := joinKey(p.srcPrefix, rel)
 	tgtKey := joinKey(p.tgtPrefix, rel)
 
@@ -578,6 +652,7 @@ func (p *mirrorPlan) copyOne(pt progressReporter, rel string, objSize int64, cop
 	} else {
 		err = copyObjectCrossEndpoint(p.srcClient, p.tgtClient, p.srcBucket, srcKey, p.tgtBucket, tgtKey, p.partSize, report)
 	}
+	msg := fmt.Sprintf("%s → %s", p.srcClient.S3Path(p.srcBucket, srcKey), p.tgtClient.S3Path(p.tgtBucket, tgtKey))
 	if err != nil {
 		// 失败：回退已上报字节，避免虚增进度。
 		if r := atomic.LoadInt64(&reported); r != 0 {
@@ -585,20 +660,19 @@ func (p *mirrorPlan) copyOne(pt progressReporter, rel string, objSize int64, cop
 		}
 		// 用户主动取消（Ctrl+C）导致的在途错误不计为失败，静默跳过。
 		if IsCanceled(err) || p.srcClient.Ctx.Err() != nil {
-			return
+			return false
 		}
-		msg := fmt.Sprintf("✗ %s → %s: %v", p.srcClient.S3Path(p.srcBucket, srcKey), p.tgtClient.S3Path(p.tgtBucket, tgtKey), err)
 		failed.Add(1)
-		pt.AddFailed(msg)
-		pt.AddTotalDone(1)
-		return
+		pt.AddFailed(1, fmt.Sprintf("%s: %s", msg, err))
+		return false
 	}
 	// 成功：对账，把进度精确补齐到 objSize（适配服务端 copy / 跨端分片偏差）。
 	if d := objSize - atomic.LoadInt64(&reported); d != 0 {
 		pt.AddTotalSizeDone(d)
 	}
 	copied.Add(1)
-	pt.AddTotalDone(1)
+	pt.AddTotalDone(1, msg)
+	return true
 }
 
 // drainListErr 非阻塞读取列举阶段的首个错误（若有）。

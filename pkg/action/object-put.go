@@ -133,10 +133,16 @@ func (c *S3Client) uploadFile(ctx context.Context, opt PutOptions, mimeType, buc
 		Metadata:     opt.Metadata,
 	}
 
-	if _, err := c.S3.PutObjectStream(ctx, bucket, fileKey, f, fi.Size(), putOpts); err != nil {
-		return fmt.Errorf("upload %s: %s", filePath, FormatAPIError(err))
+	var uploadErr error
+	if fi.Size() >= multipartThreshold {
+		uploadErr = c.uploadMultipartFile(ctx, bucket, fileKey, filePath, f, fi, opt.PartSizeMB, putOpts, report)
+	} else {
+		_, uploadErr = c.S3.PutObjectStream(ctx, bucket, fileKey, f, fi.Size(), putOpts)
 	}
-	if report != nil {
+	if uploadErr != nil {
+		return fmt.Errorf("upload %s: %s", filePath, FormatAPIError(uploadErr))
+	}
+	if report != nil && fi.Size() < multipartThreshold {
 		report(fi.Size())
 	}
 	return nil

@@ -2,7 +2,6 @@ package action
 
 import (
 	"fmt"
-	"io"
 	"os"
 
 	myprint "s3cli/pkg/fmtutil"
@@ -33,18 +32,13 @@ func (c *S3Client) PipeUpload(opt PipeOptions, bucket, key string) error {
 		}
 	}
 
-	data, err := io.ReadAll(os.Stdin)
-	if err != nil {
-		return fmt.Errorf("read stdin: %w", err)
-	}
-
 	putOpts := &s3api.PutObjectOptions{
 		ContentType:  opt.ContentType,
 		StorageClass: opt.StorageClass,
 		Metadata:     opt.Metadata,
 	}
 
-	if _, err := c.S3.PutObject(c.Ctx, bucket, key, data, putOpts); err != nil {
+	if err := c.uploadUnknownSize(c.Ctx, bucket, key, os.Stdin, opt.PartSizeMB, putOpts); err != nil {
 		return fmt.Errorf("pipe upload %s: %s", c.S3Path(bucket, key), FormatAPIError(err))
 	}
 

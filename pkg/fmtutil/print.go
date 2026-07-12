@@ -1,6 +1,7 @@
 package fmtutil
 
 import (
+	"encoding/json"
 	"fmt"
 	"io"
 	"log"
@@ -48,6 +49,14 @@ func NoColor() bool {
 	outMu.RLock()
 	defer outMu.RUnlock()
 	return noColor
+}
+
+// PrintResult emits one JSON value for commands that return structured data.
+// Existing text-only command output remains backward compatible.
+func PrintResult(v any) error {
+	outMu.RLock()
+	defer outMu.RUnlock()
+	return json.NewEncoder(output).Encode(v)
 }
 
 // Printf ------- 黑色函数 -------

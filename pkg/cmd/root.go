@@ -11,8 +11,7 @@ import (
 
 	"s3cli/pkg/config"
 	myprint "s3cli/pkg/fmtutil"
-
-	// "s3cli/pkg/progress"
+	"s3cli/pkg/s3api"
 
 	"github.com/spf13/cobra"
 )
@@ -21,7 +20,12 @@ var (
 	Version   = "dev"
 	Commit    = "none"
 	BuildDate = "unknown"
+	GoVersion = "unknown"
 )
+
+func version() string {
+	return fmt.Sprintf("%s \ngolang %s \ncommit %s\nbuilt %s", Version, GoVersion, Commit, BuildDate)
+}
 
 type cmdGroup struct {
 	ID       string
@@ -48,6 +52,7 @@ func Register(groupID, title string, fn func() *cobra.Command) {
 
 func NewRootCmd() {
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	var timeoutCancel context.CancelFunc
 
 	var (
 		noColor bool
@@ -59,9 +64,20 @@ func NewRootCmd() {
 		Long:          "s3cli is a fast, dependency-free CLI for any S3-compatible object storage.",
 		SilenceUsage:  true,
 		SilenceErrors: true,
-		Version:       fmt.Sprintf("%s (commit %s, built %s)", Version, Commit, BuildDate),
+		Version:       version(),
 		RunE:          func(cmd *cobra.Command, args []string) error { return cmd.Help() },
 		PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
+			if config.G.OutputFormat != "" && config.G.OutputFormat != "text" && config.G.OutputFormat != "json" {
+				return fmt.Errorf("invalid --output %q, expected text or json", config.G.OutputFormat)
+			}
+			if config.G.RequestTimeout > 0 {
+				if timeoutCancel != nil {
+					timeoutCancel()
+				}
+				deadlineCtx, deadlineCancel := context.WithTimeout(cmd.Context(), config.G.RequestTimeout)
+				timeoutCancel = deadlineCancel
+				cmd.SetContext(deadlineCtx)
+			}
 			switch cmd.Name() {
 			case "help", "version":
 				return nil
@@ -76,7 +92,7 @@ func NewRootCmd() {
 			// ── alias / completion 是元命令，不要求配置文件 ──────────
 			for c := cmd; c != nil; c = c.Parent() {
 				switch c.Name() {
-				case "completion", "alias":
+				case "completion", "alias", "local-list", "local-clear":
 					return nil
 				}
 			}
@@ -87,6 +103,9 @@ func NewRootCmd() {
 			return nil
 		},
 		PersistentPostRun: func(cmd *cobra.Command, args []string) {
+			if timeoutCancel != nil {
+				timeoutCancel()
+			}
 			cancel()
 		},
 	}
@@ -101,6 +120,8 @@ func NewRootCmd() {
 	pf.StringVar(&config.G.UserAgentSuffix, "user-agent-suffix", "", "Append extra content to the HTTP User-Agent header")
 	pf.StringArrayVarP(&config.G.Headers, "header", "H", nil, "Add a custom HTTP header (key:value), can repeat")
 	pf.BoolVarP(&config.G.Quiet, "quiet", "q", false, "Disable progress bar; stream plain text output instead")
+	pf.DurationVar(&config.G.RequestTimeout, "request-timeout", 0, "Maximum duration for a command's S3 requests (0 = no limit)")
+	pf.StringVar(&config.G.OutputFormat, "output", "text", "Output format: text or json (supported commands emit structured results)")
 
 	// 从注册表添加所有子命令（带分组显示）。
 	// 同时校验顶层命令名/别名不得重叠：cobra 在命令名与别名冲突时的命中顺序
@@ -131,6 +152,27 @@ func NewRootCmd() {
 		if !errors.Is(err, errAlreadyDisplayed) {
 			myprint.PrintlnBoldRed(err.Error())
 		}
-		os.Exit(1)
+		os.Exit(exitCodeForError(err))
 	}
+}
+
+// exitCodeForError keeps shell automation independent of localized error text.
+// 1 is the generic fallback; command parsing remains Cobra's standard code 2.
+func exitCodeForError(err error) int {
+	if err == nil {
+		return 0
+	}
+	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+		return 5
+	}
+	var apiErr *s3api.ErrorResponse
+	if errors.As(err, &apiErr) {
+		switch apiErr.StatusCode {
+		case 404:
+			return 3
+		case 401, 403:
+			return 4
+		}
+	}
+	return 1
 }

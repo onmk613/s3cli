@@ -8,11 +8,13 @@ rm -rf bin/ vendor/
 VERSION=${VERSION:-$(git describe --tags --always 2>/dev/null || echo "dev")}
 COMMIT=$(git rev-parse --short HEAD 2>/dev/null || echo "none")
 DATE=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+GOVERSION=$(go version | awk '{print $3}')
 
 LDFLAGS="-s -w \
   -X 's3cli/pkg/cmd.Version=${VERSION}' \
   -X 's3cli/pkg/cmd.Commit=${COMMIT}' \
-  -X 's3cli/pkg/cmd.BuildDate=${DATE}'"
+  -X 's3cli/pkg/cmd.BuildDate=${DATE}' \
+  -X 's3cli/pkg/cmd.GoVersion=${GOVERSION}'"
 
 ENTRY=./cmd/s3cli
 

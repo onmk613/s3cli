@@ -121,18 +121,25 @@ func (c *S3Client) rangeGetObject(bucket, key, localFilePath, rng string) error 
 		_ = Body.Close()
 	}(out.Body)
 
-	file, err := os.Create(localFilePath)
+	file, err := os.CreateTemp(filepath.Dir(localFilePath), ".s3cli-download-*")
 	if err != nil {
 		return fmt.Errorf("create file: %w", err)
 	}
+	tmpPath := file.Name()
+	defer os.Remove(tmpPath)
 	defer func(file *os.File) {
 		_ = file.Close()
 	}(file)
 
 	written, err := file.ReadFrom(out.Body)
 	if err != nil {
-		_ = os.Remove(localFilePath)
 		return fmt.Errorf("write file: %w", err)
+	}
+	if err := file.Close(); err != nil {
+		return fmt.Errorf("close file: %w", err)
+	}
+	if err := os.Rename(tmpPath, localFilePath); err != nil {
+		return fmt.Errorf("replace file: %w", err)
 	}
 	myprint.Printf("get: %s [%s] --> %s (%s)\n",
 		c.S3Path(bucket, key), rng, localFilePath, FormatBytes(written))
@@ -143,17 +150,18 @@ func (c *S3Client) downloadFile(key, localPath, bucket string, report func(n int
 	if err := os.MkdirAll(filepath.Dir(localPath), 0o755); err != nil {
 		return 0, fmt.Errorf("mkdir: %w", err)
 	}
-	file, err := os.Create(localPath)
+	file, err := os.CreateTemp(filepath.Dir(localPath), ".s3cli-download-*")
 	if err != nil {
 		return 0, fmt.Errorf("create file: %w", err)
 	}
+	tmpPath := file.Name()
+	defer os.Remove(tmpPath)
 	defer func(file *os.File) {
 		_ = file.Close()
 	}(file)
 
 	out, err := c.S3.GetObject(c.Ctx, bucket, key, nil)
 	if err != nil {
-		_ = os.Remove(localPath)
 		return 0, err
 	}
 	defer func(Body io.ReadCloser) {
@@ -168,8 +176,13 @@ func (c *S3Client) downloadFile(key, localPath, bucket string, report func(n int
 
 	n, err := io.Copy(file, body)
 	if err != nil {
-		_ = os.Remove(localPath)
 		return 0, fmt.Errorf("write file: %w", err)
+	}
+	if err := file.Close(); err != nil {
+		return 0, fmt.Errorf("close file: %w", err)
+	}
+	if err := os.Rename(tmpPath, localPath); err != nil {
+		return 0, fmt.Errorf("replace file: %w", err)
 	}
 	return n, nil
 }

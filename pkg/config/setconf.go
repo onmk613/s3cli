@@ -189,7 +189,7 @@ func SetAliasConf(ctx context.Context, section string) error {
 		sec.DeleteKey("bucket_lookup")
 	}
 
-	if err := cfg.SaveTo(ConfPath); err != nil {
+	if err := saveConfig(cfg, ConfPath); err != nil {
 		return fmt.Errorf("save config: %w", err)
 	}
 	myprint.PrintfGreen("S3 configuration saved to %s\n", ConfPath)

@@ -71,6 +71,11 @@ func NewMirrorCmd() *cobra.Command {
 		concurrency int
 		partSizeMB  int
 		sizeLimit   int64
+		maxDelete   int
+		include     []string
+		exclude     []string
+		manifest    string
+		resume      bool
 	)
 
 	opts := newCmdContext()
@@ -101,13 +106,18 @@ func NewMirrorCmd() *cobra.Command {
 					ObjectKey:     tgtPath.Key,
 					TrailingSlash: tgtPath.TrailingSlash,
 				},
-				Remove:      remove,
-				Overwrite:   overwrite,
-				DryRun:      dryRun,
-				Concurrency: concurrency,
-				PartSizeMB:  partSizeMB,
-				SizeLimit:   sizeLimit,
-				NoProgress:  config.G.Quiet,
+				Remove:       remove,
+				Overwrite:    overwrite,
+				DryRun:       dryRun,
+				Concurrency:  concurrency,
+				PartSizeMB:   partSizeMB,
+				SizeLimit:    sizeLimit,
+				MaxDelete:    maxDelete,
+				Include:      include,
+				Exclude:      exclude,
+				ManifestPath: manifest,
+				Resume:       resume,
+				NoProgress:   config.G.Quiet,
 			})
 		}, &opts),
 	}
@@ -119,5 +129,10 @@ func NewMirrorCmd() *cobra.Command {
 	f.IntVar(&concurrency, "concurrency", config.DefaultConcurrency, "Number of concurrent transfers")
 	f.IntVar(&partSizeMB, "part-size", config.DefaultPartSizeMB, "Multipart part size in MB (cross-endpoint only)")
 	f.Int64Var(&sizeLimit, "size-limit", 0, "Skip objects larger than N bytes (0 = no limit)")
+	f.IntVar(&maxDelete, "max-delete", 0, "Abort before deleting more than N target objects (0 = no limit)")
+	f.StringSliceVar(&include, "include", nil, "Only sync keys matching this glob (can repeat)")
+	f.StringSliceVar(&exclude, "exclude", nil, "Skip keys matching this glob (can repeat)")
+	f.StringVar(&manifest, "manifest", "", "Append successful copied keys to this manifest file")
+	f.BoolVar(&resume, "resume", false, "Skip keys already recorded in --manifest")
 	return cmd
 }

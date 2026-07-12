@@ -56,7 +56,7 @@ func delConf(section string) error {
 	}
 
 	cfg.DeleteSection(section)
-	if err := cfg.SaveTo(ConfPath); err != nil {
+	if err := saveConfig(cfg, ConfPath); err != nil {
 		return fmt.Errorf("save config: %w", err)
 	}
 

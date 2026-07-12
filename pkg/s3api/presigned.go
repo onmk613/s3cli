@@ -2,6 +2,9 @@ package s3api
 
 import (
 	"context"
+	"crypto/hmac"
+	"crypto/sha1"
+	"encoding/base64"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -32,13 +35,25 @@ func (c *Client) PresignedURL(ctx context.Context, bucket, key string, opts *Pre
 	if opts == nil {
 		opts = &PresignOptions{}
 	}
+	if ctx == nil {
+		ctx = context.Background()
+	}
 
 	method := strings.ToUpper(strings.TrimSpace(opts.Method))
 	if method == "" {
 		method = http.MethodGet
 	}
+	switch method {
+	case http.MethodGet, http.MethodPut, http.MethodDelete, http.MethodHead:
+	default:
+		return "", fmt.Errorf("unsupported presign method %q", method)
+	}
 	if opts.Expires <= 0 {
 		opts.Expires = 15 * time.Minute
+	}
+	const maxPresignExpiry = 7 * 24 * time.Hour
+	if opts.Expires > maxPresignExpiry {
+		return "", fmt.Errorf("presign expiration %s exceeds the SigV4 maximum of %s", opts.Expires, maxPresignExpiry)
 	}
 
 	// 构造查询参数
@@ -149,6 +164,14 @@ func (c *Client) PresignV2(_ context.Context, bucket, key string, method string,
 	if method == "" {
 		method = "GET"
 	}
+	switch method {
+	case http.MethodGet, http.MethodPut, http.MethodDelete, http.MethodHead:
+	default:
+		return "", fmt.Errorf("unsupported presign v2 method %q", method)
+	}
+	if expires <= 0 {
+		return "", fmt.Errorf("presign v2 expiration must be positive")
+	}
 
 	targetURL, err := c.resolveURL(bucket, key, nil)
 	if err != nil {
@@ -156,17 +179,19 @@ func (c *Client) PresignV2(_ context.Context, bucket, key string, method string,
 	}
 
 	expireTime := time.Now().Unix() + expires
-	stringToSign := fmt.Sprintf("%s\n\n\n%d\n/%s/%s", method, expireTime, bucket, key)
-
-	signature := sumHMACSHA256([]byte(c.secretKey), []byte(stringToSign))
-	// SignV2 使用 base64 编码的 HMAC-SHA1 (这里用 SHA256 兼容部分实现)
-	// 标准 SignV2 应使用 HMAC-SHA1, 但部分私有化服务接受 SHA256
-	sigHex := fmt.Sprintf("%x", signature)
+	canonicalResource := "/" + bucket
+	if key != "" {
+		canonicalResource += "/" + key
+	}
+	stringToSign := fmt.Sprintf("%s\n\n\n%d\n%s", method, expireTime, canonicalResource)
+	mac := hmac.New(sha1.New, []byte(c.secretKey))
+	_, _ = mac.Write([]byte(stringToSign))
+	signature := base64.StdEncoding.EncodeToString(mac.Sum(nil))
 
 	q := targetURL.Query()
 	q.Set("AWSAccessKeyId", c.accessKey)
 	q.Set("Expires", strconv.FormatInt(expireTime, 10))
-	q.Set("Signature", sigHex)
+	q.Set("Signature", signature)
 	if c.sessionToken != "" {
 		q.Set("SecurityToken", c.sessionToken)
 	}
