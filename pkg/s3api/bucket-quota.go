@@ -6,7 +6,6 @@ import (
 	"errors"
 	"io"
 	"net/url"
-	"s3cli/pkg/s3api/s3utils"
 	"strconv"
 	"strings"
 )
@@ -16,7 +15,7 @@ func (c *Client) SetBucketQuota(ctx context.Context, bucket string, quota int64)
 		return errors.New("set bucket quota is only supported for MinIO server")
 	}
 
-	if err := s3utils.CheckValidBucketNameStrict(bucket); err != nil {
+	if err := checkValidBucketNameStrict(bucket); err != nil {
 		return err
 	}
 
@@ -56,7 +55,7 @@ func (c *Client) InfoBucketQuota(ctx context.Context, bucket string) (int64, err
 		return 0, errors.New("info bucket quota is only supported for MinIO server")
 	}
 
-	if err := s3utils.CheckValidBucketNameStrict(bucket); err != nil {
+	if err := checkValidBucketNameStrict(bucket); err != nil {
 		return 0, err
 	}
 

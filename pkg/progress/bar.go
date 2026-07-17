@@ -2,10 +2,9 @@ package progress
 
 import (
 	"fmt"
+	"math"
 	"strings"
 	"time"
-
-	"s3cli/pkg/utils"
 )
 
 // buildBar 构建进度条字符串
@@ -20,7 +19,7 @@ func (pt *Tracker) buildBar(wd int) string {
 	// 1. 计算速率
 	rate := "0 B/s"
 	if dsz > 0 && startAt.Seconds() > 0.5 {
-		rate = utils.FormatBytes(int64(float64(dsz)/startAt.Seconds())) + "/s"
+		rate = formatBytes(int64(float64(dsz)/startAt.Seconds())) + "/s"
 	}
 
 	// 2. 计算 ETA 与耗时
@@ -57,7 +56,7 @@ func (pt *Tracker) buildBar(wd int) string {
 
 	// 4. 构建右侧文本
 	countStr := fmt.Sprintf("%d/%d", d, t)
-	sizeStr := fmt.Sprintf("%s/%s | %s | %3d%%", utils.FormatBytes(dsz), utils.FormatBytes(tsz), rate, int(pct))
+	sizeStr := fmt.Sprintf("%s/%s | %s | %3d%%", formatBytes(dsz), formatBytes(tsz), rate, int(pct))
 
 	var rightStr string
 	if t > 0 && tsz > 0 {
@@ -171,12 +170,8 @@ func repeatToWidth(unit string, cols int) string {
 	if unit == "" {
 		return strings.Repeat(" ", cols)
 	}
-	var b strings.Builder
-	b.Grow(cols * len(unit))
-	for i := 0; i < cols; i++ {
-		b.WriteString(unit)
-	}
-	return b.String()
+	// strings.Repeat 内部会预分配容量并用 copy 填充，比手动 Builder 循环更快
+	return strings.Repeat(unit, cols)
 }
 
 // colorize 用给定 ANSI 颜色包裹文本；noColor 时原样返回
@@ -210,6 +205,11 @@ func formatDuration(d time.Duration) string {
 
 // stringWidth 计算字符串在终端中的实际显示列宽（去除 ANSI 序列并处理多字节字符）
 func stringWidth(s string) int {
+	// 快速路径：不含 ANSI 转义符时无需分配，直接返回字节长度
+	// （label / rightStr 通常为纯 ASCII/UTF-8 文本，占位即字节数对应的列数）
+	if !strings.ContainsRune(s, '\x1b') {
+		return len(s)
+	}
 	// 如果字符串包含 ANSI 颜色代码，需要先去除 ANSI 代码再计算宽度
 	cleanStr := stripANSI(s)
 	// 如果含有中文等 East Asian 字符，可以使用 runewidth.StringWidth(cleanStr)
@@ -235,4 +235,21 @@ func stripANSI(str string) string {
 		b.WriteRune(r)
 	}
 	return b.String()
+}
+
+func formatBytes(bytes int64) string {
+	if bytes <= 0 {
+		return "0B"
+	}
+	units := []string{"B", "KB", "MB", "GB", "TB", "PB"}
+	base := 1024.0
+	exp := int(math.Log(float64(bytes)) / math.Log(base))
+	if exp >= len(units) {
+		exp = len(units) - 1
+	}
+	value := float64(bytes) / math.Pow(base, float64(exp))
+	s := fmt.Sprintf("%.2f", value)
+	s = strings.TrimRight(s, "0")
+	s = strings.TrimRight(s, ".")
+	return fmt.Sprintf("%s%s", s, units[exp])
 }

@@ -6,12 +6,14 @@ import (
 	"io"
 	"net/http"
 	"net/url"
-	"s3cli/pkg/s3api/s3utils"
 )
+
+// 兼容大多数厂商的获取 Bucket Location API
 
 // getBucketLocationResult 对应 GetBucketLocation 响应体.
 //
-//	<LocationConstraint xmlns="...">us-west-2</LocationConstraint>
+// <?xml version="1.0" encoding="UTF-8"?>
+// <LocationConstraint>us-west-2</LocationConstraint >
 //
 // 注意: us-east-1 返回空字符串.
 type getBucketLocationResult struct {
@@ -23,7 +25,7 @@ type getBucketLocationResult struct {
 //
 // 注意: AWS S3 的 us-east-1 区域返回空字符串.
 func (c *Client) GetBucketLocation(ctx context.Context, bucket string) (string, error) {
-	if err := s3utils.CheckValidBucketNameStrict(bucket); err != nil {
+	if err := checkValidBucketNameStrict(bucket); err != nil {
 		return "", err
 	}
 

@@ -7,7 +7,9 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/xml"
+	"errors"
 	"io"
+	"regexp"
 	"sort"
 	"strings"
 )
@@ -19,6 +21,8 @@ const (
 	// unsignedPayload 表示不对请求体做签名摘要 (流式上传等场景).
 	unsignedPayload = "UNSIGNED-PAYLOAD"
 )
+
+const defaultXMLNS = "https://s3.amazonaws.com/doc/2006-03-01/"
 
 // sortStrings 对字符串切片按字典序排序.
 func sortStrings(s []string) {
@@ -96,4 +100,31 @@ func isUnreserved(c byte) bool {
 func xmlDecoder(body io.Reader, v interface{}) error {
 	d := xml.NewDecoder(body)
 	return d.Decode(v)
+}
+
+var (
+	bucketNameRegex = regexp.MustCompile(`^[A-Za-z0-9][a-zA-Z0-9_\-.]{1,61}[A-Za-z0-9]$`)
+	ipAddress       = regexp.MustCompile(`^(\d+\.){3}\d+$`)
+)
+
+func checkValidBucketNameStrict(bucketName string) error {
+	if strings.TrimSpace(bucketName) == "" {
+		return errors.New("bucket name cannot be empty")
+	}
+	if len(bucketName) < 3 {
+		return errors.New("bucket name cannot be shorter than 3 characters")
+	}
+	if len(bucketName) > 63 {
+		return errors.New("bucket name cannot be longer than 63 characters")
+	}
+	if ipAddress.MatchString(bucketName) {
+		return errors.New("bucket name cannot be an ip address")
+	}
+	if strings.Contains(bucketName, "..") || strings.Contains(bucketName, ".-") || strings.Contains(bucketName, "-.") {
+		return errors.New("bucket name contains invalid characters")
+	}
+	if !bucketNameRegex.MatchString(bucketName) {
+		return errors.New("bucket name contains invalid characters")
+	}
+	return nil
 }

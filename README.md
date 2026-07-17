@@ -25,6 +25,7 @@ s3cli help
 ## Help
 ```txt
 s3cli is a fast, dependency-free CLI for any S3-compatible object storage.
+
 Usage:
   s3cli [flags]
   s3cli [command]
@@ -32,17 +33,8 @@ Usage:
 Endpoint Management
   alias       Manage aliases (S3 endpoint configurations)
 
-Bucket Management
-  mb          Create new bucket(s)
-  rb          Remove bucket(s)
-
-Bucket Configuration
-  cors        Manage CORS configuration for bucket(s)
-  encryption  Manage bucket(s) default encryption (SSE-S3 / SSE-KMS)
-  event       Manage object notifications
-  lifecycle   Manage lifecycle rules
-  policy      Manage bucket policy
-  versioning  Manage bucket versioning
+Bucket Commands
+  bucket      Bucket management and configuration
 
 Read Commands
   diff        Compare files/directories between s3 and/or local paths
@@ -68,7 +60,7 @@ Synchronization
   mirror      Synchronize objects from source to target (one-way sync)
 
 Tools
-  signurl     Print pre-signed S3 URLs
+  share       Print pre-signed S3 URLs
 
 Additional Commands:
   help        Help about any command
@@ -79,6 +71,9 @@ Flags:
   -H, --header stringArray         Add a custom HTTP header (key:value), can repeat
   -h, --help                       help for s3cli
       --no-color                   Disable color output
+      --output string              Output format: text or json (supported commands emit structured results) (default "text")
+  -q, --quiet                      Disable progress bar; stream plain text output instead
+      --request-timeout duration   Maximum duration for a command's S3 requests (0 = no limit)
       --user-agent string          Override the HTTP User-Agent header
       --user-agent-suffix string   Append extra content to the HTTP User-Agent header
   -v, --version                    version for s3cli
@@ -90,37 +85,6 @@ s3cli alias help
 ```
 
 > 路径格式统一为 `别名:桶/路径`，例如 `my-s3:my-bucket/dir/file.txt`。
-
-大于等于 64 MiB 的本地文件会自动使用 Multipart Upload。传输中断后，保持本地文件内容和修改时间不变，再次执行相同的 `put` 命令会从 `$HOME/.s3cli/mpu/` 中保存的安全状态恢复；服务端已上传分片会重新校验后再继续。
-
-`mirror --remove` 可配合以下保护项使用：
-
-```bash
-s3cli --request-timeout 10m mirror source:bucket/ target:bucket/ \
-  --include 'logs/*' --exclude '*.tmp' --max-delete 100
-```
-
-## 测试
-
-```bash
-make test
-make test-race
-make coverage
-make build
-```
-
-使用 MinIO 运行 S3 兼容性冒烟测试：
-
-```bash
-docker compose -f docker-compose.integration.yml up -d minio
-S3_TEST_ENDPOINT=http://127.0.0.1:9000 \
-S3_TEST_ACCESS_KEY=minioadmin \
-S3_TEST_SECRET_KEY=minioadmin \
-go test -tags=integration ./tests/integration
-docker compose -f docker-compose.integration.yml down
-```
-
-同一套集成测试也可用于 Ceph RGW 或 AWS S3；设置对应 endpoint、access key、secret key，必要时设置 `S3_TEST_REGION`。测试会创建并清理一个唯一 bucket，因此只应使用专用的测试账号。
 
 ## 许可证
 

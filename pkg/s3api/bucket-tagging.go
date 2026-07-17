@@ -6,7 +6,7 @@ import (
 )
 
 // Tag 是单个标签.
-type Tag struct {
+type Tagging struct {
 	XMLName xml.Name `xml:"Tag"`
 	Key     string   `xml:"Key"`
 	Value   string   `xml:"Value"`
@@ -16,13 +16,13 @@ type Tag struct {
 type taggingConfig struct {
 	XMLName xml.Name `xml:"Tagging"`
 	TagSet  struct {
-		XMLName xml.Name `xml:"TagSet"`
-		Tag     []Tag    `xml:"Tag"`
+		XMLName xml.Name  `xml:"TagSet"`
+		Tag     []Tagging `xml:"Tag"`
 	} `xml:"TagSet"`
 }
 
 // SetBucketTagging 设置 bucket 的标签集合.
-func (c *Client) SetBucketTagging(ctx context.Context, bucket string, tags []Tag) error {
+func (c *Client) SetBucketTagging(ctx context.Context, bucket string, tags []Tagging) error {
 	cfg := taggingConfig{}
 	cfg.TagSet.Tag = tags
 	body, err := marshalXMLWithHeader(&cfg)
@@ -35,7 +35,7 @@ func (c *Client) SetBucketTagging(ctx context.Context, bucket string, tags []Tag
 // GetBucketTagging 获取 bucket 的标签集合.
 //
 // 若 bucket 无标签, S3 返回 NoSuchTagSet 错误.
-func (c *Client) GetBucketTagging(ctx context.Context, bucket string) ([]Tag, error) {
+func (c *Client) GetBucketTagging(ctx context.Context, bucket string) ([]Tagging, error) {
 	var result taggingConfig
 	if err := c.getBucketSubresourceXML(ctx, bucket, "tagging", &result); err != nil {
 		return nil, err

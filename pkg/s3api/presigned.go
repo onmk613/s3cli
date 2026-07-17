@@ -73,7 +73,7 @@ func (c *Client) PresignedURL(ctx context.Context, bucket, key string, opts *Pre
 	}
 
 	// 解析目标 URL
-	targetURL, err := c.resolveURL(bucket, key, urlValues)
+	targetURL, err := c.resolveURL(ctx, bucket, key, urlValues)
 	if err != nil {
 		return "", err
 	}
@@ -159,7 +159,7 @@ func (c *Client) PresignHead(ctx context.Context, bucket, key string, expires ti
 // PresignV2 生成 SigV2 预签名 URL (兼容旧式 S3 服务).
 //
 // SignV2 签名最长有效期无限制, 适合需要长期有效 URL 的场景.
-func (c *Client) PresignV2(_ context.Context, bucket, key string, method string, expires int64) (string, error) {
+func (c *Client) PresignV2(ctx context.Context, bucket, key string, method string, expires int64) (string, error) {
 	method = strings.ToUpper(strings.TrimSpace(method))
 	if method == "" {
 		method = "GET"
@@ -173,7 +173,7 @@ func (c *Client) PresignV2(_ context.Context, bucket, key string, method string,
 		return "", fmt.Errorf("presign v2 expiration must be positive")
 	}
 
-	targetURL, err := c.resolveURL(bucket, key, nil)
+	targetURL, err := c.resolveURL(ctx, bucket, key, nil)
 	if err != nil {
 		return "", err
 	}

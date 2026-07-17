@@ -12,7 +12,7 @@ import (
 // SetObjectTagging 设置对象的标签集合.
 //
 // 可选 versionID 指定版本.
-func (c *Client) SetObjectTagging(ctx context.Context, bucket, key string, tags []Tag, versionID string) error {
+func (c *Client) SetObjectTagging(ctx context.Context, bucket, key string, tags []Tagging, versionID string) error {
 	cfg := taggingConfig{}
 	cfg.TagSet.Tag = tags
 	body, err := xml.Marshal(&cfg)
@@ -53,7 +53,7 @@ func (c *Client) SetObjectTagging(ctx context.Context, bucket, key string, tags 
 // GetObjectTagging 获取对象的标签集合.
 //
 // 可选 versionID 指定版本.
-func (c *Client) GetObjectTagging(ctx context.Context, bucket, key, versionID string) ([]Tag, error) {
+func (c *Client) GetObjectTagging(ctx context.Context, bucket, key, versionID string) ([]Tagging, error) {
 	urlValues := make(url.Values)
 	urlValues.Set("tagging", "")
 	if versionID != "" {

@@ -14,7 +14,7 @@ func testClient(t *testing.T, h http.Handler) *Client {
 	t.Helper()
 	s := httptest.NewServer(h)
 	t.Cleanup(s.Close)
-	c, err := New(&Options{Endpoint: s.URL, AccessKey: "access", SecretKey: "secret", NotCheckVendor: true, MaxRetries: 2})
+	c, err := New(&Options{Endpoint: s.URL, AccessKey: "access", SecretKey: "secret", MaxRetries: 2})
 	if err != nil {
 		t.Fatal(err)
 	}
