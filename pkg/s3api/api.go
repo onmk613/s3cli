@@ -10,111 +10,114 @@ import (
 	"net/url"
 	"strings"
 	"time"
+
+	"s3cli/pkg/kvcache"
 )
 
 type Client struct {
+	// 基础配置
 	endpointURL  *url.URL
 	accessKey    string
 	secretKey    string
 	sessionToken string
-	region       string
-	vendor       Provider
 
+	// 地区和厂商
+	region string
+	vendor Provider
+
+	// bucket 寻址方式和自定义寻址函数
 	lookup   BucketLookupType
 	lookupFn BucketLookupFunc
 
-	transport  http.RoundTripper
+	// bucketLocCache 缓存 bucket->region, 供含 %(region) 的自定义寻址模板复用,
+	// 避免每次请求都探测 GetBucketLocation。
+	bucketLocCache *kvcache.Cache[string, string]
+
+	// httpClient 用于发送 HTTP 请求, 可自定义 Transport.
 	httpClient *http.Client
 
+	// 最大重试次数
 	maxRetries int
 }
 
 type Options struct {
-	Endpoint       string
-	AccessKey      string
-	SecretKey      string
-	SessionToken   string
-	Region         string
-	Vendor         Provider
-	NotCheckVendor bool
+	// 基础配置
+	Endpoint     string
+	AccessKey    string
+	SecretKey    string
+	SessionToken string
 
+	// 地区和厂商
+	Region string
+	Vendor Provider
+
+	// bucket 寻址方式和自定义寻址函数
 	BucketLookup       BucketLookupType
 	BucketLookupViaURL BucketLookupFunc
 
+	// 自定义http.Transport, 用于注入自定义header / 代理 / 证书等.
 	Transport http.RoundTripper
 
+	// 最大重试次数
 	MaxRetries int
 }
 
 func New(opts *Options) (*Client, error) {
-	if opts == nil {
-		return nil, errors.New("options cannot be nil")
+	// 检查必填参数
+	if opts == nil || opts.Endpoint == "" || opts.AccessKey == "" || opts.SecretKey == "" {
+		return nil, errors.New("endpoint, access key, and secret key cannot be empty")
 	}
 
+	// 补齐http头部
+	if !strings.Contains(opts.Endpoint, "://") {
+		opts.Endpoint = "http://" + opts.Endpoint
+	}
+
+	// 解析endpoint为url.URL
 	endpointURL, err := url.Parse(opts.Endpoint)
 	if err != nil {
 		return nil, fmt.Errorf("invalid endpoint URL: %v", err)
 	}
 
-	if opts.Endpoint == "" {
-		return nil, errors.New("endpoint cannot be empty")
-	}
-
-	if opts.AccessKey == "" {
-		return nil, errors.New("access key cannot be empty")
-	}
-
-	if opts.SecretKey == "" {
-		return nil, errors.New("secret key cannot be empty")
-	}
-
+	// 解析寻址函数
 	if opts.BucketLookupViaURL == nil && opts.BucketLookup == BucketLookupAuto {
 		opts.BucketLookup = BucketLookupPath
 	}
 
+	// region
 	if opts.Region == "" {
 		opts.Region = "us-east-1"
 	}
 
+	// 重试次数
 	if opts.MaxRetries <= 0 {
 		opts.MaxRetries = 3
 	}
 
+	// transport
 	transport := opts.Transport
 	if transport == nil {
 		transport = http.DefaultTransport
 	}
 
-	if !opts.NotCheckVendor {
-		opts.Vendor = detectVendor(context.Background(), opts.Endpoint, opts.AccessKey, opts.SecretKey, opts.SessionToken, opts.Region, transport)
-	}
-
 	return &Client{
-		endpointURL:  endpointURL,
-		accessKey:    opts.AccessKey,
-		secretKey:    opts.SecretKey,
-		sessionToken: opts.SessionToken,
-		region:       opts.Region,
-		vendor:       opts.Vendor,
-		lookup:       opts.BucketLookup,
-		lookupFn:     opts.BucketLookupViaURL,
-		transport:    transport,
-		httpClient:   &http.Client{Transport: transport},
-		maxRetries:   opts.MaxRetries,
+		endpointURL:    endpointURL,
+		accessKey:      opts.AccessKey,
+		secretKey:      opts.SecretKey,
+		sessionToken:   opts.SessionToken,
+		region:         opts.Region,
+		vendor:         opts.Vendor,
+		lookup:         opts.BucketLookup,
+		lookupFn:       opts.BucketLookupViaURL,
+		bucketLocCache: &kvcache.Cache[string, string]{},
+		httpClient:     &http.Client{Transport: transport},
+		maxRetries:     opts.MaxRetries,
 	}, nil
 }
 
 // Endpoint 返回配置的 endpoint 字符串.
 func (c *Client) Endpoint() string {
-	if c.endpointURL == nil {
-		return ""
-	}
 	return c.endpointURL.String()
-}
-
-// Region 返回配置的区域.
-func (c *Client) Region() string {
-	return c.region
 }
 
 // AccessKey 返回配置的 AccessKey.
@@ -132,76 +135,17 @@ func (c *Client) SessionToken() string {
 	return c.sessionToken
 }
 
-// Vendor 返回 S3 厂商类型 (aws / cos / oss / minio).
-func (c *Client) Vendor() Provider {
-	return c.vendor
-}
-
-type BucketLookupType int
+type Provider int
 
 const (
-	BucketLookupAuto BucketLookupType = iota
-	BucketLookupDNS
-	BucketLookupPath
+	ProviderAws Provider = iota
+	ProviderMinIO
+	ProviderSeaweedFS
 )
 
-type BucketLookupFunc interface {
-	ResolveCustomEndpoint(bucket string) (*url.URL, error)
-}
-
-// resolveURL 根据 bucket 寻址方式 (path / virtual-host / 自定义模板) 生成目标 URL.
-func (c *Client) resolveURL(bucketName, objectName string, queryValues url.Values) (*url.URL, error) {
-	// 自定义 endpoint 模板: 把 bucket 名替换进模板生成完整 URL
-	if c.lookupFn != nil {
-		customURL, err := c.lookupFn.ResolveCustomEndpoint(bucketName)
-		if err != nil {
-			return nil, err
-		}
-		return c.buildURL(customURL.Host, customURL.Scheme, bucketName, objectName, queryValues, BucketLookupDNS)
-	}
-
-	lookup := c.lookup
-	if lookup == BucketLookupAuto {
-		lookup = BucketLookupPath
-	}
-	return c.buildURL(c.endpointURL.Host, c.endpointURL.Scheme, bucketName, objectName, queryValues, lookup)
-}
-
-// buildURL 根据寻址方式拼接最终请求 URL.
-// host/scheme 为基准地址; DNS 风格会把 bucket 前置到 host, path 风格把 bucket 放入路径.
-func (c *Client) buildURL(host, scheme, bucketName, objectName string, queryValues url.Values, lookup BucketLookupType) (*url.URL, error) {
-	var p string
-	switch {
-	case bucketName == "":
-		// service 级请求, 如 ListBuckets
-		p = "/"
-	case lookup == BucketLookupDNS:
-		host = bucketName + "." + host
-		p = "/"
-		if objectName != "" {
-			p += objectName
-		}
-	default: // BucketLookupPath
-		p = "/" + bucketName
-		if objectName != "" {
-			p += "/" + objectName
-		}
-		// objectName 为空时保持 "/test-bucket"，不加尾斜杠
-	}
-
-	u := &url.URL{
-		Scheme: scheme,
-		Host:   host,
-		Path:   p,
-		// Path must remain unescaped. RawPath is the matching escaped form used
-		// by url.URL and SigV4; assigning an already escaped path to Path makes
-		// '%' become '%25' on the wire.
-		RawPath: encodePath(p),
-	}
-	if len(queryValues) > 0 {
-		u.RawQuery = s3EncodeQuery(queryValues)
-	}
-	return u, nil
+// Provider 设置厂商, 方便在针对一些特殊调用时调整
+func (c *Client) Provider(p Provider) {
+	c.vendor = p
 }
 
 // requestMetadata 描述一次 S3 API 请求所需的全部元数据.
@@ -210,11 +154,14 @@ type requestMetadata struct {
 	bucketName     string
 	objectName     string
 	bucketLocation string // 可选, 用于创建 bucket 时指定区域
-	customPath     string // 可选, 用于指定自定义路径
 
+	// 可选, 用于指定自定义路径
+	customPath string
+	// forcePathStyle 强制用基准 endpoint 的 path-style 寻址, 跳过自定义模板与 region 解析。
+	// 用于 GetBucketLocation 探测, 打破自定义 region 寻址的引导环。
+	forcePathStyle bool
 	// 查询参数, 如 ?versioning / ?uploads / list-type=2 等
 	queryValues url.Values
-
 	// 自定义请求头, 如 x-amz-meta-* / Content-Type 等
 	customHeader http.Header
 
@@ -230,10 +177,18 @@ type requestMetadata struct {
 // newRequest 构建一个已签名 (SigV4) 的 *http.Request.
 func (c *Client) newRequest(ctx context.Context, method string, meta requestMetadata, signingRegion string) (*http.Request, error) {
 	if method == "" {
-		method = http.MethodGet
+		method = http.MethodPost
 	}
 
-	targetURL, err := c.resolveURL(meta.bucketName, meta.objectName, meta.queryValues)
+	// forcePathStyle: 跳过自定义寻址与 region 解析, 直接用基准 endpoint 的 path-style。
+	// 用于 GetBucketLocation 探测, 打破 "需要 region 才能寻址, 寻址才能拿 region" 的引导环。
+	var err error
+	var targetURL *url.URL
+	if meta.forcePathStyle {
+		targetURL, err = c.buildURL(c.endpointURL.Host, c.endpointURL.Scheme, meta.bucketName, meta.objectName, meta.queryValues, BucketLookupPath)
+	} else {
+		targetURL, err = c.resolveURL(ctx, meta.bucketName, meta.objectName, meta.queryValues)
+	}
 	if err != nil {
 		return nil, err
 	}

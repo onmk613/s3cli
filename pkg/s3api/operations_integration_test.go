@@ -8,8 +8,6 @@ import (
 	"strings"
 	"sync"
 	"testing"
-
-	"s3cli/pkg/s3api/cors"
 )
 
 func TestObjectMultipartDeleteAndBucketConfigurationAPIs(t *testing.T) {
@@ -50,7 +48,7 @@ func TestObjectMultipartDeleteAndBucketConfigurationAPIs(t *testing.T) {
 	})
 	s := httptest.NewServer(h)
 	defer s.Close()
-	c, err := New(&Options{Endpoint: s.URL, AccessKey: "access", SecretKey: "secret", NotCheckVendor: true})
+	c, err := New(&Options{Endpoint: s.URL, AccessKey: "access", SecretKey: "secret"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -84,7 +82,7 @@ func TestObjectMultipartDeleteAndBucketConfigurationAPIs(t *testing.T) {
 		t.Fatalf("batch=%#v err=%v", batch, err)
 	}
 
-	corsConfig := &cors.Config{CORSRules: []cors.Rule{{AllowedMethod: []string{"GET"}, AllowedOrigin: []string{"*"}}}}
+	corsConfig := &CorsConfig{CORSRules: []CorsRule{{AllowedMethod: []string{"GET"}, AllowedOrigin: []string{"*"}}}}
 	if err := c.SetBucketCors(ctx, "bucket", corsConfig); err != nil {
 		t.Fatal(err)
 	}

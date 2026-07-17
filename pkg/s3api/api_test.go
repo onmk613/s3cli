@@ -28,8 +28,63 @@ func TestBuildURLEscapesObjectKeyExactlyOnce(t *testing.T) {
 	}
 }
 
+// TestBuildURLFromBaseNoDoubleBucket 验证自定义寻址不会把 bucket 同时放进 host 和 path。
+// 模板解析出的 base 已含 bucket, 此处仅应追加 object key。
+func TestBuildURLFromBaseNoDoubleBucket(t *testing.T) {
+	// 虚拟主机模板: https://www.%(bucket).example.com -> bucket 已在 host
+	vhostBase := mustParseURL(t, "https://www.mydata.example.com")
+	u, err := buildURLFromBase(vhostBase, "photos/cat.png", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// 期望 host 保留 bucket, path 仅含 object, 不重复出现 bucket
+	if got := u.String(); got != "https://www.mydata.example.com/photos/cat.png" {
+		t.Fatalf("vhost custom URL = %q, want no double bucket", got)
+	}
+	if strings.Count(u.Path, "mydata") != 0 {
+		t.Fatalf("bucket leaked into path: %q", u.Path)
+	}
+
+	// 无 object (bucket 根级请求): 虚拟主机应为 https://www.mydata.example.com/
+	u2, err := buildURLFromBase(vhostBase, "", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := u2.String(); got != "https://www.mydata.example.com/" {
+		t.Fatalf("bucket-root custom URL = %q", got)
+	}
+
+	// path 风格模板: https://example.com/%(bucket) -> base path=/mydata
+	pathBase := mustParseURL(t, "https://example.com/mydata")
+	u3, err := buildURLFromBase(pathBase, "photos/cat.png", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := u3.String(); got != "https://example.com/mydata/photos/cat.png" {
+		t.Fatalf("path-style custom URL = %q", got)
+	}
+
+	// object key 中的特殊字符需按 SigV4 转义一次
+	u4, err := buildURLFromBase(vhostBase, "a b/中文", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(u4.String(), "a%20b/") || !strings.Contains(u4.RawPath, "%E4%B8%AD%E6%96%87") {
+		t.Fatalf("object key not escaped once: %q (rawpath %q)", u4.String(), u4.RawPath)
+	}
+}
+
+func mustParseURL(t *testing.T, raw string) *url.URL {
+	t.Helper()
+	u, err := url.Parse(raw)
+	if err != nil {
+		t.Fatalf("parse %q: %v", raw, err)
+	}
+	return u
+}
+
 func TestPresignedURLRejectsInvalidInputs(t *testing.T) {
-	c, err := New(&Options{Endpoint: "https://s3.example.test", AccessKey: "key", SecretKey: "secret", NotCheckVendor: true})
+	c, err := New(&Options{Endpoint: "https://s3.example.test", AccessKey: "key", SecretKey: "secret"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -42,7 +97,7 @@ func TestPresignedURLRejectsInvalidInputs(t *testing.T) {
 }
 
 func TestPresignV2UsesBase64SHA1Signature(t *testing.T) {
-	c, err := New(&Options{Endpoint: "https://s3.example.test", AccessKey: "key", SecretKey: "secret", NotCheckVendor: true})
+	c, err := New(&Options{Endpoint: "https://s3.example.test", AccessKey: "key", SecretKey: "secret"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -63,14 +118,5 @@ func TestPresignV2UsesBase64SHA1Signature(t *testing.T) {
 	}
 	if _, err := c.PresignV2(nil, "bucket", "object", "POST", 60); err == nil {
 		t.Fatal("expected unsupported method error")
-	}
-}
-
-func TestProviderCapabilities(t *testing.T) {
-	if !((&Client{vendor: ProviderMinIO}).Capabilities().SupportsBucketQuota) {
-		t.Fatal("MinIO profile should expose bucket quota support")
-	}
-	if !((&Client{vendor: Provider("unknown")}).Capabilities().SupportsSigV4) {
-		t.Fatal("unknown provider should retain conservative SigV4 compatibility")
 	}
 }

@@ -19,8 +19,13 @@ func TestBuildStyledBarBoundsAndStyle(t *testing.T) {
 	if got := repeatToWidth("", 3); got != "   " {
 		t.Fatalf("empty unit = %q", got)
 	}
-	if got := colorize(true, "red", "text"); got != "text" || !strings.Contains(colorize(false, "red", "text"), "text") {
-		t.Fatal("colorize failed")
+	// 无颜色：原样返回
+	if got := colorize("", "text"); got != "text" {
+		t.Fatalf("no-color passthrough = %q", got)
+	}
+	// 有颜色：包裹 ANSI 并保留原文
+	if got := colorize("red", "text"); !strings.Contains(got, "text") || !strings.Contains(got, ansiReset) {
+		t.Fatalf("colorize = %q", got)
 	}
 }
 

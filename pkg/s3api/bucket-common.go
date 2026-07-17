@@ -7,7 +7,6 @@ import (
 	"io"
 	"net/http"
 	"net/url"
-	"s3cli/pkg/s3api/s3utils"
 )
 
 // ListBuckets 列出当前凭证下所有可访问的 bucket.
@@ -35,7 +34,7 @@ type MakeBucketOptions struct {
 
 // CreateBucket 创建一个新的 bucket.
 func (c *Client) CreateBucket(ctx context.Context, bucketName string, opts *MakeBucketOptions) error {
-	if err := s3utils.CheckValidBucketNameStrict(bucketName); err != nil {
+	if err := checkValidBucketNameStrict(bucketName); err != nil {
 		return err
 	}
 
@@ -72,7 +71,7 @@ func (c *Client) CreateBucket(ctx context.Context, bucketName string, opts *Make
 
 // DeleteBucket 删除一个 bucket. 该 bucket 必须为空.
 func (c *Client) DeleteBucket(ctx context.Context, bucketName string) error {
-	if err := s3utils.CheckValidBucketNameStrict(bucketName); err != nil {
+	if err := checkValidBucketNameStrict(bucketName); err != nil {
 		return err
 	}
 
@@ -102,7 +101,7 @@ func (c *Client) DeleteBucket(ctx context.Context, bucketName string) error {
 
 // putBucketSubresource 以 PUT 方式写入桶子资源配置 (body 为已序列化的 XML).
 func (c *Client) putBucketSubresource(ctx context.Context, bucket, subresource string, body []byte) error {
-	if err := s3utils.CheckValidBucketNameStrict(bucket); err != nil {
+	if err := checkValidBucketNameStrict(bucket); err != nil {
 		return err
 	}
 
@@ -134,7 +133,7 @@ func (c *Client) putBucketSubresource(ctx context.Context, bucket, subresource s
 // getBucketSubresource 以 GET 方式读取桶子资源配置, 返回响应供调用方解码.
 // 调用方负责关闭返回的 resp.Body.
 func (c *Client) getBucketSubresource(ctx context.Context, bucket, subresource string) (*http.Response, error) {
-	if err := s3utils.CheckValidBucketNameStrict(bucket); err != nil {
+	if err := checkValidBucketNameStrict(bucket); err != nil {
 		return nil, err
 	}
 
@@ -163,7 +162,7 @@ func (c *Client) getBucketSubresourceXML(ctx context.Context, bucket, subresourc
 
 // deleteBucketSubresource 以 DELETE 方式删除桶子资源配置.
 func (c *Client) deleteBucketSubresource(ctx context.Context, bucket, subresource string) error {
-	if err := s3utils.CheckValidBucketNameStrict(bucket); err != nil {
+	if err := checkValidBucketNameStrict(bucket); err != nil {
 		return err
 	}
 

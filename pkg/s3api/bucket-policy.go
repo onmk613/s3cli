@@ -5,12 +5,11 @@ import (
 	"encoding/json"
 	"io"
 	"net/url"
-	"s3cli/pkg/s3api/s3utils"
 	"strings"
 )
 
 func (c *Client) SetBucketPolicy(ctx context.Context, bucket string, data []byte) error {
-	if err := s3utils.CheckValidBucketNameStrict(bucket); err != nil {
+	if err := checkValidBucketNameStrict(bucket); err != nil {
 		return err
 	}
 
@@ -42,7 +41,7 @@ func (c *Client) SetBucketPolicy(ctx context.Context, bucket string, data []byte
 }
 
 func (c *Client) GetBucketPolicy(ctx context.Context, bucket string) ([]byte, error) {
-	if err := s3utils.CheckValidBucketNameStrict(bucket); err != nil {
+	if err := checkValidBucketNameStrict(bucket); err != nil {
 		return nil, err
 	}
 
@@ -71,7 +70,7 @@ func (c *Client) GetBucketPolicy(ctx context.Context, bucket string) ([]byte, er
 }
 
 func (c *Client) DeleteBucketPolicy(ctx context.Context, bucket string) error {
-	if err := s3utils.CheckValidBucketNameStrict(bucket); err != nil {
+	if err := checkValidBucketNameStrict(bucket); err != nil {
 		return err
 	}
 
