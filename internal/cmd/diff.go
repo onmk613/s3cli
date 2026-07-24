@@ -2,9 +2,9 @@ package cmd
 
 import (
 	"fmt"
-	"os"
+
 	"s3cli/internal/client"
-	"s3cli/internal/utils"
+	"s3cli/internal/s3path"
 
 	"s3cli/internal/action"
 	"s3cli/internal/config"
@@ -46,7 +46,7 @@ func NewDiffCmd() *cobra.Command {
 				_, ok := config.G.S[name]
 				return ok
 			}
-			makeClient := func(sp *utils.S3Path) (*s3api.Client, error) {
+			makeClient := func(sp *s3path.Path) (*s3api.Client, error) {
 				cli, _, err := client.ParsePathAndNewClient(cmd.Context(), formatPath(sp))
 				return cli, err
 			}
@@ -79,8 +79,10 @@ func NewDiffCmd() *cobra.Command {
 				return nil
 			}
 			if action.IsDifferErr(err) {
-				// 类似 Unix diff：有差异时退出码为 1，但不再额外打印错误
-				os.Exit(1)
+				// 类似 Unix diff：有差异时退出码为 1，但不再额外打印错误。
+				// 走统一错误通道（而非 os.Exit），保证 root 的 defer/清理逻辑正常执行;
+				// errAlreadyDisplayed 抑制重复打印, exitCodeForError 归一到退出码 1。
+				return fmt.Errorf("%w: %w", errAlreadyDisplayed, err)
 			}
 			return err
 		},
@@ -96,10 +98,8 @@ func NewDiffCmd() *cobra.Command {
 
 // formatPath 把已解析的 S3Path 还原成 "alias:bucket/key" 字符串。
 // 仅用于复用 ParsePathAndNewClient 的客户端缓存逻辑。
-func formatPath(sp *utils.S3Path) string {
-	if sp.Bucket == "" {
-		return sp.Alias
-	}
+// 调用方 (ParseDiffArg) 已保证 sp.Bucket 非空。
+func formatPath(sp *s3path.Path) string {
 	key := sp.Key
 	if sp.TrailingSlash && key != "" && key[len(key)-1] != '/' {
 		key += "/"

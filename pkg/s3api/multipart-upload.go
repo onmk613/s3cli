@@ -172,9 +172,15 @@ type completeMultipartUploadResult struct {
 
 // CompleteMultipartUpload 完成分片上传.
 //
-// parts 必须按 partNumber 升序排列.
+// parts 必须按 partNumber 升序排列; parts 中 ETag 允许带引号,
+// 序列化前统一去引号 (UploadPart 的输出已去引号, 此处兜底调用方自组 ETag 的场景).
 func (c *Client) CompleteMultipartUpload(ctx context.Context, bucket, key, uploadID string, parts []CompletedPart) (*CompleteMultipartUploadOutput, error) {
-	body, err := xml.Marshal(&completedMultipartUpload{Parts: parts})
+	normalized := make([]CompletedPart, len(parts))
+	for i, p := range parts {
+		p.ETag = trimQuotes(p.ETag)
+		normalized[i] = p
+	}
+	body, err := xml.Marshal(&completedMultipartUpload{Parts: normalized})
 	if err != nil {
 		return nil, err
 	}

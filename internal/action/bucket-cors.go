@@ -3,7 +3,6 @@ package action
 import (
 	"bytes"
 	"fmt"
-	"s3cli/internal/utils"
 
 	myprint "s3cli/pkg/fmtutil"
 	s3 "s3cli/pkg/s3api"
@@ -11,7 +10,7 @@ import (
 
 // SetCors 给桶设置 CORS 规则 (XML 或 JSON 自动识别)
 func (c *S3Client) SetCors(corsFile string, bucket string) error {
-	data, format, err := utils.LoadAWSConfigFile(corsFile)
+	data, format, err := loadAWSConfigFile(corsFile)
 	if err != nil {
 		return err
 	}
@@ -53,7 +52,7 @@ func parseCORSConfig(data []byte, format string) (*s3.CorsConfig, error) {
 	switch format {
 	case "json":
 		var c s3.CorsConfig
-		if err := utils.UnmarshalAWS(data, "json", &c); err != nil {
+		if err := unmarshalAWS(data, "json", &c); err != nil {
 			return nil, err
 		}
 		return &c, nil

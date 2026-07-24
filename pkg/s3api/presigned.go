@@ -48,17 +48,19 @@ func (c *Client) PresignedURL(ctx context.Context, bucket, key string, opts *Pre
 	default:
 		return "", fmt.Errorf("unsupported presign method %q", method)
 	}
-	if opts.Expires <= 0 {
-		opts.Expires = 15 * time.Minute
+	// 用局部变量承载默认值, 避免改写调用方持有的 opts。
+	expires := opts.Expires
+	if expires <= 0 {
+		expires = 15 * time.Minute
 	}
 	const maxPresignExpiry = 7 * 24 * time.Hour
-	if opts.Expires > maxPresignExpiry {
-		return "", fmt.Errorf("presign expiration %s exceeds the SigV4 maximum of %s", opts.Expires, maxPresignExpiry)
+	if expires > maxPresignExpiry {
+		return "", fmt.Errorf("presign expiration %s exceeds the SigV4 maximum of %s", expires, maxPresignExpiry)
 	}
 
 	// 构造查询参数
 	urlValues := make(url.Values)
-	urlValues.Set("X-Amz-Expires", strconv.FormatInt(int64(opts.Expires.Seconds()), 10))
+	urlValues.Set("X-Amz-Expires", strconv.FormatInt(int64(expires.Seconds()), 10))
 	if opts.VersionID != "" {
 		urlValues.Set("versionId", opts.VersionID)
 	}
@@ -98,12 +100,19 @@ func (c *Client) PresignedURL(ctx context.Context, bucket, key string, opts *Pre
 	if c.sessionToken != "" {
 		q.Set("X-Amz-Security-Token", c.sessionToken)
 	}
-	q.Set("X-Amz-Expires", strconv.FormatInt(int64(opts.Expires.Seconds()), 10))
 	targetURL.RawQuery = s3EncodeQuery(q)
 	req.URL = targetURL
 
-	// 构建规范请求 (query 签名方式, payload hash = "UNSIGNED-PAYLOAD")
-	canonicalRequest, signedHeaders := buildCanonicalRequest(req, unsignedPayload)
+	// X-Amz-SignedHeaders 必须先进入 query 再计算签名:
+	// 服务端验证时会把它(以及除 X-Amz-Signature 外的全部参数)计入 canonical query,
+	// 若签名后再追加, 两端 canonical request 不一致, 必返 SignatureDoesNotMatch。
+	// 第一遍构建仅用于取 signedHeaders (预签名只签 host 头)。
+	_, signedHeaders := buildCanonicalRequest(req, unsignedPayload)
+	q.Set("X-Amz-SignedHeaders", signedHeaders)
+	targetURL.RawQuery = s3EncodeQuery(q)
+
+	// 第二遍构建才是用于签名的 canonical request (query 签名方式, payload = "UNSIGNED-PAYLOAD")
+	canonicalRequest, _ := buildCanonicalRequest(req, unsignedPayload)
 
 	scope := strings.Join([]string{scopeDate, c.region, serviceS3, "aws4_request"}, "/")
 	stringToSign := strings.Join([]string{
@@ -116,8 +125,7 @@ func (c *Client) PresignedURL(ctx context.Context, bucket, key string, opts *Pre
 	signingKey := deriveSigningKey(c.secretKey, scopeDate, c.region)
 	signature := hexHMAC(signingKey, stringToSign)
 
-	// 把签名追加到 query
-	q.Set("X-Amz-SignedHeaders", signedHeaders)
+	// 仅 X-Amz-Signature 在签名后追加
 	q.Set("X-Amz-Signature", signature)
 	targetURL.RawQuery = s3EncodeQuery(q)
 
@@ -183,7 +191,13 @@ func (c *Client) PresignV2(ctx context.Context, bucket, key string, method strin
 	if key != "" {
 		canonicalResource += "/" + key
 	}
-	stringToSign := fmt.Sprintf("%s\n\n\n%d\n%s", method, expireTime, canonicalResource)
+	// 临时凭证必须把 x-amz-security-token 计入 StringToSign
+	// (作为 CanonicalizedAmzHeaders 的一部分), 否则 AWS 校验签名不匹配。
+	var amzHeaders string
+	if c.sessionToken != "" {
+		amzHeaders = "x-amz-security-token:" + c.sessionToken + "\n"
+	}
+	stringToSign := fmt.Sprintf("%s\n\n\n%d\n%s%s", method, expireTime, amzHeaders, canonicalResource)
 	mac := hmac.New(sha1.New, []byte(c.secretKey))
 	_, _ = mac.Write([]byte(stringToSign))
 	signature := base64.StdEncoding.EncodeToString(mac.Sum(nil))
@@ -193,7 +207,8 @@ func (c *Client) PresignV2(ctx context.Context, bucket, key string, method strin
 	q.Set("Expires", strconv.FormatInt(expireTime, 10))
 	q.Set("Signature", signature)
 	if c.sessionToken != "" {
-		q.Set("SecurityToken", c.sessionToken)
+		// 参数名必须为 x-amz-security-token (不是 SecurityToken), 否则 token 被忽略。
+		q.Set("x-amz-security-token", c.sessionToken)
 	}
 	targetURL.RawQuery = s3EncodeQuery(q)
 

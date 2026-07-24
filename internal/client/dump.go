@@ -1,7 +1,6 @@
 package client
 
 import (
-	"fmt"
 	"net/http"
 	"net/http/httputil"
 	myprint "s3cli/pkg/fmtutil"
@@ -27,7 +26,7 @@ func NewDumper(base http.RoundTripper) http.RoundTripper {
 }
 
 var sensitiveHeaders = map[string]struct{}{
-	"Authorization": {}, "X-Amz-Security-Token": {}, "Cookie": {}, "Set-Cookie": {},
+	"Authorization": {}, "Proxy-Authorization": {}, "X-Amz-Security-Token": {}, "Cookie": {}, "Set-Cookie": {},
 	"X-Amz-Server-Side-Encryption-Customer-Key": {},
 }
 
@@ -55,7 +54,7 @@ func redactedResponse(resp *http.Response) *http.Response {
 
 func (t *Transport) RoundTrip(req *http.Request) (*http.Response, error) {
 	seq := globalSeq.Add(1)
-	fmt.Println()
+	myprint.Println()
 	// dump request
 	if req != nil {
 		if b, err := httputil.DumpRequestOut(redactedRequest(req), false); err != nil {
@@ -80,7 +79,7 @@ func (t *Transport) RoundTrip(req *http.Request) (*http.Response, error) {
 		if b, err := httputil.DumpResponse(redactedResponse(resp), false); err != nil {
 			myprint.PrintfRed("[%v #%v] dump response error: %v\n", t.tag, seq, err)
 		} else {
-			fmt.Println()
+			myprint.Println()
 			myprint.PrintfBlue("========== %v RESPONSE #%v (%v) ==========\n", t.tag, seq, dur)
 			myprint.PrintlnBlue(string(b))
 		}

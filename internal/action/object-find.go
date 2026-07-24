@@ -107,7 +107,7 @@ func (c *S3Client) FindObjects(opt FindOptions, bucket, prefix string) error {
 	return nil
 }
 
-// globToRegex 把简单的 shell glob (* ? [abc]) 转换为 RE2 正则
+// globToRegex 把简单的 shell glob (* ? [abc] [!a]) 转换为 RE2 正则
 func globToRegex(g string) string {
 	var b strings.Builder
 	b.WriteString("^")
@@ -118,6 +118,14 @@ func globToRegex(g string) string {
 			b.WriteString(".*")
 		case '?':
 			b.WriteString(".")
+		case '[':
+			// 字符类: glob 的 [!...] 取反对应正则的 [^...],
+			// 原样透传会被 RE2 理解为字面 '!' (语义相反)。
+			b.WriteByte('[')
+			if i+1 < len(g) && g[i+1] == '!' {
+				b.WriteByte('^')
+				i++
+			}
 		case '.', '+', '(', ')', '{', '}', '|', '^', '$', '\\':
 			b.WriteByte('\\')
 			b.WriteByte(c)

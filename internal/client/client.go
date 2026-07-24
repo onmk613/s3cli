@@ -5,7 +5,6 @@ import (
 	"crypto/tls"
 	"net"
 	"net/http"
-	"strings"
 	"time"
 
 	"s3cli/internal/config"
@@ -68,7 +67,6 @@ func NewS3Client(_ context.Context, cfg config.Static, flags config.Flags) (*s3a
 		SecretKey:          cfg.SecretKey,
 		SessionToken:       cfg.SessionToken,
 		Region:             cfg.Region,
-		Vendor:             parseProvider(cfg.Vendor),
 		BucketLookup:       bucketLookup,
 		BucketLookupViaURL: lookupFn,
 		Transport:          rt,
@@ -76,17 +74,4 @@ func NewS3Client(_ context.Context, cfg config.Static, flags config.Flags) (*s3a
 	}
 
 	return s3api.New(opts)
-}
-
-// parseProvider 把配置中的厂商字符串映射为 s3api.Provider。
-// 空串或未知值回退到 aws。
-func parseProvider(v string) s3api.Provider {
-	switch strings.ToLower(strings.TrimSpace(v)) {
-	case "minio":
-		return s3api.ProviderMinIO
-	case "seaweedfs":
-		return s3api.ProviderSeaweedFS
-	default:
-		return s3api.ProviderAws
-	}
 }

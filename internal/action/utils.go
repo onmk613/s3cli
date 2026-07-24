@@ -5,10 +5,10 @@ import (
 	"errors"
 	"fmt"
 	"mime"
-	"s3cli/internal/utils"
 	"strings"
 	"sync"
 
+	myprint "s3cli/pkg/fmtutil"
 	"s3cli/pkg/s3api"
 )
 
@@ -25,20 +25,20 @@ func IsCanceled(err error) bool {
 }
 
 // FormatAPIError 格式化 S3 错误为对用户友好的字符串.
-func FormatAPIError(err error) string {
+func FormatAPIError(err error) error {
 	if err == nil {
-		return ""
+		return nil
 	}
 	var apiErr *s3api.ErrorResponse
 	if errors.As(err, &apiErr) {
-		return fmt.Sprintf("%s: %s", apiErr.Code, apiErr.Message)
+		return fmt.Errorf("%s: %s", apiErr.Code, apiErr.Message)
 	}
-	return err.Error()
+	return err
 }
 
 // FormatBytes 委托给 fmtutil.FormatBytes
 func FormatBytes(bytes int64) string {
-	return utils.FormatBytes(bytes)
+	return myprint.FormatBytes(bytes)
 }
 
 var addMimeOnce sync.Once

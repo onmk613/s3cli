@@ -45,6 +45,7 @@ type Tracker struct {
 	style   *Style      // 进度条填充物
 	color   *Colors     // 统计信息颜色
 	quiet   atomic.Bool // 直接输出原始信息而不显示进度条
+	stopped atomic.Bool // Stop 后为 true: 各 Add* 不再渲染, 防止汇总后继续写终端
 }
 
 // New 创建一个新的进度条
@@ -124,7 +125,11 @@ func (pt *Tracker) Start() {
 
 // Stop 输出最终统计信息
 // 一般配合 defer pt.Stop()
+// 幂等; 调用后各 Add* 方法不再渲染 (防止汇总行之后仍有进度条输出)。
 func (pt *Tracker) Stop() {
+	if pt.stopped.Swap(true) {
+		return
+	}
 	// 在锁内：强制刷新最后一帧（显示真实终态），并快照后续打印所需字段
 	pt.mu.Lock()
 	if !pt.quiet.Load() {

@@ -1,4 +1,4 @@
-package utils
+package action
 
 import (
 	"bytes"
@@ -9,9 +9,9 @@ import (
 	"strings"
 )
 
-// LoadAWSConfigFile 读取 AWS 配置文件 (CORS/Lifecycle/Policy 等)
+// loadAWSConfigFile 读取 AWS 配置文件 (CORS/Lifecycle/Policy 等)
 // 同时支持 JSON / XML，并处理 BOM。返回 (data, format)，format 为 "json" 或 "xml"
-func LoadAWSConfigFile(path string) ([]byte, string, error) {
+func loadAWSConfigFile(path string) ([]byte, string, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil, "", fmt.Errorf("read %s: %w", path, err)
@@ -32,8 +32,8 @@ func LoadAWSConfigFile(path string) ([]byte, string, error) {
 	return data, "", fmt.Errorf("unsupported format in %s: must be JSON or XML", path)
 }
 
-// UnmarshalAWS 自动按 JSON 或 XML 反序列化到任意 SDK 类型
-func UnmarshalAWS(data []byte, format string, v any) error {
+// unmarshalAWS 自动按 JSON 或 XML 反序列化到任意 SDK 类型
+func unmarshalAWS(data []byte, format string, v any) error {
 	switch format {
 	case "json":
 		dec := json.NewDecoder(bytes.NewReader(data))
@@ -53,8 +53,8 @@ func UnmarshalAWS(data []byte, format string, v any) error {
 	return fmt.Errorf("unknown format %q", format)
 }
 
-// ValidateJSON 仅检查内容是否合法 JSON
-func ValidateJSON(data []byte) error {
+// validateJSON 仅检查内容是否合法 JSON
+func validateJSON(data []byte) error {
 	dec := json.NewDecoder(bytes.NewReader(bytes.TrimSpace(data)))
 	var v any
 	if err := dec.Decode(&v); err != nil {

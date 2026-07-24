@@ -10,7 +10,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-	"s3cli/internal/utils"
+	"s3cli/internal/s3path"
 	"sort"
 	"strings"
 	"sync"
@@ -65,8 +65,6 @@ type fileEntry struct {
 	Size int64
 	// 可选：本地 mtime 或 s3 last-modified 的 Unix 秒；目前仅 quick 模式使用
 	Mtime int64
-	// 可选：ETag（去引号），仅 s3 端有
-	ETag string
 }
 
 // =============== 入口判定：local vs s3 ===============
@@ -77,12 +75,12 @@ type fileEntry struct {
 //   - 否则视为本地路径（不要求文件存在；后续会单独检查）
 //
 // 调用方需提供一个判断 alias 是否存在的回调（保持 action 包不依赖 config）。
-func ParseDiffArg(ctx context.Context, arg string, aliasExists func(string) bool, makeClient func(*utils.S3Path) (*s3api.Client, error)) (*DiffEndpoint, error) {
+func ParseDiffArg(ctx context.Context, arg string, aliasExists func(string) bool, makeClient func(*s3path.Path) (*s3api.Client, error)) (*DiffEndpoint, error) {
 	// 先尝试 ParseS3Path
 	if colon := strings.Index(arg, ":"); colon > 0 {
 		alias := arg[:colon]
 		if aliasExists(alias) {
-			sp, err := utils.ParseS3Path(arg)
+			sp, err := s3path.Parse(arg)
 			if err != nil {
 				return nil, err
 			}
@@ -266,6 +264,18 @@ func diffDirectories(opt DiffOptions) error {
 		wg     sync.WaitGroup
 		sem    = make(chan struct{}, opt.Concurrency)
 	)
+	// differ/identical 会被主 goroutine (size/quick 分支) 与 MD5 worker
+	// 并发写入, 所有 append 必须统一走这两个持锁的 helper。
+	addDiffer := func(s string) {
+		mu.Lock()
+		defer mu.Unlock()
+		differ = append(differ, s)
+	}
+	addIdentical := func(s string) {
+		mu.Lock()
+		defer mu.Unlock()
+		identical = append(identical, s)
+	}
 
 	// 1. 在 A 里：标记 only-A 或进入内容比较
 	for rel, ea := range mapA {
@@ -276,18 +286,18 @@ func diffDirectories(opt DiffOptions) error {
 		}
 		// size 先比
 		if ea.Size != eb.Size {
-			differ = append(differ, fmt.Sprintf("%s  (size %s vs %s)",
+			addDiffer(fmt.Sprintf("%s  (size %s vs %s)",
 				rel, FormatBytes(ea.Size), FormatBytes(eb.Size)))
 			continue
 		}
 		switch opt.Mode {
 		case DiffModeSize:
-			identical = append(identical, rel)
+			addIdentical(rel)
 		case DiffModeQuick:
 			if ea.Mtime != eb.Mtime {
-				differ = append(differ, fmt.Sprintf("%s  (mtime %d vs %d)", rel, ea.Mtime, eb.Mtime))
+				addDiffer(fmt.Sprintf("%s  (mtime %d vs %d)", rel, ea.Mtime, eb.Mtime))
 			} else {
-				identical = append(identical, rel)
+				addIdentical(rel)
 			}
 		case DiffModeMD5:
 			// 并发做 MD5 比对
@@ -301,17 +311,15 @@ func diffDirectories(opt DiffOptions) error {
 				if IsCanceled(err) || (opt.A.Ctx != nil && opt.A.Ctx.Err() != nil) {
 					return
 				}
-				mu.Lock()
-				defer mu.Unlock()
 				if err != nil {
 					failed.Add(1)
-					differ = append(differ, fmt.Sprintf("%s  (error: %v)", rel, err))
+					addDiffer(fmt.Sprintf("%s  (error: %v)", rel, err))
 					return
 				}
 				if equal {
-					identical = append(identical, rel)
+					addIdentical(rel)
 				} else {
-					differ = append(differ, fmt.Sprintf("%s  (content)", rel))
+					addDiffer(fmt.Sprintf("%s  (content)", rel))
 				}
 			}(rel)
 		}
@@ -363,11 +371,12 @@ func diffDirectories(opt DiffOptions) error {
 	myprint.PrintfBoldCyan("Summary: identical=%d differ=%d only-A=%d only-B=%d\n",
 		len(identical), len(differ), len(onlyA), len(onlyB))
 
-	if len(differ)+len(onlyA)+len(onlyB) > 0 {
-		return errDiffer
-	}
+	// 先报比较失败（I/O 错误 ≠ 内容不同），再报差异，保证退出语义正确。
 	if failed.Load() > 0 {
 		return fmt.Errorf("%d files failed to compare", failed.Load())
+	}
+	if len(differ)+len(onlyA)+len(onlyB) > 0 {
+		return errDiffer
 	}
 	return nil
 }
@@ -446,7 +455,6 @@ func listS3Dir(cli *s3api.Client, ctx context.Context, alias, bucket, prefix str
 				Path:  rel,
 				Size:  obj.Size,
 				Mtime: obj.LastModified.Unix(),
-				ETag:  obj.ETag,
 			})
 		}
 	}
@@ -490,7 +498,6 @@ func statOneFile(e *DiffEndpoint, rel string) (fileEntry, error) {
 		Path:  rel,
 		Size:  out.ContentLength,
 		Mtime: mtime,
-		ETag:  out.ETag,
 	}, nil
 }
 
@@ -525,6 +532,16 @@ func compareContent(a *DiffEndpoint, relA string, b *DiffEndpoint, relB string) 
 		nA, errA := io.ReadFull(ra, bufA)
 		nB, errB := io.ReadFull(rb, bufB)
 
+		// 真实 I/O 错误（非 EOF）优先上报，避免把读失败误判为"内容不同"。
+		endA := errA == io.EOF || errors.Is(errA, io.ErrUnexpectedEOF)
+		endB := errB == io.EOF || errors.Is(errB, io.ErrUnexpectedEOF)
+		if errA != nil && !endA {
+			return false, fmt.Errorf("read A: %w", errA)
+		}
+		if errB != nil && !endB {
+			return false, fmt.Errorf("read B: %w", errB)
+		}
+
 		if nA != nB {
 			return false, nil
 		}
@@ -538,19 +555,11 @@ func compareContent(a *DiffEndpoint, relA string, b *DiffEndpoint, relB string) 
 		}
 
 		// 处理结束条件
-		endA := errA == io.EOF || errors.Is(errA, io.ErrUnexpectedEOF)
-		endB := errB == io.EOF || errors.Is(errB, io.ErrUnexpectedEOF)
 		if endA && endB {
 			return hex.EncodeToString(hA.Sum(nil)) == hex.EncodeToString(hB.Sum(nil)), nil
 		}
 		if endA != endB {
 			return false, nil
-		}
-		if errA != nil && !endA {
-			return false, fmt.Errorf("read A: %w", errA)
-		}
-		if errB != nil && !endB {
-			return false, fmt.Errorf("read B: %w", errB)
 		}
 	}
 }

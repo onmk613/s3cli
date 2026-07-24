@@ -2,7 +2,7 @@ package cmd
 
 import (
 	"s3cli/internal/action"
-	"s3cli/internal/utils"
+	"s3cli/internal/s3path"
 
 	"github.com/spf13/cobra"
 )
@@ -20,7 +20,7 @@ func NewFindCmd() *cobra.Command {
 		Short:             "Search objects by name pattern, size and modification time",
 		Args:              cobra.MinimumNArgs(1),
 		ValidArgsFunction: AutoCompletePath,
-		RunE: NewRunE(func(S3 action.S3Client, _ *Context, s3path *utils.S3Path) error {
+		RunE: NewRunE(func(S3 action.S3Client, _ *Context, s3path *s3path.Path) error {
 			return S3.FindObjects(findOpt, s3path.Bucket, s3path.Key)
 		}, &opts),
 	}
@@ -44,7 +44,7 @@ func NewTreeCmd() *cobra.Command {
 		Short:             "Display objects as a tree of directories",
 		Args:              cobra.MinimumNArgs(1),
 		ValidArgsFunction: AutoCompletePath,
-		RunE: NewRunE(func(S3 action.S3Client, _ *Context, s3path *utils.S3Path) error {
+		RunE: NewRunE(func(S3 action.S3Client, _ *Context, s3path *s3path.Path) error {
 			return S3.TreeObjects(treeOpt, s3path.Bucket, s3path.Key)
 		}, &opts),
 	}

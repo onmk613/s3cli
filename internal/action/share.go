@@ -23,6 +23,16 @@ func (c *S3Client) Share(opt ShareOptions, bucket, key string) error {
 		method = "GET"
 	}
 
+	// 统一校验过期时间: v4 对 <=0 会静默取 15 分钟、v2 直接报错,
+	// 在入口处拒绝, 保证同一 flag 两种签名行为一致。
+	if opt.ExpireSeconds <= 0 {
+		return fmt.Errorf("--expire must be positive seconds, got %d", opt.ExpireSeconds)
+	}
+	// v4 预签名最长 7 天; 提前在这里报错, 而不是生成到一半才失败。
+	if !opt.SignV2 && opt.ExpireSeconds > 604800 {
+		return fmt.Errorf("--expire %ds exceeds v4 signature maximum of 7 days (604800s)", opt.ExpireSeconds)
+	}
+
 	if method == "GET" || method == "HEAD" {
 		ok, err := c.IsS3File(bucket, key)
 		if err != nil {
@@ -40,9 +50,6 @@ func (c *S3Client) Share(opt ShareOptions, bucket, key string) error {
 	if opt.SignV2 {
 		signed, err = c.S3.PresignV2(c.Ctx, bucket, key, method, int64(opt.ExpireSeconds))
 	} else {
-		if opt.ExpireSeconds > 604800 {
-			myprint.PrintfYellow("Warning: v4 signature maximum validity is 7 days (604800s), the generated URL may expire earlier\n")
-		}
 		signed, err = c.S3.PresignedURL(c.Ctx, bucket, key, &s3api.PresignOptions{
 			Method:  method,
 			Expires: time.Duration(opt.ExpireSeconds) * time.Second,

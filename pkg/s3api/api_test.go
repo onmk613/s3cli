@@ -1,7 +1,10 @@
 package s3api
 
 import (
+	"crypto/hmac"
+	"crypto/sha1"
 	"encoding/base64"
+	"net/http"
 	"net/url"
 	"strings"
 	"testing"
@@ -93,6 +96,86 @@ func TestPresignedURLRejectsInvalidInputs(t *testing.T) {
 	}
 	if _, err := c.PresignedURL(nil, "bucket", "key", &PresignOptions{Expires: 7*24*time.Hour + time.Second}); err == nil {
 		t.Fatal("expected maximum expiry error")
+	}
+}
+
+// TestPresignedURLVerifiableRoundTrip 模拟服务端校验流程:
+// 从生成的 URL 中移除 X-Amz-Signature, 重建 canonical request 并重算签名,
+// 必须与 URL 中携带的签名一致。这是 X-Amz-SignedHeaders 必须先于签名进入
+// query 的回归测试 (此前 SignedHeaders 在签名后才追加, 导致服务端恒校验失败)。
+func TestPresignedURLVerifiableRoundTrip(t *testing.T) {
+	c, err := New(&Options{Endpoint: "https://s3.example.test", AccessKey: "key", SecretKey: "secret", SessionToken: "tok"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	signed, err := c.PresignedURL(nil, "bucket", "dir/a b.txt", &PresignOptions{Method: "GET", Expires: time.Hour})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	u, err := url.Parse(signed)
+	if err != nil {
+		t.Fatal(err)
+	}
+	q := u.Query()
+	gotSig := q.Get("X-Amz-Signature")
+	if gotSig == "" {
+		t.Fatalf("no X-Amz-Signature in %q", signed)
+	}
+	for _, required := range []string{"X-Amz-Algorithm", "X-Amz-Credential", "X-Amz-Date", "X-Amz-Expires", "X-Amz-SignedHeaders", "X-Amz-Security-Token"} {
+		if q.Get(required) == "" {
+			t.Fatalf("missing %s in %q", required, signed)
+		}
+	}
+
+	// 服务端视角: 去掉 Signature 后重建请求并验签
+	q.Del("X-Amz-Signature")
+	u.RawQuery = s3EncodeQuery(q)
+	req, err := http.NewRequest("GET", u.String(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Host = u.Host
+	canonicalRequest, _ := buildCanonicalRequest(req, unsignedPayload)
+	amzDate := q.Get("X-Amz-Date")
+	scopeDate := amzDate[:8]
+	scope := strings.Join([]string{scopeDate, "us-east-1", serviceS3, "aws4_request"}, "/")
+	stringToSign := strings.Join([]string{signV4Algorithm, amzDate, scope, sumSHA256Hex([]byte(canonicalRequest))}, "\n")
+	wantSig := hexHMAC(deriveSigningKey("secret", scopeDate, "us-east-1"), stringToSign)
+	if gotSig != wantSig {
+		t.Fatalf("signature mismatch:\n got %s\nwant %s\ncanonical request:\n%s", gotSig, wantSig, canonicalRequest)
+	}
+}
+
+// TestPresignV2SessionTokenSigned 验证临时凭证的 token 既出现在 query
+// (名为 x-amz-security-token), 也计入了 StringToSign。
+func TestPresignV2SessionTokenSigned(t *testing.T) {
+	c, err := New(&Options{Endpoint: "https://s3.example.test", AccessKey: "key", SecretKey: "secret", SessionToken: "tok"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	signed, err := c.PresignV2(nil, "bucket", "object", "GET", 60)
+	if err != nil {
+		t.Fatal(err)
+	}
+	u, err := url.Parse(signed)
+	if err != nil {
+		t.Fatal(err)
+	}
+	q := u.Query()
+	if q.Get("x-amz-security-token") != "tok" {
+		t.Fatalf("expected x-amz-security-token=tok in %q", signed)
+	}
+	if q.Get("SecurityToken") != "" {
+		t.Fatalf("legacy SecurityToken param must not be used: %q", signed)
+	}
+	// 重算签名: StringToSign 须包含 x-amz-security-token 头
+	expires := q.Get("Expires")
+	sts := "GET\n\n\n" + expires + "\nx-amz-security-token:tok\n/bucket/object"
+	mac := hmac.New(sha1.New, []byte("secret"))
+	_, _ = mac.Write([]byte(sts))
+	if want := base64.StdEncoding.EncodeToString(mac.Sum(nil)); q.Get("Signature") != want {
+		t.Fatalf("v2 signature does not cover session token:\n got %s\nwant %s", q.Get("Signature"), want)
 	}
 }
 

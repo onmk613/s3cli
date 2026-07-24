@@ -1,11 +1,11 @@
 # s3cli
 
-轻量、高性能的 S3 命令行客户端，兼容各类 S3 对象存储（AWS S3、MinIO、Ceph RGW 等）。
+轻量、高性能、简单的 S3 命令行客户端
 
 ## 特性
 
-- 通过命名别名管理多个 S3 端点
-- 支持 ConfPath-style、DNS、自定义模板三种桶寻址方式
+- 真正实现多断点管理
+- 支持 Path-style、DNS、自定义模板三种桶寻址方式
 - 上传 / 下载 / 复制 / 移动 / 删除，支持递归整个目录树
 - 实时进度条、分片上传下载
 - 桶配置管理：CORS、生命周期、策略、加密、版本控制、事件通知
@@ -38,19 +38,19 @@ Bucket Commands
 
 Read Commands
   diff        Compare files/directories between s3 and/or local paths
-  du          Show disk usage of buckets or paths
+  du          Show disk usage of bucket or paths
   find        Search objects by name pattern, size and modification time
-  info        Show information about bucket(s) or object(s)
-  ls          List objects or buckets
+  info        Show information about bucket or object
+  ls          List objects or bucket
   lsv         List object versions (including delete markers)
   tree        Display objects as a tree of directories
 
 Object Operations
   cat         Print object contents to stdout
-  cp          Copy object(s) within the same S3 endpoint
+  cp          Copy object within the same S3 endpoint
   get         Download object(s) from S3
   mpu         Manage in-progress multipart uploads
-  mv          Move object(s) within the same S3 endpoint
+  mv          Move object within the same S3 endpoint
   pipe        Upload data from stdin to an S3 object
   put         Upload file(s) to S3
   rm          Delete object(s) from S3
@@ -66,14 +66,13 @@ Additional Commands:
   help        Help about any command
 
 Flags:
-  -f, --conf string                ConfPath to configuration file (default ~/.s3cli)
+  -f, --conf string                Path to configuration file (default ~/.s3cli)
       --debug                      Print summarized S3 requests
   -H, --header stringArray         Add a custom HTTP header (key:value), can repeat
   -h, --help                       help for s3cli
+      --json                       Output format: text or json (supported commands emit structured results)
       --no-color                   Disable color output
-      --output string              Output format: text or json (supported commands emit structured results) (default "text")
   -q, --quiet                      Disable progress bar; stream plain text output instead
-      --request-timeout duration   Maximum duration for a command's S3 requests (0 = no limit)
       --user-agent string          Override the HTTP User-Agent header
       --user-agent-suffix string   Append extra content to the HTTP User-Agent header
   -v, --version                    version for s3cli

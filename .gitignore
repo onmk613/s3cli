@@ -6,3 +6,4 @@ bin/
 .github/
 vendor/
 *test/
+docs/

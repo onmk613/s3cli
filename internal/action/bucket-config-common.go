@@ -3,7 +3,6 @@ package action
 import (
 	"encoding/json"
 	"fmt"
-	"s3cli/internal/utils"
 
 	myprint "s3cli/pkg/fmtutil"
 )
@@ -33,7 +32,7 @@ func (c *S3Client) deleteBucketConfig(bucket, label, doneMsg string, del func() 
 // loadJSONConfig 从本地文件加载 AWS CLI 兼容的 JSON 配置并解码到 *T。
 // label 用于错误信息 (如 "encryption")。仅接受 JSON 格式。
 func loadJSONConfig[T any](file, label string) (*T, error) {
-	data, format, err := utils.LoadAWSConfigFile(file)
+	data, format, err := loadAWSConfigFile(file)
 	if err != nil {
 		return nil, err
 	}
@@ -41,7 +40,7 @@ func loadJSONConfig[T any](file, label string) (*T, error) {
 		return nil, fmt.Errorf("%s only supports JSON format (AWS CLI compatible)", label)
 	}
 	var cfg T
-	if err := utils.UnmarshalAWS(data, "json", &cfg); err != nil {
+	if err := unmarshalAWS(data, "json", &cfg); err != nil {
 		return nil, fmt.Errorf("parse %s file %s: %w", label, file, err)
 	}
 	return &cfg, nil

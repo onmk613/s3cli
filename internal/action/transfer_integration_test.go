@@ -206,3 +206,148 @@ func TestMirrorMaxDeleteBlocksBeforeDelete(t *testing.T) {
 		t.Fatal("max-delete guard still issued a delete request")
 	}
 }
+
+// TestPutSkipsExistingObjectByDefault 验证 put 默认不覆盖: 目标对象已存在时跳过,
+// 加 --overwrite 才强制上传。
+func TestPutSkipsExistingObjectByDefault(t *testing.T) {
+	var puts atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPut {
+			puts.Add(1)
+		}
+		w.Header().Set("ETag", `"etag"`)
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+
+	dir := t.TempDir()
+	local := filepath.Join(dir, "file.txt")
+	if err := os.WriteFile(local, []byte("data"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	client := &S3Client{S3: actionTestClient(t, server.URL, nil), Alias: "test", Ctx: context.Background()}
+
+	// 默认 (Overwrite=false): 目标已存在 -> 跳过, 不应发起 PUT
+	if err := client.PutObject(PutOptions{}, "bucket", "", local, false); err != nil {
+		t.Fatalf("expected skip, got error: %v", err)
+	}
+	if puts.Load() != 0 {
+		t.Fatalf("expected no upload, got %d PUT(s)", puts.Load())
+	}
+
+	// --overwrite: 目标已存在仍强制上传 -> 应发起 PUT
+	if err := client.PutObject(PutOptions{Overwrite: true}, "bucket", "", local, false); err != nil {
+		t.Fatalf("expected upload, got error: %v", err)
+	}
+	if puts.Load() != 1 {
+		t.Fatalf("expected 1 upload, got %d", puts.Load())
+	}
+}
+
+// TestGetSkipsExistingLocalFileByDefault 验证 get 默认不覆盖: 本地文件已存在时跳过,
+// 加 --overwrite 才强制下载。
+func TestGetSkipsExistingLocalFileByDefault(t *testing.T) {
+	var gets atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodGet {
+			gets.Add(1)
+			_, _ = io.WriteString(w, "remote-content")
+		}
+	}))
+	defer server.Close()
+
+	dir := t.TempDir()
+	local := filepath.Join(dir, "file.txt")
+	if err := os.WriteFile(local, []byte("existing"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	client := &S3Client{S3: actionTestClient(t, server.URL, nil), Alias: "test", Ctx: context.Background()}
+
+	// 默认 (Overwrite=false): 本地已存在 -> 跳过, 不应发起 GET, 内容保持不变
+	if err := client.downloadSingleFile(GetOptions{}, "bucket", "file.txt", local); err != nil {
+		t.Fatalf("expected skip, got error: %v", err)
+	}
+	if gets.Load() != 0 {
+		t.Fatalf("expected no download, got %d GET(s)", gets.Load())
+	}
+	data, _ := os.ReadFile(local)
+	if string(data) != "existing" {
+		t.Fatalf("existing file was modified: %q", data)
+	}
+
+	// --overwrite: 本地已存在仍强制下载
+	if err := client.downloadSingleFile(GetOptions{Overwrite: true}, "bucket", "file.txt", local); err != nil {
+		t.Fatalf("expected download, got error: %v", err)
+	}
+	if gets.Load() != 1 {
+		t.Fatalf("expected 1 download, got %d", gets.Load())
+	}
+	data, _ = os.ReadFile(local)
+	if string(data) != "remote-content" {
+		t.Fatalf("file not overwritten: %q", data)
+	}
+}
+
+func TestMirrorPlanRejectsOverlappingPrefixes(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// HeadObject / ListObjectsV2 一律返回 "不存在", DestStateOf 走 DestNone 分支
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	defer server.Close()
+
+	newClient := func() *S3Client {
+		return &S3Client{S3: actionTestClient(t, server.URL, nil), Ctx: context.Background()}
+	}
+	cases := []struct {
+		name      string
+		srcPrefix string
+		tgtPrefix string
+		wantErr   bool
+	}{
+		{"tgt inside src", "", "sub/", true},
+		{"src inside tgt", "dir/", "", true},
+		{"nested tgt", "dir/", "dir/sub/", true},
+		{"identical", "dir/", "dir/", true},
+		{"sibling prefixes ok", "a/", "b/", false},
+		{"dir vs dir2 ok", "dir/", "dir2/", false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			cfg := MirrorOptions{
+				Src: &S3PathOptions{Client: newClient(), Bucket: "bkt", ObjectKey: tc.srcPrefix, TrailingSlash: true},
+				Tgt: &S3PathOptions{Client: newClient(), Bucket: "bkt", ObjectKey: tc.tgtPrefix, TrailingSlash: true},
+			}
+			_, err := resolveMirrorPlan(cfg)
+			if tc.wantErr && err == nil {
+				t.Fatalf("expected overlap error for %q vs %q", tc.srcPrefix, tc.tgtPrefix)
+			}
+			if !tc.wantErr && err != nil {
+				t.Fatalf("unexpected error for %q vs %q: %v", tc.srcPrefix, tc.tgtPrefix, err)
+			}
+		})
+	}
+}
+
+// TestMirrorPlanNormalizesPrefixes 验证裸前缀 ("dir") 被规范化为 "dir/",
+// 避免列举时前缀碰撞 ("dir2/x" 被误同步, "out2/y" 被 --remove 误删)。
+func TestMirrorPlanNormalizesPrefixes(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	defer server.Close()
+	cfg := MirrorOptions{
+		Src: &S3PathOptions{Client: &S3Client{S3: actionTestClient(t, server.URL, nil), Ctx: context.Background()}, Bucket: "bkt", ObjectKey: "dir"},
+		// 同 endpoint 不同 bucket: 不触发 overlap 守卫, 且 DestStateOf 快速返回
+		Tgt: &S3PathOptions{Client: &S3Client{S3: actionTestClient(t, server.URL, nil), Ctx: context.Background()}, Bucket: "bkt2", ObjectKey: "out"},
+	}
+	plan, err := resolveMirrorPlan(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if plan.srcPrefix != "dir/" || plan.tgtPrefix != "out/" {
+		t.Fatalf("prefixes = %q, %q; want dir/, out/", plan.srcPrefix, plan.tgtPrefix)
+	}
+	if relKey("dir/a.txt", plan.srcPrefix) != "a.txt" {
+		t.Fatal("relKey after normalization failed")
+	}
+}
