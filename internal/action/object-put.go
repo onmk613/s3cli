@@ -23,6 +23,7 @@ type PutOptions struct {
 	StorageClass    string            // e.g. "STANDARD_IA", "GLACIER"
 	Metadata        map[string]string // 用户元数据 (x-amz-meta-*)
 	NoProgress      bool              // 不显示进度条（--quiet）
+	Overwrite       bool              // 目标对象已存在时是否覆盖 (默认跳过)
 }
 
 // PutObject 上传本地文件或目录到 S3
@@ -61,6 +62,17 @@ func (c *S3Client) PutObject(opt PutOptions, bucket, prefix, localPath string, i
 		dstKey = filepath.Base(localPath)
 	} else if isS3Dir {
 		dstKey = path.Join(prefix, filepath.Base(localPath))
+	}
+	// 默认不覆盖: 目标对象已存在则跳过, 仅 --overwrite 时强制上传。
+	if !opt.Overwrite {
+		exists, existsErr := c.objectExists(c.Ctx, bucket, dstKey)
+		if existsErr != nil {
+			return fmt.Errorf("check existing object: %s", FormatAPIError(existsErr))
+		}
+		if exists {
+			myprint.Printf("skip: %s already exists\n", c.S3Path(bucket, dstKey))
+			return nil
+		}
 	}
 	if err := c.uploadFile(c.Ctx, opt, mimeType, bucket, dstKey, localPath, nil); err != nil {
 		return err
@@ -103,6 +115,16 @@ func (c *S3Client) uploadDirStreaming(opt PutOptions, bucket, key, localPath str
 			})
 		},
 		Work: func(ctx context.Context, job StreamJob, report func(n int64)) error {
+			// 默认不覆盖: 目标对象已存在则跳过 (静默, 进度条计入已完成)。
+			if !opt.Overwrite {
+				exists, existsErr := c.objectExists(ctx, bucket, job.Dst)
+				if existsErr != nil {
+					return fmt.Errorf("check existing object: %s", FormatAPIError(existsErr))
+				}
+				if exists {
+					return nil
+				}
+			}
 			mimeType := detectMime(job.Src, opt.DefaultMimeType)
 			if opt.ContentType != "" {
 				mimeType = opt.ContentType

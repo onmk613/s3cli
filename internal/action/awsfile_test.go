@@ -1,4 +1,4 @@
-package utils
+package action
 
 import (
 	"os"
@@ -17,12 +17,12 @@ func TestLoadAWSConfigFileAndUnmarshal(t *testing.T) {
 	if err := os.WriteFile(jsonPath, []byte("\xef\xbb\xbf{\"name\":\"value\"}"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	data, format, err := LoadAWSConfigFile(jsonPath)
+	data, format, err := loadAWSConfigFile(jsonPath)
 	if err != nil || format != "json" {
 		t.Fatalf("format=%q err=%v", format, err)
 	}
 	var jsonValue testConfig
-	if err := UnmarshalAWS(data, format, &jsonValue); err != nil || jsonValue.Name != "value" {
+	if err := unmarshalAWS(data, format, &jsonValue); err != nil || jsonValue.Name != "value" {
 		t.Fatalf("json=%#v err=%v", jsonValue, err)
 	}
 
@@ -30,15 +30,15 @@ func TestLoadAWSConfigFileAndUnmarshal(t *testing.T) {
 	if err := os.WriteFile(xmlPath, []byte("<Config><Value>x</Value></Config>"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	data, format, err = LoadAWSConfigFile(xmlPath)
+	data, format, err = loadAWSConfigFile(xmlPath)
 	if err != nil || format != "xml" {
 		t.Fatalf("format=%q err=%v", format, err)
 	}
 	var xmlValue testConfig
-	if err := UnmarshalAWS(data, format, &xmlValue); err != nil || xmlValue.Value != "x" {
+	if err := unmarshalAWS(data, format, &xmlValue); err != nil || xmlValue.Value != "x" {
 		t.Fatalf("xml=%#v err=%v", xmlValue, err)
 	}
-	if err := ValidateJSON([]byte("{")); err == nil {
+	if err := validateJSON([]byte("{")); err == nil {
 		t.Fatal("expected malformed json error")
 	}
 }

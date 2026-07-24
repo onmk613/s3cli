@@ -5,9 +5,10 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"s3cli/internal/utils"
+	"s3cli/pkg/fmtutil"
 	"s3cli/pkg/progress"
 	"sync"
+	"sync/atomic"
 
 	"s3cli/pkg/s3api"
 )
@@ -63,21 +64,29 @@ func RunStream(ctx context.Context, cfg StreamConfig) error {
 
 	// 预统计协程：提供 Count 时，用独立 goroutine 提前遍历数据源累加 total/totalSize，
 	// 让进度条分母尽早接近真实总量；此时扫描阶段不再重复累加。
+	// countWg/cancelCount 保证 RunStream 返回前 Count 协程已结束:
+	// 否则 Stop() 打印汇总后 Count 仍在渲染, 终端错乱且协程泄漏。
+	// Count 失败时置 countFailed, 由 Scan 恢复累加 (与 StreamConfig.Count 注释约定一致);
+	// 该兜底下分母可能轻微偏大 (Count 已加一部分), 仅影响失败路径的显示精度。
+	var countWg sync.WaitGroup
+	var countFailed atomic.Bool
 	countTotals := cfg.Count != nil
+	countCtx, cancelCount := context.WithCancel(ctx)
+	defer cancelCount()
 	if countTotals {
+		countWg.Add(1)
 		go func() {
-			// Count 出错不致命：退化为扫描边派发边累加(下面 countTotals 仍为 true，
-			// 但 Scan 已不累加；这里失败时改为让 Scan 接管累加更稳妥)，
-			// 因此失败时直接忽略——分母会在传输中由对账逻辑保持字节精确，
-			// 仅 ETA 早期略不准。
-			_ = cfg.Count(ctx, func(n, size int64) {
+			defer countWg.Done()
+			if err := cfg.Count(countCtx, func(n, size int64) {
 				if n != 0 {
 					pt.AddTotal(n)
 				}
 				if size != 0 {
 					pt.AddTotalSize(size)
 				}
-			})
+			}); err != nil && countCtx.Err() == nil {
+				countFailed.Store(true)
+			}
 		}()
 	}
 
@@ -98,13 +107,18 @@ func RunStream(ctx context.Context, cfg StreamConfig) error {
 			}
 		}()
 		for j := range relay {
-			if !countTotals {
+			if !countTotals || countFailed.Load() {
 				pt.AddTotal(1)
 				pt.AddTotalSize(j.Size)
 			}
 			select {
 			case jobs <- j:
 			case <-ctx.Done():
+				// 提前退出时排空 relay, 否则内部 Scan 协程会永远阻塞在写入上。
+				go func() {
+					for range relay {
+					}
+				}()
 				return
 			}
 		}
@@ -134,7 +148,7 @@ func RunStream(ctx context.Context, cfg StreamConfig) error {
 					pt.AddTotalSizeDone(n)
 				}
 
-				msg := fmt.Sprintf("%s → %s (%s)", j.Src, j.Dst, utils.FormatBytes(j.Size))
+				msg := fmt.Sprintf("%s → %s (%s)", j.Src, j.Dst, fmtutil.FormatBytes(j.Size))
 				if err := cfg.Work(ctx, j, report); err != nil {
 					if ctx.Err() != nil {
 						return
@@ -156,6 +170,11 @@ func RunStream(ctx context.Context, cfg StreamConfig) error {
 		}()
 	}
 	wg.Wait()
+
+	// 传输已结束: 取消并等待 Count 协程退出, 保证 Stop() 打印汇总后
+	// 不再有协程向终端渲染进度条。
+	cancelCount()
+	countWg.Wait()
 
 	// 检查扫描错误
 	select {

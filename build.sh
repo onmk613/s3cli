@@ -2,19 +2,20 @@
 set -euo pipefail
 
 gofmt -w .
-go mod vendor
-rm -rf bin/ vendor/
+rm -rf bin/
 
 VERSION=${VERSION:-$(git describe --tags --always 2>/dev/null || echo "dev")}
 COMMIT=$(git rev-parse --short HEAD 2>/dev/null || echo "none")
 DATE=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
 GOVERSION=$(go version | awk '{print $3}')
 
+# 版本变量位于 internal/cmd/root.go（曾为 pkg/cmd，包迁移后此路径失效，
+# 链接器对不存在的符号静默忽略，导致版本信息从未真正注入）。
 LDFLAGS="-s -w \
-  -X 's3cli/pkg/cmd.Version=${VERSION}' \
-  -X 's3cli/pkg/cmd.Commit=${COMMIT}' \
-  -X 's3cli/pkg/cmd.BuildDate=${DATE}' \
-  -X 's3cli/pkg/cmd.GoVersion=${GOVERSION}'"
+  -X 's3cli/internal/cmd.Version=${VERSION}' \
+  -X 's3cli/internal/cmd.Commit=${COMMIT}' \
+  -X 's3cli/internal/cmd.BuildDate=${DATE}' \
+  -X 's3cli/internal/cmd.GoVersion=${GOVERSION}'"
 
 ENTRY=./cmd/s3cli
 
@@ -51,5 +52,3 @@ else
   build_one "${OS}" "${ARCH}" "${OUT}"
   echo "=== done: ${OUT} ==="
 fi
-
-rm -rf vendor

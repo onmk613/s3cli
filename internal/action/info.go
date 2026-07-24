@@ -38,7 +38,7 @@ func (c *S3Client) infoObject(bucket, key string) error {
 			tags[kv.Key] = kv.Value
 		}
 	} else {
-		myprint.PrintfBoldYellow("Cannot read tags for %s: %s", c.S3Path(bucket, key), FormatAPIError(err))
+		myprint.PrintfBoldYellow("Cannot read tags for %s: %s\n", c.S3Path(bucket, key), FormatAPIError(err))
 	}
 
 	m := map[string]any{
@@ -74,12 +74,15 @@ func (c *S3Client) infoObject(bucket, key string) error {
 func (c *S3Client) infoBucket(bucket string) error {
 	info := map[string]any{"Bucket": bucket}
 
-	// Location
-	var loc string
-	if location, err := c.S3.GetBucketLocation(c.Ctx, bucket); err == nil {
-		loc = location
+	// Location 同时充当 bucket 存在性检查:
+	// 吞掉它的错误会让 "info 不存在的 bucket" 输出一份全空 JSON 且退出码为 0。
+	location, err := c.S3.GetBucketLocation(c.Ctx, bucket)
+	if err != nil {
+		return fmt.Errorf("get bucket location: %s", FormatAPIError(err))
 	}
-	info["Location"] = loc
+	info["Location"] = location
+
+	// 以下子项允许不存在 (未配置时服务端返回 404 类错误), 失败按空值输出。
 
 	// Versioning
 	var versioning string

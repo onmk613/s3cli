@@ -99,7 +99,6 @@ func AutoCompletePath(cmd *cobra.Command, _ []string, toComplete string) ([]stri
 	if colon < 0 {
 		return completeAliases(toComplete)
 	}
-
 	// 已包含冒号，手动做宽松解析
 	alias := toComplete[:colon]
 	rest := toComplete[colon+1:] // 冒号后面的部分，可能为空
@@ -167,4 +166,29 @@ func getClientByAlias(ctx context.Context, alias string) *action.S3Client {
 	}
 	client2.S3Clients.Set(alias, s3Client)
 	return &action.S3Client{S3: s3Client, Alias: alias, Ctx: ctx}
+}
+
+// CompleteLocalFirst 用于 args[0] 为本地路径、args[1:] 为 S3 路径的命令
+// (对应 ParseArgsAndS3Path 解析模式，如 put / bucket * set)。
+// 正在补全 args[0] 时委托给 shell 的默认本地文件补全；其余位置交给 s3Completer。
+func CompleteLocalFirst(s3Completer cobra.CompletionFunc) cobra.CompletionFunc {
+	return func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+		if len(args) == 0 {
+			return nil, cobra.ShellCompDirectiveDefault
+		}
+		return s3Completer(cmd, args, toComplete)
+	}
+}
+
+// CompleteLocalLast 用于最后一个 arg 为本地路径、前面为 S3 路径的命令
+// (对应 ParseS3PathAndArgs 解析模式，如 get)。
+// maxS3Args 为前置 S3 路径的最大数量；正在补全第 maxS3Args+1 个 arg 时
+// 委托给 shell 的默认本地文件补全；其余位置交给 s3Completer。
+func CompleteLocalLast(s3Completer cobra.CompletionFunc, maxS3Args int) cobra.CompletionFunc {
+	return func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+		if len(args) >= maxS3Args {
+			return nil, cobra.ShellCompDirectiveDefault
+		}
+		return s3Completer(cmd, args, toComplete)
+	}
 }

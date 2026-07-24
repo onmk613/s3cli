@@ -12,11 +12,12 @@ import (
 
 	myprint "s3cli/pkg/fmtutil"
 
+	"golang.org/x/term"
 	"gopkg.in/ini.v1"
 )
 
 // errInterrupted 表示交互式输入被用户中断（Ctrl+C）或 stdin 关闭（EOF）。
-var errInterrupted = errors.New("input cancelled")
+var errInterrupted = errors.New("cancelled")
 
 func SetAliasConf(ctx context.Context, section string) error {
 	if section == "" {
@@ -60,7 +61,12 @@ func SetAliasConf(ctx context.Context, section string) error {
 			return "", errInterrupted
 		case r := <-ch:
 			if r.err != nil {
+				// 管道输入末尾无换行符时 ReadString 返回 (部分数据, io.EOF),
+				// 已读到的数据应当接受, 仅无数据时才视为中断。
 				if errors.Is(r.err, io.EOF) {
+					if s := strings.TrimSpace(r.s); s != "" {
+						return s, nil
+					}
 					myprint.Println("")
 					return "", errInterrupted
 				}
@@ -68,6 +74,21 @@ func SetAliasConf(ctx context.Context, section string) error {
 			}
 			return strings.TrimSpace(r.s), nil
 		}
+	}
+
+	// readSecret 读取密钥: 终端下不回显 (term.ReadPassword),
+	// 非终端 (管道/重定向) 回退到普通行读取, 保持脚本可用。
+	readSecret := func(prompt string) (string, error) {
+		if !term.IsTerminal(int(os.Stdin.Fd())) {
+			return read(prompt)
+		}
+		myprint.Print(prompt)
+		pw, err := term.ReadPassword(int(os.Stdin.Fd()))
+		myprint.Println("")
+		if err != nil {
+			return "", fmt.Errorf("read secret: %w", err)
+		}
+		return strings.TrimSpace(string(pw)), nil
 	}
 
 	var err error
@@ -96,7 +117,7 @@ func SetAliasConf(ctx context.Context, section string) error {
 	}
 
 	for {
-		conf.SecretKey, err = read("Enter Secret Key: ")
+		conf.SecretKey, err = readSecret("Enter Secret Key: ")
 		if err != nil {
 			return err
 		}
@@ -149,8 +170,8 @@ func SetAliasConf(ctx context.Context, section string) error {
 		}
 		if input != "" {
 			m, err := strconv.Atoi(input)
-			if err != nil {
-				myprint.PrintlnRed("Invalid input, please enter a number")
+			if err != nil || m <= 0 {
+				myprint.PrintlnRed("Invalid input, please enter a positive number")
 				continue
 			}
 			conf.MultipartChunkSizeMb = m
@@ -158,6 +179,15 @@ func SetAliasConf(ctx context.Context, section string) error {
 		}
 		conf.MultipartChunkSizeMb = 15
 		break
+	}
+
+	// 交互不覆盖用户手工维护的非交互字段 (max_retries):
+	// 重新 alias set 前从已有 section 读出旧值, 避免 ReflectFrom 后被 DeleteKey 擦掉。
+	if cfg.HasSection(section) {
+		old := cfg.Section(section)
+		if old.HasKey("max_retries") {
+			conf.MaxRetries, _ = old.Key("max_retries").Int()
+		}
 	}
 
 	sec, err := cfg.NewSection(section)
@@ -185,9 +215,6 @@ func SetAliasConf(ctx context.Context, section string) error {
 	}
 	if conf.BucketLookup == "" {
 		sec.DeleteKey("bucket_lookup")
-	}
-	if conf.Vendor == "" {
-		sec.DeleteKey("vendor")
 	}
 	if conf.MaxRetries == 0 {
 		sec.DeleteKey("max_retries")

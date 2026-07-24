@@ -4,7 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"s3cli/internal/utils"
+	"s3cli/internal/s3path"
 	"strings"
 
 	"s3cli/pkg/s3api"
@@ -63,6 +63,25 @@ func (c *S3Client) IsS3File(bucket, key string) (bool, error) {
 	return false, fmt.Errorf("s3 error: %w", err)
 }
 
+// objectExists 仅判断对象是否存在 (true=存在), 不做目录前缀探测。
+// 用于上传前的存在性检查: 目标要么是文件对象, 要么不存在。
+// 与 IsS3File 不同, 404 直接判 false, 不再探测是否为目录前缀;
+// 403 等权限错误以 error 返回 (无法确认存在性时宁可报错, 不静默上传)。
+func (c *S3Client) objectExists(ctx context.Context, bucket, key string) (bool, error) {
+	_, err := c.S3.HeadObject(ctx, bucket, key, "")
+	if err == nil {
+		return true, nil
+	}
+	var apiErr *s3api.ErrorResponse
+	if errors.As(err, &apiErr) {
+		switch apiErr.Code {
+		case "NoSuchKey", "NotFound", "404":
+			return false, nil
+		}
+	}
+	return false, err
+}
+
 // checkIfDirectory 在 HeadObject 返回 404 后判断 key 是否为目录前缀。
 // 返回 (false, nil) 表示是目录前缀（非文件），(false, err) 表示路径不存在。
 func (c *S3Client) checkIfDirectory(bucket, key string) (bool, error) {
@@ -96,10 +115,10 @@ func (c *S3Client) checkIfDirectory(bucket, key string) (bool, error) {
 
 // DestStateOf 判断目标 key 当前的状态：文件 / 目录 / 不存在。
 // 用于 cp/mv/mirror 计算目标对象 key。探测失败时返回 (DestNone, err)。
-func (c *S3Client) DestStateOf(bucket, key string) (utils.DestState, error) {
+func (c *S3Client) DestStateOf(bucket, key string) (s3path.DestState, error) {
 	// 空 key 表示 bucket 本身，视为目录
 	if strings.TrimSuffix(key, "/") == "" {
-		return utils.DestDir, nil
+		return s3path.DestDir, nil
 	}
 
 	probe := strings.TrimSuffix(key, "/")
@@ -107,7 +126,7 @@ func (c *S3Client) DestStateOf(bucket, key string) (utils.DestState, error) {
 	// 1) HeadObject 命中即为文件
 	_, err := c.S3.HeadObject(c.Ctx, bucket, probe, "")
 	if err == nil {
-		return utils.DestFile, nil
+		return s3path.DestFile, nil
 	}
 
 	// 仅对 404 继续目录探测；403 等直接返回错误
@@ -117,12 +136,12 @@ func (c *S3Client) DestStateOf(bucket, key string) (utils.DestState, error) {
 		case "NoSuchKey", "NotFound", "404":
 			// 继续探测目录
 		case "AccessDenied", "Forbidden", "403":
-			return utils.DestNone, fmt.Errorf("access denied to bucket '%s'", bucket)
+			return s3path.DestNone, fmt.Errorf("access denied to bucket '%s'", bucket)
 		default:
-			return utils.DestNone, fmt.Errorf("s3 error: %w", err)
+			return s3path.DestNone, fmt.Errorf("s3 error: %w", err)
 		}
 	} else {
-		return utils.DestNone, fmt.Errorf("s3 error: %w", err)
+		return s3path.DestNone, fmt.Errorf("s3 error: %w", err)
 	}
 
 	// 2) 目录探测：prefix = key + "/"
@@ -132,13 +151,13 @@ func (c *S3Client) DestStateOf(bucket, key string) (utils.DestState, error) {
 		MaxKeys:   1,
 	})
 	if err != nil {
-		return utils.DestNone, err
+		return s3path.DestNone, err
 	}
 	if len(listResp.CommonPrefixes) > 0 || len(listResp.Contents) > 0 {
-		return utils.DestDir, nil
+		return s3path.DestDir, nil
 	}
 
-	return utils.DestNone, nil
+	return s3path.DestNone, nil
 }
 
 type Cred struct {

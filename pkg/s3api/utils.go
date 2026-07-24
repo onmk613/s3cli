@@ -22,7 +22,9 @@ const (
 	unsignedPayload = "UNSIGNED-PAYLOAD"
 )
 
-const defaultXMLNS = "https://s3.amazonaws.com/doc/2006-03-01/"
+// defaultXMLNS 是 S3 配置接口的标准命名空间 (规范为 http://, 不是 https://,
+// aws-sdk / minio-go 均如此; 写错会被严格校验的服务端拒为 MalformedXML)。
+const defaultXMLNS = "http://s3.amazonaws.com/doc/2006-03-01/"
 
 // sortStrings 对字符串切片按字典序排序.
 func sortStrings(s []string) {

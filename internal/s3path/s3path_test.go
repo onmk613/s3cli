@@ -1,4 +1,4 @@
-package utils
+package s3path
 
 import (
 	"errors"
@@ -21,7 +21,7 @@ func TestParseS3Path(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.input, func(t *testing.T) {
-			got, err := ParseS3Path(tc.input)
+			got, err := Parse(tc.input)
 			if tc.wantErr {
 				if err == nil {
 					t.Fatal("expected error")

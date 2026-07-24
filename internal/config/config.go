@@ -61,9 +61,6 @@ type Static struct {
 	DefaultMimeType      string `ini:"default_mime_type"`
 	MultipartChunkSizeMb int    `ini:"multipart_chunk_size_mb"`
 	MaxRetries           int    `ini:"max_retries"`
-	// 指定厂商, 详情请看 pkg/s3api/vender.go
-	// 当前只为预留隐藏参数，还没正式做调整
-	Vendor string `ini:"vendor"`
 }
 
 // ResolveBucketLookup 解析 bucket_lookup 配置，返回模式和模板。

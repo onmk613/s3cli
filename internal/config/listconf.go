@@ -18,7 +18,7 @@ func ListAliasConf(alias []string) error {
 	info, err := os.Stat(ConfPath)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return fmt.Errorf("config file not found: %s (run `s3cmd alias set <name>` to create one)", ConfPath)
+			return fmt.Errorf("config file not found: %s (run `s3cli alias set <name>` to create one)", ConfPath)
 		}
 		return fmt.Errorf("stat config %s: %w", ConfPath, err)
 	}
@@ -58,7 +58,7 @@ func ListAliasConf(alias []string) error {
 
 	if len(sections) == 0 {
 		myprint.PrintlnYellow("no aliases configured.")
-		myprint.Println("Hint: run `s3cmd alias set <name>` to create one.")
+		myprint.Println("Hint: run `s3cli alias set <name>` to create one.")
 		return nil
 	}
 
@@ -99,6 +99,9 @@ func ListAliasConf(alias []string) error {
 			if val == "" {
 				continue
 			}
+			if k.Name() == "secret_key" && !G.F.Quiet {
+				val = maskSecret(val)
+			}
 			myprint.Printf("  ")
 			myprint.PrintfGreen("%s", k.Name())
 			myprint.PrintfDim(" = ")
@@ -119,4 +122,12 @@ func stringInSlice(s string, list []string) bool {
 		}
 	}
 	return false
+}
+
+// maskSecret 把密钥打码为 "****尾4位" (长度 <= 4 时全打码)。
+func maskSecret(s string) string {
+	if len(s) <= 4 {
+		return "****"
+	}
+	return "****" + s[len(s)-4:]
 }

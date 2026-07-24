@@ -1,5 +1,5 @@
-// Package utils 提供路径解析、AWS 配置文件加载等基础工具函数。
-package utils
+// Package s3path 提供对 "alias:bucket/key" 形态 S3 路径的解析与目标 key 解析。
+package s3path
 
 import (
 	"errors"
@@ -20,16 +20,16 @@ var AliasNameRegex = regexp.MustCompile(`^[A-Za-z0-9][a-zA-Z0-9_\-.]{1,63}[A-Za-
 // BucketNameRegex 校验 bucket 名
 var BucketNameRegex = regexp.MustCompile(`^[A-Za-z0-9][a-zA-Z0-9_\-.]{1,61}[A-Za-z0-9]$`)
 
-// S3Path 表示一条 "alias:bucket/key" 形态的解析结果。
-type S3Path struct {
+// Path 表示一条 "alias:bucket/key" 形态的解析结果。
+type Path struct {
 	Alias         string // alias 名 (必填)
 	Bucket        string // bucket 名 (必填)
 	Key           string // object key, 可为空; 多级路径会保留中间的 "/"
 	TrailingSlash bool   // 原始输入是否以 "/" 结尾 (用于区分 "DIR" / "OBJECT")
 }
 
-// ParseS3Path 解析 "alias:bucket/key" 格式的路径
-func ParseS3Path(s string) (*S3Path, error) {
+// Parse 解析 "alias:bucket/key" 格式的路径
+func Parse(s string) (*Path, error) {
 	if s == "" {
 		return nil, fmt.Errorf("empty s3 path")
 	}
@@ -39,7 +39,7 @@ func ParseS3Path(s string) (*S3Path, error) {
 		if !AliasNameRegex.MatchString(s) {
 			return nil, fmt.Errorf("invalid alias name %q: must match %s", s, AliasNameRegex.String())
 		}
-		return &S3Path{Alias: s}, ErrAliasOnly
+		return &Path{Alias: s}, ErrAliasOnly
 	}
 
 	if colon == 0 {
@@ -81,7 +81,7 @@ func ParseS3Path(s string) (*S3Path, error) {
 		key = key + "/"
 	}
 
-	return &S3Path{
+	return &Path{
 		Alias:         alias,
 		Bucket:        bucket,
 		Key:           key,

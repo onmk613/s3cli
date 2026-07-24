@@ -92,3 +92,34 @@ func TestLocalDiffModes(t *testing.T) {
 		t.Fatalf("Diff error = %v", err)
 	}
 }
+
+// TestDirectoryDiffMD5MixedPairsRace 回归测试: 目录模式 + md5 模式下,
+// 同时存在 "大小不同的文件对" (主 goroutine 写 differ) 与 "大小相同的文件对"
+// (worker goroutine 写 differ/identical)。旧实现两条路径无锁并发写同一切片,
+// go test -race 必报 data race; 修复后全部经持锁 helper 写入。
+func TestDirectoryDiffMD5MixedPairsRace(t *testing.T) {
+	dirA := t.TempDir()
+	dirB := t.TempDir()
+	write := func(dir, name, content string) {
+		t.Helper()
+		if err := os.WriteFile(filepath.Join(dir, name), []byte(content), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// 大小相同、内容相同 -> identical (worker 写)
+	write(dirA, "same.txt", "same-content")
+	write(dirB, "same.txt", "same-content")
+	// 大小相同、内容不同 -> differ (worker 写)
+	write(dirA, "content.txt", "aaaa")
+	write(dirB, "content.txt", "bbbb")
+	// 大小不同 -> differ (主 goroutine 写)
+	write(dirA, "size.txt", "short")
+	write(dirB, "size.txt", "much-longer-content")
+
+	a := &DiffEndpoint{Path: dirA, Ctx: context.Background()}
+	b := &DiffEndpoint{Path: dirB, Ctx: context.Background()}
+	err := Diff(DiffOptions{A: a, B: b, Mode: DiffModeMD5, Recursive: true, Concurrency: 4})
+	if !errors.Is(err, errDiffer) {
+		t.Fatalf("Diff error = %v, want errDiffer", err)
+	}
+}

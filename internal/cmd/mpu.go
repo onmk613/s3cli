@@ -3,7 +3,7 @@ package cmd
 import (
 	"s3cli/internal/action"
 	"s3cli/internal/config"
-	"s3cli/internal/utils"
+	"s3cli/internal/s3path"
 
 	"github.com/spf13/cobra"
 )
@@ -50,7 +50,7 @@ func newMpuListCmd() *cobra.Command {
 		Short:             "List in-progress multipart uploads",
 		Args:              cobra.MinimumNArgs(1),
 		ValidArgsFunction: AutoCompletePath,
-		RunE: NewRunE(func(S3 action.S3Client, _ *Context, s3path *utils.S3Path) error {
+		RunE: NewRunE(func(S3 action.S3Client, _ *Context, s3path *s3path.Path) error {
 			return S3.MpuList(s3path.Bucket, s3path.Key)
 		}, nil),
 	}
@@ -65,7 +65,7 @@ func newMpuAbortCmd() *cobra.Command {
 		Short:             "Abort multipart upload. With --upload-id aborts one; otherwise aborts all under the prefix.",
 		Args:              cobra.ExactArgs(1),
 		ValidArgsFunction: AutoCompletePath,
-		RunE: NewRunE(func(S3 action.S3Client, _ *Context, s3path *utils.S3Path) error {
+		RunE: NewRunE(func(S3 action.S3Client, _ *Context, s3path *s3path.Path) error {
 			return S3.MpuAbort(s3path.Bucket, s3path.Key, uploadID)
 		}, &opts),
 	}

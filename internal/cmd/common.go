@@ -5,46 +5,13 @@ import (
 	"errors"
 	"fmt"
 	"s3cli/internal/client"
-	"s3cli/internal/utils"
+	"s3cli/internal/s3path"
 
 	"s3cli/internal/action"
 	myprint "s3cli/pkg/fmtutil"
-	"s3cli/pkg/s3api"
 
 	"github.com/spf13/cobra"
 )
-
-// 退出码约定：0 成功；1 通用错误；3 对象/资源不存在；4 权限拒绝；5 用户取消 / 超时。
-const (
-	exitGeneric  = 1
-	exitNotFound = 3
-	exitAccess   = 4
-	exitCanceled = 5
-)
-
-// exitCodeForError 按错误类型映射退出码，供 root.go 在进程退出时使用。
-//   - context.Canceled / DeadlineExceeded → 5（用户取消或超时）
-//   - S3 404 (NoSuchKey/NotFound)          → 3（资源不存在）
-//   - S3 403 (AccessDenied/Forbidden)      → 4（权限拒绝）
-//   - 其它                                  → 1
-func exitCodeForError(err error) int {
-	if err == nil {
-		return 0
-	}
-	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
-		return exitCanceled
-	}
-	var apiErr *s3api.ErrorResponse
-	if errors.As(err, &apiErr) {
-		switch apiErr.StatusCode {
-		case 404:
-			return exitNotFound
-		case 403:
-			return exitAccess
-		}
-	}
-	return exitGeneric
-}
 
 // errAlreadyDisplayed 是一个哨兵错误：表示错误已通过 displayError 输出给用户，
 // 上层（NewRootCmd）不应再次打印，只需据此返回非零退出码。
@@ -56,11 +23,11 @@ func isCanceled(ctx context.Context) bool {
 }
 
 // formatUserError 将内部 error 转换为对用户友好地显示信息。
-func formatUserError(err error) string {
+func formatUserError(err error) error {
 	if err == nil {
-		return ""
+		return nil
 	}
-	// 对 smithy API 错误做友好格式化
+	// 对 S3 API 错误 (s3api.ErrorResponse) 做友好格式化
 	return action.FormatAPIError(err)
 }
 
@@ -69,15 +36,33 @@ func displayError(err error) {
 	myprint.PrintlnBoldRed(formatUserError(err))
 }
 
-type ActionFunc func(S3 action.S3Client, opts *Context, s3path *utils.S3Path) error
+// parseClient 封装 client 解析 + cancel + 错误展示，返回构造好的 S3Client。
+func parseClient(ctx context.Context, arg string) (action.S3Client, *s3path.Path, error) {
+	s3client, sp, err := client.ParsePathAndNewClient(ctx, arg)
+	if err != nil {
+		if errors.Is(err, s3path.ErrAliasOnly) && s3client != nil {
+			return action.S3Client{S3: s3client, Alias: sp.Alias, Ctx: ctx}, sp, err
+		}
+		return action.S3Client{}, sp, err
+	}
+	return action.S3Client{S3: s3client, Alias: sp.Alias, Ctx: ctx}, sp, nil
+}
+
+// handleErr 统一处理：cancel 返回 (nil, true) 表示应静默退出；否则展示错误。
+func wrapDisplayed(err error) error {
+	displayError(err)
+	return fmt.Errorf("%w: %w", errAlreadyDisplayed, err)
+}
+
+type ActionFunc func(S3 action.S3Client, opts *Context, s3path *s3path.Path) error
 
 // ArgParseMode 定义 args 参数的格式
 type ArgParseMode int
 
 const (
-	ParseS3OnlyPath         ArgParseMode = iota // 所有 args 都是 S3 路径
-	ParseLocalFileAndS3Path                     // args[0] 是本地文件，args[1:] 是 S3 路径
-	ParseS3PathAndLocalFile                     // args[0] 是 S3 路径，args[1] 是本地文件
+	ParseS3OnlyPath    ArgParseMode = iota // 所有 args 都是 S3 路径
+	ParseArgsAndS3Path                     // args[0] 是参数，args[1:] 是 S3 路径, 一般设置某个配置或者上传文件
+	ParseS3PathAndArgs                     // args[0] 是 S3 路径，args[1] 是参数, 下载
 	// ParseTwoS3Paths                             // 用于 cp/mv: args[0] 和 args[1] 都是 S3 路径
 )
 
@@ -112,7 +97,7 @@ type GlobalOptions struct {
 	Quiet          bool   //  --quiet
 	Force          bool   // rb --force
 	Recursive      bool   // get/put/rm/cp/mv -r
-	LocalFile      string // 本地文件路径 (get/put/cors/lifecycle/policy/event)
+	Args           string // 某个必须在命令行中的参数, 可以指某个文件, 也可以是某个字符串
 }
 
 // NewRunE 为"单 S3 路径"命令构造 cobra RunE。
@@ -128,12 +113,12 @@ func NewRunE(fn ActionFunc, opts *Context) func(cmd *cobra.Command, args []strin
 		switch opts.ArgParseMode {
 		case ParseS3OnlyPath:
 			s3PathArg = args
-		case ParseLocalFileAndS3Path:
-			opts.Global.LocalFile = args[0]
+		case ParseArgsAndS3Path:
+			opts.Global.Args = args[0]
 			s3PathArg = args[1:]
-		case ParseS3PathAndLocalFile:
+		case ParseS3PathAndArgs:
 			if len(args) >= 2 {
-				opts.Global.LocalFile = args[len(args)-1]
+				opts.Global.Args = args[len(args)-1]
 				s3PathArg = args[:len(args)-1]
 			} else {
 				s3PathArg = args
@@ -144,19 +129,18 @@ func NewRunE(fn ActionFunc, opts *Context) func(cmd *cobra.Command, args []strin
 
 		var errs []error
 		for _, arg := range s3PathArg {
-			s3client, s3path, err := client.ParsePathAndNewClient(cmd.Context(), arg)
+			S3, sp, err := parseClient(cmd.Context(), arg)
 			if err != nil {
 				if isCanceled(cmd.Context()) {
 					return nil
 				}
-				if !(opts.Global.AllowAliasOnly && errors.Is(err, utils.ErrAliasOnly)) {
+				if !(opts.Global.AllowAliasOnly && errors.Is(err, s3path.ErrAliasOnly)) {
 					displayError(err)
 					errs = append(errs, err)
 					continue
 				}
 			}
-			S3 := action.S3Client{S3: s3client, Alias: s3path.Alias, Ctx: cmd.Context()}
-			if err := fn(S3, opts, s3path); err != nil {
+			if err := fn(S3, opts, sp); err != nil {
 				if isCanceled(cmd.Context()) {
 					return nil
 				}
@@ -175,7 +159,7 @@ func NewRunE(fn ActionFunc, opts *Context) func(cmd *cobra.Command, args []strin
 }
 
 // TwoS3ActionFunc 用于需要两个 S3 路径的操作（cp/mv/diff/mirror）。
-type TwoS3ActionFunc func(src, dst action.S3Client, srcPath, dstPath *utils.S3Path, opts *Context) error
+type TwoS3ActionFunc func(src, dst action.S3Client, srcPath, dstPath *s3path.Path, opts *Context) error
 
 // NewRunETwoPaths 为双 S3 路径命令构造 RunE。
 func NewRunETwoPaths(fn TwoS3ActionFunc, opts *Context) func(cmd *cobra.Command, args []string) error {
@@ -185,30 +169,25 @@ func NewRunETwoPaths(fn TwoS3ActionFunc, opts *Context) func(cmd *cobra.Command,
 	opts.ensureInit()
 
 	return func(cmd *cobra.Command, args []string) error {
-		srcClient, srcPath, err := client.ParsePathAndNewClient(cmd.Context(), args[0])
+		srcS3, srcPath, err := parseClient(cmd.Context(), args[0])
 		if err != nil {
 			if isCanceled(cmd.Context()) {
 				return nil
 			}
-			displayError(err)
-			return fmt.Errorf("%w: %w", errAlreadyDisplayed, err)
+			return wrapDisplayed(err)
 		}
-		dstClient, dstPath, err := client.ParsePathAndNewClient(cmd.Context(), args[1])
+		dstS3, dstPath, err := parseClient(cmd.Context(), args[1])
 		if err != nil {
 			if isCanceled(cmd.Context()) {
 				return nil
 			}
-			displayError(err)
-			return fmt.Errorf("%w: %w", errAlreadyDisplayed, err)
+			return wrapDisplayed(err)
 		}
-		srcS3 := action.S3Client{S3: srcClient, Alias: srcPath.Alias, Ctx: cmd.Context()}
-		dstS3 := action.S3Client{S3: dstClient, Alias: dstPath.Alias, Ctx: cmd.Context()}
 		if err := fn(srcS3, dstS3, srcPath, dstPath, opts); err != nil {
 			if isCanceled(cmd.Context()) {
 				return nil
 			}
-			displayError(err)
-			return fmt.Errorf("%w: %w", errAlreadyDisplayed, err)
+			return wrapDisplayed(err)
 		}
 		return nil
 	}

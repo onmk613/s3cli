@@ -20,7 +20,7 @@ const (
 // AddTotal 增加总任务数
 func (pt *Tracker) AddTotal(n int64) {
 	pt.total.Add(n)
-	if pt.quiet.Load() {
+	if pt.quiet.Load() || pt.stopped.Load() {
 		return
 	}
 	if pt.totalSz.Load() == 0 {
@@ -36,6 +36,9 @@ func (pt *Tracker) AddTotal(n int64) {
 // 不打印进度条时直接输出原始内容
 func (pt *Tracker) AddTotalDone(n int64, msg string) {
 	pt.done.Add(n)
+	if pt.stopped.Load() {
+		return
+	}
 	if pt.quiet.Load() {
 		// 直接输出原始信息
 		_, _ = fmt.Fprintln(os.Stdout, colorize(colorDone, fmt.Sprintf("Done: %s", msg)))
@@ -50,7 +53,7 @@ func (pt *Tracker) AddTotalDone(n int64, msg string) {
 // AddTotalSize 增加总任务大小
 func (pt *Tracker) AddTotalSize(sz int64) {
 	pt.totalSz.Add(sz)
-	if pt.quiet.Load() {
+	if pt.quiet.Load() || pt.stopped.Load() {
 		return
 	}
 	if pt.total.Load() == 0 {
@@ -64,7 +67,7 @@ func (pt *Tracker) AddTotalSize(sz int64) {
 // AddTotalSizeDone 增加已完成任务大小
 func (pt *Tracker) AddTotalSizeDone(sz int64) {
 	pt.doneSz.Add(sz)
-	if pt.quiet.Load() {
+	if pt.quiet.Load() || pt.stopped.Load() {
 		return
 	}
 
@@ -79,6 +82,9 @@ func (pt *Tracker) AddTotalSizeDone(sz int64) {
 func (pt *Tracker) AddFailed(n int64, msg string) {
 	pt.failed.Add(n)
 	pt.done.Add(n)
+	if pt.stopped.Load() {
+		return
+	}
 
 	// 单次持锁：同时追加失败信息与渲染，避免重复加解锁
 	pt.mu.Lock()

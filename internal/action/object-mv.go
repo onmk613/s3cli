@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 	"path"
-	"s3cli/internal/utils"
+	"s3cli/internal/s3path"
 	"strings"
 
 	myprint "s3cli/pkg/fmtutil"
@@ -27,7 +27,7 @@ func (c *S3Client) Mv(srcBucket, srcKey, destBucket, destKey string, recursive, 
 
 	// 单文件源：规则 5/6
 	if srcIsFile {
-		dst := utils.ResolveFileDest(destKey, destTrailing, path.Base(strings.TrimSuffix(srcKey, "/")))
+		dst := s3path.ResolveFileDest(destKey, destTrailing, path.Base(strings.TrimSuffix(srcKey, "/")))
 		if err := c.mvObject(srcBucket, srcKey, destBucket, dst); err != nil {
 			return err
 		}
@@ -39,9 +39,9 @@ func (c *S3Client) Mv(srcBucket, srcKey, destBucket, destKey string, recursive, 
 	state, err := c.DestStateOf(destBucket, destKey)
 	if err != nil {
 		myprint.PrintfYellow("check destination (treated as not-exist): %s\n", FormatAPIError(err))
-		state = utils.DestNone
+		state = s3path.DestNone
 	}
-	destPrefix, appendRel := utils.ResolveDirDestPrefix(srcKey, srcTrailing, destKey, destTrailing, state)
+	destPrefix, appendRel := s3path.ResolveDirDestPrefix(srcKey, srcTrailing, destKey, destTrailing, state)
 	return c.mvDirStreaming(srcBucket, srcKey, destBucket, destPrefix, appendRel, noProgress)
 }
 

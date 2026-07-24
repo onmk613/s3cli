@@ -2,7 +2,7 @@ package cmd
 
 import (
 	"fmt"
-	"s3cli/internal/utils"
+	"s3cli/internal/s3path"
 
 	"s3cli/internal/action"
 	"s3cli/internal/config"
@@ -17,7 +17,7 @@ func init() {
 }
 
 // samePath 判断两个 S3 路径是否指向同一对象。
-func samePath(a, b *utils.S3Path) bool {
+func samePath(a, b *s3path.Path) bool {
 	return a.Alias == b.Alias && a.Bucket == b.Bucket && a.Key == b.Key
 }
 
@@ -28,7 +28,7 @@ func NewCpCmd() *cobra.Command {
 		Short:             "Copy object within the same S3 endpoint",
 		Args:              cobra.ExactArgs(2),
 		ValidArgsFunction: AutoCompletePath,
-		RunE: NewRunETwoPaths(func(src, dst action.S3Client, srcPath, dstPath *utils.S3Path, opts *Context) error {
+		RunE: NewRunETwoPaths(func(src, dst action.S3Client, srcPath, dstPath *s3path.Path, opts *Context) error {
 			if srcPath.Alias != dstPath.Alias {
 				return fmt.Errorf("cp only supports same-alias copy; use `mirror` for cross-endpoint")
 			}
@@ -49,7 +49,7 @@ func NewMvCmd() *cobra.Command {
 		Short:             "Move object within the same S3 endpoint",
 		Args:              cobra.ExactArgs(2),
 		ValidArgsFunction: AutoCompletePath,
-		RunE: NewRunETwoPaths(func(src, dst action.S3Client, srcPath, dstPath *utils.S3Path, opts *Context) error {
+		RunE: NewRunETwoPaths(func(src, dst action.S3Client, srcPath, dstPath *s3path.Path, opts *Context) error {
 			if srcPath.Alias != dstPath.Alias {
 				return fmt.Errorf("mv only supports same-alias move; use `mirror --remove` for cross-endpoint")
 			}
@@ -79,18 +79,26 @@ func NewMirrorCmd() *cobra.Command {
 	)
 
 	opts := newCmdContext()
-	cmd := &cobra.Command{
+	// cmd 先声明后赋值: RunE 闭包需要引用 cmd 判断 --part-size 是否被显式设置
+	var cmd *cobra.Command
+	cmd = &cobra.Command{
 		Use:               "mirror [src-alias:bucket/prefix] [dst-alias:bucket/prefix]",
 		Aliases:           []string{"sync"},
 		Short:             "Synchronize objects from source to target (one-way sync)",
 		Args:              cobra.ExactArgs(2),
 		ValidArgsFunction: AutoCompletePath,
-		RunE: NewRunETwoPaths(func(src, tgt action.S3Client, srcPath, tgtPath *utils.S3Path, opts *Context) error {
+		RunE: NewRunETwoPaths(func(src, tgt action.S3Client, srcPath, tgtPath *s3path.Path, opts *Context) error {
 			if srcPath.Bucket == "" || tgtPath.Bucket == "" {
 				return fmt.Errorf("both src and dst must include a bucket")
 			}
 			if srcPath.Alias == tgtPath.Alias {
 				return fmt.Errorf("mirror requires different aliases (use `cp` for same-alias copy)")
+			}
+
+			// alias 配置的 chunk size 仅在 --part-size 未显式设置时生效;
+			// 跨端 MPU 在目标端创建, 故取目标 alias 的配置。
+			if cfg, ok := config.G.S[tgtPath.Alias]; ok && cfg.MultipartChunkSizeMb > 0 && !cmd.Flags().Changed("part-size") {
+				partSizeMB = cfg.MultipartChunkSizeMb
 			}
 
 			return action.Mirror(action.MirrorOptions{
@@ -127,7 +135,7 @@ func NewMirrorCmd() *cobra.Command {
 	f.BoolVar(&overwrite, "overwrite", false, "Overwrite target objects whose ETag/size/mtime differ from source")
 	f.BoolVar(&dryRun, "dry-run", false, "Show what would be done without making any changes")
 	f.IntVar(&concurrency, "concurrency", config.DefaultConcurrency, "Number of concurrent transfers")
-	f.IntVar(&partSizeMB, "part-size", config.DefaultPartSizeMB, "Multipart part size in MB (cross-endpoint only)")
+	f.IntVar(&partSizeMB, "part-size", config.DefaultPartSizeMB, "Multipart part size in MB (cross-endpoint only) (default: alias multipart_chunk_size_mb or 15)")
 	f.Int64Var(&sizeLimit, "size-limit", 0, "Skip objects larger than N bytes (0 = no limit)")
 	f.IntVar(&maxDelete, "max-delete", 0, "Abort before deleting more than N target objects (0 = no limit)")
 	f.StringSliceVar(&include, "include", nil, "Only sync keys matching this glob (can repeat)")

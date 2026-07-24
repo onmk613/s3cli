@@ -2,7 +2,7 @@ package cmd
 
 import (
 	"s3cli/internal/action"
-	"s3cli/internal/utils"
+	"s3cli/internal/s3path"
 
 	"github.com/spf13/cobra"
 )
@@ -27,7 +27,7 @@ func NewSetTagCmd() *cobra.Command {
 		Short:             "Set tag(s) on a bucket or object(s)",
 		Args:              cobra.MinimumNArgs(1),
 		ValidArgsFunction: AutoCompletePath,
-		RunE: NewRunE(func(S3 action.S3Client, _ *Context, s3path *utils.S3Path) error {
+		RunE: NewRunE(func(S3 action.S3Client, _ *Context, s3path *s3path.Path) error {
 			return S3.SetTag(s3path.Bucket, s3path.Key, tagString)
 		}, &opts),
 	}
@@ -43,7 +43,7 @@ func NewGetTagCmd() *cobra.Command {
 		Short:             "Get tag(s) of bucket(s) or object(s)",
 		Args:              cobra.MinimumNArgs(1),
 		ValidArgsFunction: AutoCompletePath,
-		RunE: NewRunE(func(S3 action.S3Client, _ *Context, s3path *utils.S3Path) error {
+		RunE: NewRunE(func(S3 action.S3Client, _ *Context, s3path *s3path.Path) error {
 			return S3.GetTag(s3path.Bucket, s3path.Key)
 		}, nil),
 	}
@@ -56,7 +56,7 @@ func NewDelTagCmd() *cobra.Command {
 		Short:             "Delete tag(s) from bucket(s) or object(s)",
 		Args:              cobra.MinimumNArgs(1),
 		ValidArgsFunction: AutoCompletePath,
-		RunE: NewRunE(func(S3 action.S3Client, _ *Context, s3path *utils.S3Path) error {
+		RunE: NewRunE(func(S3 action.S3Client, _ *Context, s3path *s3path.Path) error {
 			return S3.DelTag(s3path.Bucket, s3path.Key)
 		}, nil),
 	}

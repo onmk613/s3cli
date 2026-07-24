@@ -4,7 +4,7 @@ import (
 	"context"
 	"testing"
 
-	"s3cli/pkg/s3api"
+	"github.com/spf13/cobra"
 )
 
 func TestTransferCommandsExposeExpectedFlags(t *testing.T) {
@@ -52,29 +52,48 @@ func TestTransferCommandsExposeExpectedFlags(t *testing.T) {
 	}
 }
 
-func TestExitCodeForError(t *testing.T) {
-	if exitCodeForError(context.Canceled) != 5 {
-		t.Fatal("cancel code")
-	}
-	if exitCodeForError(&s3api.ErrorResponse{StatusCode: 404}) != 3 {
-		t.Fatal("not-found code")
-	}
-	if exitCodeForError(&s3api.ErrorResponse{StatusCode: 403}) != 4 {
-		t.Fatal("access code")
-	}
-	if exitCodeForError(context.DeadlineExceeded) != 5 {
-		t.Fatal("deadline code")
-	}
-}
-
 func TestCommandContextsAndCancellation(t *testing.T) {
-	ctx := newCmdContext(ParseS3PathAndLocalFile)
-	if ctx.Global == nil || ctx.ArgParseMode != ParseS3PathAndLocalFile {
+	ctx := newCmdContext(ParseS3PathAndArgs)
+	if ctx.Global == nil || ctx.ArgParseMode != ParseS3PathAndArgs {
 		t.Fatalf("context = %#v", ctx)
 	}
 	cancelled, cancel := context.WithCancel(context.Background())
 	cancel()
 	if !isCanceled(cancelled) {
 		t.Fatal("cancelled context should be recognized")
+	}
+}
+
+// TestShouldSkipConfLoad 回归测试: 曾把 cmd.Root().Name() 放进父链遍历的
+// skip 集合, 导致每个命令 (父链终点都是 root) 都跳过 LoadConf, 全工具不可用。
+func TestShouldSkipConfLoad(t *testing.T) {
+	root := &cobra.Command{Use: "s3cli"}
+	ls := &cobra.Command{Use: "ls"}
+	alias := &cobra.Command{Use: "alias"}
+	aliasSet := &cobra.Command{Use: "set"}
+	mpu := &cobra.Command{Use: "mpu"}
+	mpuLocalList := &cobra.Command{Use: "local-list"}
+	root.AddCommand(ls, alias, mpu)
+	alias.AddCommand(aliasSet)
+	mpu.AddCommand(mpuLocalList)
+
+	cases := []struct {
+		name string
+		cmd  *cobra.Command
+		want bool
+	}{
+		{"root itself", root, true},
+		{"normal command loads conf", ls, false},
+		{"alias skips", alias, true},
+		{"alias subcommand skips", aliasSet, true},
+		{"mpu local-list skips", mpuLocalList, true},
+		{"mpu itself loads conf", mpu, false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := shouldSkipConfLoad(tc.cmd); got != tc.want {
+				t.Fatalf("shouldSkipConfLoad(%s) = %v, want %v", tc.cmd.Name(), got, tc.want)
+			}
+		})
 	}
 }

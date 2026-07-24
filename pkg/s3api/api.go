@@ -23,7 +23,6 @@ type Client struct {
 
 	// 地区和厂商
 	region string
-	vendor Provider
 
 	// bucket 寻址方式和自定义寻址函数
 	lookup   BucketLookupType
@@ -49,7 +48,6 @@ type Options struct {
 
 	// 地区和厂商
 	Region string
-	Vendor Provider
 
 	// bucket 寻址方式和自定义寻址函数
 	BucketLookup       BucketLookupType
@@ -106,7 +104,6 @@ func New(opts *Options) (*Client, error) {
 		secretKey:      opts.SecretKey,
 		sessionToken:   opts.SessionToken,
 		region:         opts.Region,
-		vendor:         opts.Vendor,
 		lookup:         opts.BucketLookup,
 		lookupFn:       opts.BucketLookupViaURL,
 		bucketLocCache: &kvcache.Cache[string, string]{},
@@ -133,19 +130,6 @@ func (c *Client) SecretKey() string {
 // SessionToken 返回配置的 SessionToken.
 func (c *Client) SessionToken() string {
 	return c.sessionToken
-}
-
-type Provider int
-
-const (
-	ProviderAws Provider = iota
-	ProviderMinIO
-	ProviderSeaweedFS
-)
-
-// Provider 设置厂商, 方便在针对一些特殊调用时调整
-func (c *Client) Provider(p Provider) {
-	c.vendor = p
 }
 
 // requestMetadata 描述一次 S3 API 请求所需的全部元数据.

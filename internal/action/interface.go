@@ -64,6 +64,7 @@ type BucketConfigurator interface {
 	SetPolicy(policyFile, bucket string) error
 	GetPolicy(bucket string) error
 	DelPolicy(bucket string) error
+	ApplyCannedPolicy(name, bucket, prefix string) error
 	SetEncryption(opt EncryptionOptions, bucket string) error
 	GetEncryption(bucket string) error
 	DelEncryption(bucket string) error

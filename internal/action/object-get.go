@@ -19,6 +19,7 @@ type GetOptions struct {
 	PartSizeMB  int
 	Range       string // HTTP Range header (e.g. "bytes=0-1023"); 仅对单文件有效
 	NoProgress  bool   // 不显示进度条（--quiet）
+	Overwrite   bool   // 本地文件已存在时是否覆盖 (默认跳过)
 }
 
 // GetObject 下载对象
@@ -60,6 +61,9 @@ func (c *S3Client) downloadDirectory(opt GetOptions, bucket, key, localPath stri
 				}
 				localFilePath, pathErr := buildLocalFilePath(objKey, key, localBasePath)
 				if pathErr != nil {
+					// 单个异常 key (如含 ".." 的路径穿越) 警告并跳过,
+					// 不中断整个目录下载。
+					myprint.PrintfYellow("skip %s: %v\n", objKey, pathErr)
 					return nil
 				}
 				jobs <- StreamJob{
@@ -71,6 +75,12 @@ func (c *S3Client) downloadDirectory(opt GetOptions, bucket, key, localPath stri
 			})
 		},
 		Work: func(ctx context.Context, job StreamJob, report func(n int64)) error {
+			// 默认不覆盖: 本地文件已存在则跳过 (静默, 进度条计入已完成)。
+			if !opt.Overwrite {
+				if info, statErr := os.Stat(job.Dst); statErr == nil && !info.IsDir() {
+					return nil
+				}
+			}
 			_, err := c.downloadFile(job.Src, job.Dst, bucket, report)
 			return err
 		},
@@ -83,9 +93,17 @@ func (c *S3Client) downloadSingleFile(opt GetOptions, bucket, key, localPath str
 		return err
 	}
 
-	// --range 直接走 GetObject
+	// --range 直接走 GetObject (显式字节范围, 始终覆盖)
 	if opt.Range != "" {
 		return c.rangeGetObject(bucket, key, localFilePath, opt.Range)
+	}
+
+	// 默认不覆盖: 本地文件已存在则跳过, 仅 --overwrite 时强制下载。
+	if !opt.Overwrite {
+		if info, statErr := os.Stat(localFilePath); statErr == nil && !info.IsDir() {
+			myprint.Printf("skip: %s already exists\n", localFilePath)
+			return nil
+		}
 	}
 
 	myprint.Printf("get: %s --> %s ", c.S3Path(bucket, key), localFilePath)
@@ -238,7 +256,7 @@ func buildLocalFilePath(s3Key, s3Prefix, localBasePath string) (string, error) {
 	s3Key = strings.TrimPrefix(s3Key, "/")
 	s3Prefix = strings.TrimPrefix(s3Prefix, "/")
 	if s3Prefix == "" {
-		return filepath.Join(localBasePath, s3Key), nil
+		return safeJoinLocal(localBasePath, s3Key)
 	}
 	// 去掉前缀及其后可选的斜杠, 等价于原正则 "^s3Prefix/?", 但避免下载热路径重复编译正则.
 	relativePath := s3Key
@@ -248,5 +266,17 @@ func buildLocalFilePath(s3Key, s3Prefix, localBasePath string) (string, error) {
 	if relativePath == "" {
 		return localBasePath, nil
 	}
-	return filepath.Join(localBasePath, relativePath), nil
+	return safeJoinLocal(localBasePath, relativePath)
+}
+
+// safeJoinLocal 把 S3 相对 key 拼接到本地目录下。
+// S3 key 可包含 ".." 段, filepath.Join 清理后会逃出 base 目录 (路径穿越),
+// 必须显式拒绝: bucket 中的恶意/异常 key 不应写出目标目录之外。
+func safeJoinLocal(base, relSlash string) (string, error) {
+	for _, seg := range strings.Split(relSlash, "/") {
+		if seg == ".." {
+			return "", fmt.Errorf("refusing to write outside %s: object key %q contains '..'", base, relSlash)
+		}
+	}
+	return filepath.Join(base, relSlash), nil
 }

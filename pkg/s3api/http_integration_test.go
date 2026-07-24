@@ -2,6 +2,7 @@ package s3api
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -102,5 +103,57 @@ func TestDoRetriesWithRedirectedBucketRegion(t *testing.T) {
 	_ = resp.Body.Close()
 	if calls.Load() != 2 {
 		t.Fatalf("calls=%d", calls.Load())
+	}
+}
+
+// TestCopyObjectDetectsEmbeddedError 验证 CopyObject 对 "200 + body 内嵌 <Error>"
+// 的响应返回错误而非误判成功; 同时验证正常 200 响应不受影响。
+func TestCopyObjectDetectsEmbeddedError(t *testing.T) {
+	var embedded atomic.Bool
+	c := testClient(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("x-amz-copy-source") == "" {
+			t.Error("missing x-amz-copy-source header")
+		}
+		w.WriteHeader(http.StatusOK)
+		if embedded.Load() {
+			_, _ = fmt.Fprint(w, `<Error><Code>InternalError</Code><Message>copy failed midway</Message></Error>`)
+			return
+		}
+		_, _ = fmt.Fprint(w, `<CopyObjectResult><ETag>"etag-1"</ETag><LastModified>2026-01-01T00:00:00Z</LastModified></CopyObjectResult>`)
+	}))
+
+	// 正常 200: 成功
+	out, err := c.CopyObject(context.Background(), "src-bucket", "src/key", "dst-bucket", "dst/key", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if out.ETag != "etag-1" {
+		t.Fatalf("ETag = %q", out.ETag)
+	}
+
+	// 200 内嵌 <Error>: 必须报错
+	embedded.Store(true)
+	_, err = c.CopyObject(context.Background(), "src-bucket", "src/key", "dst-bucket", "dst/key", nil)
+	if err == nil {
+		t.Fatal("embedded <Error> in 200 response was treated as success")
+	}
+	var apiErr *ErrorResponse
+	if !errors.As(err, &apiErr) || apiErr.Code != "InternalError" {
+		t.Fatalf("expected *ErrorResponse(InternalError), got %v", err)
+	}
+}
+
+// TestCopyObjectEncodesSourceVersionID 验证 versionId 在 x-amz-copy-source 中被 percent-encode。
+func TestCopyObjectEncodesSourceVersionID(t *testing.T) {
+	var gotSource string
+	c := testClient(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotSource = r.Header.Get("x-amz-copy-source")
+		_, _ = fmt.Fprint(w, `<CopyObjectResult><ETag>"e"</ETag></CopyObjectResult>`)
+	}))
+	if _, err := c.CopyObject(context.Background(), "b", "k", "d", "dk", &CopyObjectOptions{SourceVersionID: "a/b+c="}); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(gotSource, "versionId=a%2Fb%2Bc%3D") {
+		t.Fatalf("versionId not percent-encoded: %q", gotSource)
 	}
 }

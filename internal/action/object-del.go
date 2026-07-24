@@ -150,21 +150,6 @@ func (c *S3Client) deleteObjectsWithPrefix(bucket, prefix string) error {
 	return nil
 }
 
-func (c *S3Client) ensurePrefixDeleted(bucket, prefix string) error {
-	listResp, err := c.S3.ListObjectsV2(c.Ctx, bucket, &s3api.ListObjectsV2Options{
-		Prefix:    prefix,
-		Delimiter: "/",
-		MaxKeys:   1,
-	})
-	if err != nil {
-		return fmt.Errorf("verify deletion of %s: %s", c.S3Path(bucket, prefix), FormatAPIError(err))
-	}
-	if len(listResp.Contents) > 0 || len(listResp.CommonPrefixes) > 0 || listResp.IsTruncated {
-		return fmt.Errorf("delete %s recursively through MinIO Console: prefix remains; this MinIO backend exposes physical directories that cannot be removed through the S3 or Console APIs", c.S3Path(bucket, prefix))
-	}
-	return nil
-}
-
 func parentDirectory(key string) string {
 	key = strings.TrimSuffix(key, "/")
 	parent := strings.LastIndex(key, "/")

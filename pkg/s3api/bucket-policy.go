@@ -4,10 +4,12 @@ import (
 	"context"
 	"encoding/json"
 	"io"
+	"net/http"
 	"net/url"
 	"strings"
 )
 
+// SetBucketPolicy 设置桶的访问策略 (JSON 文档).
 func (c *Client) SetBucketPolicy(ctx context.Context, bucket string, data []byte) error {
 	if err := checkValidBucketNameStrict(bucket); err != nil {
 		return err
@@ -27,9 +29,12 @@ func (c *Client) SetBucketPolicy(ctx context.Context, bucket string, data []byte
 		contentLength:    int64(len(data)),
 		contentMD5Base64: sumMD5Base64(data),
 		contentSHA256Hex: sumSHA256Hex(data),
+		customHeader: http.Header{
+			"Content-Type": []string{"application/json"},
+		},
 	}
 
-	resp, err := c.Do(ctx, "PUT", reqMeta)
+	resp, err := c.Do(ctx, http.MethodPut, reqMeta)
 	if err != nil {
 		return err
 	}
@@ -40,6 +45,7 @@ func (c *Client) SetBucketPolicy(ctx context.Context, bucket string, data []byte
 	return nil
 }
 
+// GetBucketPolicy 获取桶的访问策略 (返回原始 JSON 文档).
 func (c *Client) GetBucketPolicy(ctx context.Context, bucket string) ([]byte, error) {
 	if err := checkValidBucketNameStrict(bucket); err != nil {
 		return nil, err
@@ -53,7 +59,7 @@ func (c *Client) GetBucketPolicy(ctx context.Context, bucket string) ([]byte, er
 		queryValues: urlValues,
 	}
 
-	resp, err := c.Do(ctx, "GET", reqMeta)
+	resp, err := c.Do(ctx, http.MethodGet, reqMeta)
 	if err != nil {
 		return nil, err
 	}
@@ -69,6 +75,7 @@ func (c *Client) GetBucketPolicy(ctx context.Context, bucket string) ([]byte, er
 	return body, nil
 }
 
+// DeleteBucketPolicy 删除桶的访问策略.
 func (c *Client) DeleteBucketPolicy(ctx context.Context, bucket string) error {
 	if err := checkValidBucketNameStrict(bucket); err != nil {
 		return err
@@ -82,7 +89,7 @@ func (c *Client) DeleteBucketPolicy(ctx context.Context, bucket string) error {
 		queryValues: urlValues,
 	}
 
-	resp, err := c.Do(ctx, "DELETE", reqMeta)
+	resp, err := c.Do(ctx, http.MethodDelete, reqMeta)
 	if err != nil {
 		return err
 	}

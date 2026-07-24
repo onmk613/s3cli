@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"io"
 	"path"
-	"s3cli/internal/utils"
+	"s3cli/internal/s3path"
 	"s3cli/pkg/progress"
 	"strings"
 	"sync"
@@ -36,8 +36,8 @@ type MirrorOptions struct {
 	Remove       bool     // 是否删除目标端多余的对象
 	Overwrite    bool     // 已存在时是否依据 ETag/Size 覆盖
 	DryRun       bool     // 仅打印将要做的事，不实际执行
-	Concurrency  int      // 并发数 (默认 8)
-	PartSizeMB   int      // 分片大小 MB (默认 64)
+	Concurrency  int      // 并发数 (默认 defaultConcurrency)
+	PartSizeMB   int      // 分片大小 MB (经 multipartPartSize 钳制, 最小 5MB)
 	SizeLimit    int64    // 单对象大小上限 (字节)，0 表示不限制
 	MaxDelete    int      // --remove 时允许删除的最大对象数，0 表示不限制
 	Include      []string // 仅同步匹配任一 glob 的相对 key；为空表示全部
@@ -280,6 +280,12 @@ func copyMultipartCrossEndpoint(
 	head *s3api.HeadObjectOutput,
 	report func(n int64),
 ) (err error) {
+	// 开工前先校验分片数上限, 避免传完所有 part 后 Complete 才失败 (白传)。
+	// partSize 已经 multipartPartSize 钳制 >= 5MB。
+	if (totalSize+partSize-1)/partSize > maxMultipartParts {
+		return fmt.Errorf("object too large for part size %s: %d parts exceeds %d",
+			FormatBytes(partSize), (totalSize+partSize-1)/partSize, maxMultipartParts)
+	}
 	createResp, err := tgt.S3.CreateMultipartUpload(tgt.Ctx, tgtBucket, tgtKey, &s3api.PutObjectOptions{
 		ContentType:        head.ContentType,
 		CacheControl:       head.CacheControl,
@@ -373,20 +379,21 @@ func deleteObjectsBatch(c *S3Client, bucket string, keys []string) error {
 //
 //	prefix="a/b/", key="a/b/c/d.txt" -> "c/d.txt"
 //	prefix="",     key="x/y.txt"     -> "x/y.txt"
+//
+// 调用前 prefix 已规范化为空或以 "/" 结尾 (见 normalizeMirrorPrefix),
+// 因此列出结果的 key 必然以 prefix 开头, 直接 TrimPrefix 即可。
 func relKey(key, prefix string) string {
-	if prefix == "" {
-		return key
+	return strings.TrimPrefix(key, prefix)
+}
+
+// normalizeMirrorPrefix 把非空前缀规范化为以 "/" 结尾。
+// 裸前缀 (如 "dir") 做 ListObjectsV2 会前缀碰撞 (误匹配 "dir2/x"、"dir-old/y"),
+// 目标端同理会在 --remove 时误删前缀碰撞的对象, 因此源/目标列举前缀都必须规范化。
+func normalizeMirrorPrefix(prefix string) string {
+	if prefix != "" && !strings.HasSuffix(prefix, "/") {
+		return prefix + "/"
 	}
-	if strings.HasPrefix(key, prefix) {
-		return strings.TrimPrefix(key, prefix)
-	}
-	if !strings.HasSuffix(prefix, "/") {
-		p := prefix + "/"
-		if strings.HasPrefix(key, p) {
-			return strings.TrimPrefix(key, p)
-		}
-	}
-	return key
+	return prefix
 }
 
 // joinKey 把相对路径拼到目标前缀下。
@@ -422,13 +429,18 @@ func Mirror(cfg MirrorOptions) error {
 	if err != nil {
 		return err
 	}
-	manifest, err := openMirrorManifest(cfg.ManifestPath, cfg.Resume)
-	if err != nil {
-		return fmt.Errorf("mirror manifest: %w", err)
+
+	// DryRun 不打开 manifest: O_CREATE 会凭空落盘一个文件, 属于不应有的副作用。
+	var manifest *mirrorManifest
+	if !cfg.DryRun {
+		manifest, err = openMirrorManifest(cfg.ManifestPath, cfg.Resume)
+		if err != nil {
+			return fmt.Errorf("mirror manifest: %w", err)
+		}
+		defer func(manifest *mirrorManifest) {
+			_ = manifest.close()
+		}(manifest)
 	}
-	defer func(manifest *mirrorManifest) {
-		_ = manifest.close()
-	}(manifest)
 
 	myprint.Printf("Listing & mirroring %s -> %s ...\n",
 		plan.srcClient.S3Path(plan.srcBucket, plan.srcPrefix),
@@ -473,9 +485,6 @@ func resolveMirrorPlan(cfg MirrorOptions) (*mirrorPlan, error) {
 	if cfg.Concurrency <= 0 {
 		cfg.Concurrency = defaultConcurrency
 	}
-	if cfg.PartSizeMB <= 0 {
-		cfg.PartSizeMB = 64
-	}
 
 	tgtClient := cfg.Tgt.Client
 	tgtBucket := cfg.Tgt.Bucket
@@ -486,17 +495,27 @@ func resolveMirrorPlan(cfg MirrorOptions) (*mirrorPlan, error) {
 	// 仅前缀可能因 trailing 语义而追加源目录名 —— 见规则 4）。
 	state, err := tgtClient.DestStateOf(tgtBucket, tgtPrefix)
 	if err != nil {
-		state = utils.DestNone
+		state = s3path.DestNone
 	}
-	tgtPrefix, _ = utils.ResolveDirDestPrefix(
+	tgtPrefix, _ = s3path.ResolveDirDestPrefix(
 		srcPrefix, cfg.Src.TrailingSlash,
 		tgtPrefix, cfg.Tgt.TrailingSlash,
 		state,
 	)
 
-	// 防止同 client + 同 bucket + 同 prefix 的自映射
-	if sameEndpoint(cfg.Src, cfg.Tgt) && cfg.Src.Bucket == tgtBucket && srcPrefix == tgtPrefix {
-		return nil, fmt.Errorf("mirror: source and target are the same location")
+	// 源/目标前缀统一规范化为 "dir/" 形态, 避免裸前缀列举时的前缀碰撞
+	// (src "dir" 会误匹配 "dir2/x"; tgt "out" 会在 --remove 时误删 "out2/y")。
+	srcPrefix = normalizeMirrorPrefix(srcPrefix)
+	tgtPrefix = normalizeMirrorPrefix(tgtPrefix)
+
+	sameEP := sameEndpoint(cfg.Src, cfg.Tgt)
+	// 同 endpoint + 同 bucket 时, 禁止源/目标前缀互相包含:
+	//   - src ⊆ tgt: --remove 会把 src 独有的对象当作 "目标多余" 删掉 (删自己的数据);
+	//     不加 --remove 也会边列举边复制, 新写入的对象被源分页器再次列出, 级联复制。
+	//   - 完全相等是其中特例 (原自映射守卫)。
+	if sameEP && cfg.Src.Bucket == tgtBucket &&
+		(strings.HasPrefix(srcPrefix, tgtPrefix) || strings.HasPrefix(tgtPrefix, srcPrefix)) {
+		return nil, fmt.Errorf("mirror: source and target prefixes overlap on the same bucket (%q vs %q)", srcPrefix, tgtPrefix)
 	}
 
 	return &mirrorPlan{
@@ -507,20 +526,24 @@ func resolveMirrorPlan(cfg MirrorOptions) (*mirrorPlan, error) {
 		tgtBucket: tgtBucket,
 		srcPrefix: srcPrefix,
 		tgtPrefix: tgtPrefix,
-		partSize:  int64(cfg.PartSizeMB) * 1024 * 1024,
-		sameEP:    sameEndpoint(cfg.Src, cfg.Tgt),
+		// 分片大小统一走 multipartPartSize 钳制 (>=5MB), 与 put 路径一致。
+		partSize: multipartPartSize(cfg.PartSizeMB, 0),
+		sameEP:   sameEP,
 	}, nil
 }
 
 // dryRun 边归并边打印计划, 不实际执行。
 func (p *mirrorPlan) dryRun(actions <-chan diffAction, listErrCh chan error) error {
-	var nCopy, nDelete int64
+	var nCopy, nDelete, nExtra int64
 	for a := range actions {
 		if a.delete {
 			if p.cfg.Remove {
 				myprint.Printf("  DELETE %s\n", p.tgtClient.S3Path(p.tgtBucket, joinKey(p.tgtPrefix, a.rel)))
+				nDelete++
+			} else {
+				// 未加 --remove 时这些对象不会被删, 单独统计, 避免计划摘要误导。
+				nExtra++
 			}
-			nDelete++
 			continue
 		}
 		myprint.Printf("  COPY   %s -> %s\n",
@@ -531,7 +554,11 @@ func (p *mirrorPlan) dryRun(actions <-chan diffAction, listErrCh chan error) err
 	if err := drainListErr(listErrCh); err != nil {
 		return err
 	}
-	myprint.Printf("Plan: %d to copy, %d to delete\n", nCopy, nDelete)
+	if p.cfg.Remove {
+		myprint.Printf("Plan: %d to copy, %d to delete\n", nCopy, nDelete)
+	} else {
+		myprint.Printf("Plan: %d to copy (%d extra on target, use --remove to delete)\n", nCopy, nExtra)
+	}
 	return nil
 }
 
@@ -551,7 +578,10 @@ func (p *mirrorPlan) copyAndDelete(actions <-chan diffAction, listErrCh chan err
 		copied  atomic.Int64
 		skipped atomic.Int64
 		failed  atomic.Int64
-		startAt = time.Now()
+		// manifest 持久化失败单独计数: 复制本身已成功, 不应计入 copy failed
+		// (否则同一对象同时出现在 copied 和 failed 里, 且会错误地阻断删除阶段)。
+		manifestFailed atomic.Int64
+		startAt        = time.Now()
 
 		toDelete []string // 仅 --remove 时累积；O(删除数) 而非 O(全集)
 	)
@@ -584,7 +614,7 @@ func (p *mirrorPlan) copyAndDelete(actions <-chan diffAction, listErrCh chan err
 			defer func() { <-sem }()
 			if p.copyOne(pt, rel, objSize, &copied, &failed) && manifest != nil {
 				if err := manifest.mark(rel); err != nil {
-					failed.Add(1)
+					manifestFailed.Add(1)
 					pt.AddFailed(1, fmt.Sprintf("✗ persist mirror manifest for %s: %v", rel, err))
 				}
 			}
@@ -596,8 +626,13 @@ func (p *mirrorPlan) copyAndDelete(actions <-chan diffAction, listErrCh chan err
 	if err := drainListErr(listErrCh); err != nil {
 		return err
 	}
-	if p.srcClient.Ctx.Err() != nil || p.tgtClient.Ctx.Err() != nil {
-		return p.srcClient.Ctx.Err()
+	// 返回实际被取消那一端的错误; 原实现恒返回 src 端的 Err(),
+	// 仅 tgt 端取消时会错误地返回 nil (静默成功)。
+	if err := p.srcClient.Ctx.Err(); err != nil {
+		return err
+	}
+	if err := p.tgtClient.Ctx.Err(); err != nil {
+		return err
 	}
 	if failed.Load() > 0 {
 		return fmt.Errorf("mirror finished with %d copy failures; target deletions were skipped", failed.Load())
@@ -621,6 +656,9 @@ func (p *mirrorPlan) copyAndDelete(actions <-chan diffAction, listErrCh chan err
 		time.Since(startAt).Truncate(time.Millisecond),
 		copied.Load(), skipped.Load(), failed.Load(), deleted,
 	)
+	if mf := manifestFailed.Load(); mf > 0 {
+		return fmt.Errorf("mirror: %d object(s) copied but not recorded into manifest; rerun without --resume or fix the manifest file", mf)
+	}
 	return nil
 }
 
