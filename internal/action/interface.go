@@ -1,5 +1,7 @@
-// Package action 定义 S3 操作的接口抽象。
-// 通过接口解耦命令层与具体实现，便于单元测试 mock 和未来扩展其他存储后端。
+// interface.go 定义 S3 操作的接口抽象, 解耦命令层与具体实现.
+// 命令层应依赖 S3Operations (或更小的子接口) 而非具体的 *S3Client,
+// 便于单元测试 mock 与未来扩展其他存储后端.
+
 package action
 
 // ============================================================================
@@ -58,13 +60,12 @@ type BucketConfigurator interface {
 	SetCors(corsFile string, bucket string) error
 	GetCors(bucket string) error
 	DelCors(bucket string) error
-	SetLifecycle(lifecycleFile, bucket string) error
+	SetLifecycle(opt LifecycleOptions, bucket string) error
 	GetLifecycle(bucket string) error
 	DelLifecycle(bucket string) error
-	SetPolicy(policyFile, bucket string) error
+	SetPolicy(opt PolicyOptions, bucket string) error
 	GetPolicy(bucket string) error
 	DelPolicy(bucket string) error
-	ApplyCannedPolicy(name, bucket, prefix string) error
 	SetEncryption(opt EncryptionOptions, bucket string) error
 	GetEncryption(bucket string) error
 	DelEncryption(bucket string) error

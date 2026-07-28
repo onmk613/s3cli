@@ -1,3 +1,7 @@
+// error.go 定义 S3 错误响应模型 ErrorResponse, 并实现从 HTTP 错误响应中
+// 解析错误码/消息的 parseErrorResponse. ErrorResponse 实现 error 接口,
+// 调用方可通过类型断言获取结构化错误信息 (Code / StatusCode / RequestID 等).
+
 package s3api
 
 import (

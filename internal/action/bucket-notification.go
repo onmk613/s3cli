@@ -1,3 +1,6 @@
+// bucket-notification.go 实现桶事件通知配置管理: Set/Get/DelNotification,
+// 输入为 AWS CLI 兼容的 JSON.
+
 package action
 
 import (

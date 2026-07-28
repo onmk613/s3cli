@@ -241,7 +241,7 @@ func formatBytes(bytes int64) string {
 	if bytes <= 0 {
 		return "0B"
 	}
-	units := []string{"B", "KB", "MB", "GB", "TB", "PB"}
+	units := []string{"B", "KB", "MB", "GB"}
 	base := 1024.0
 	exp := int(math.Log(float64(bytes)) / math.Log(base))
 	if exp >= len(units) {

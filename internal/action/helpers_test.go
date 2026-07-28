@@ -9,8 +9,6 @@ import (
 	"strings"
 	"testing"
 	"time"
-
-	"s3cli/pkg/s3api"
 )
 
 func TestIsCanceled(t *testing.T) {
@@ -28,20 +26,6 @@ func TestIsCanceled(t *testing.T) {
 	}
 	if IsCanceled(errors.New("network error")) {
 		t.Error("unrelated error not canceled")
-	}
-}
-
-func TestFormatAPIError(t *testing.T) {
-	if FormatAPIError(nil) != "" {
-		t.Error("nil should give empty")
-	}
-	apiErr := &s3api.ErrorResponse{Code: "NoSuchKey", Message: "gone"}
-	if got := FormatAPIError(apiErr); got != "NoSuchKey: gone" {
-		t.Errorf("got %q", got)
-	}
-	plain := errors.New("boom")
-	if got := FormatAPIError(plain); got != "boom" {
-		t.Errorf("got %q", got)
 	}
 }
 

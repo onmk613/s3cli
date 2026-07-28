@@ -1,3 +1,6 @@
+// object-tree.go 实现对象树形展示 TreeObjects: 把扁平 key 组织成目录树,
+// 支持最大深度与叶子大小展示.
+
 package action
 
 import (

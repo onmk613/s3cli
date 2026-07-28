@@ -1,3 +1,5 @@
+// share.go 实现预签名 URL 生成 Share, 同时支持 SigV4 (默认, 最长 7 天) 与 SigV2 (--v2, 兼容旧服务).
+
 package action
 
 import (

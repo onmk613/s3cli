@@ -1,3 +1,6 @@
+// object-delete.go 实现对象删除: DeleteObject (单个) 与 DeleteObjects (批量, 单次最多 1000).
+// 批量删除返回每个对象的删除结果与错误, 支持静默 (quiet) 模式.
+
 package s3api
 
 import (

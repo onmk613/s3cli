@@ -1,3 +1,5 @@
+// tag.go 实现桶/对象标签管理: Set/Get/DelTag, prefix 为空时操作桶标签, 否则操作对象标签.
+
 package action
 
 import (
@@ -7,6 +9,7 @@ import (
 	"s3cli/pkg/s3api"
 )
 
+// SetTag 设置桶或对象标签; prefix 为空时操作桶标签, 否则操作对象标签.
 func (c *S3Client) SetTag(bucket, prefix string, tagStr map[string]string) error {
 	tags := parseTagPairs(tagStr)
 	if prefix == "" {
@@ -25,6 +28,7 @@ func (c *S3Client) SetTag(bucket, prefix string, tagStr map[string]string) error
 	return nil
 }
 
+// GetTag 查询并打印桶或对象的标签集合.
 func (c *S3Client) GetTag(bucket, prefix string) error {
 	var tags []s3api.Tagging
 	if prefix == "" {
@@ -52,6 +56,7 @@ func (c *S3Client) GetTag(bucket, prefix string) error {
 	return nil
 }
 
+// DelTag 删除桶或对象的标签集合.
 func (c *S3Client) DelTag(bucket, prefix string) error {
 	if prefix == "" {
 		if err := c.S3.DeleteBucketTagging(c.Ctx, bucket); err != nil {

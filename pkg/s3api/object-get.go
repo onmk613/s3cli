@@ -1,3 +1,6 @@
+// object-get.go 实现对象下载 GetObject, 返回流式 body 及从响应头解析的全部元数据.
+// 支持 Range / 条件请求 / response-* 覆盖参数 / 版本指定.
+
 package s3api
 
 import (
@@ -194,14 +197,4 @@ func parseContentRangeLength(cr string) int64 {
 		return e - s + 1
 	}
 	return 0
-}
-
-// indexOfByte 返回字节在字符串中的位置, 不存在返回 -1.
-func indexOfByte(s string, b byte) int {
-	for i := 0; i < len(s); i++ {
-		if s[i] == b {
-			return i
-		}
-	}
-	return -1
 }

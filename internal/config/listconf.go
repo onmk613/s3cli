@@ -7,8 +7,6 @@ import (
 	"strings"
 
 	myprint "s3cli/pkg/fmtutil"
-
-	"gopkg.in/ini.v1"
 )
 
 // ListAliasConf 列出配置文件中的所有别名
@@ -26,89 +24,74 @@ func ListAliasConf(alias []string) error {
 		return fmt.Errorf("config file is empty: %s", ConfPath)
 	}
 
-	cfg, err := ini.Load(ConfPath)
+	aliases, _, err := loadRaw()
 	if err != nil {
 		return fmt.Errorf("load config %s: %w", ConfPath, err)
 	}
 
-	// 收集有效 section（排除空的 DEFAULT 与全部空值的 section）
-	type secInfo struct {
+	// 过滤掉 core 字段全空的别名 (等价于 INI 版本里 "跳过空 section" 的逻辑),
+	// 再按名字排序输出。
+	type entry struct {
 		name string
-		keys []*ini.Key
+		s    Static
 	}
-	var sections []secInfo
-	for _, sec := range cfg.Sections() {
-		name := sec.Name()
-		keys := sec.Keys()
-		if name == ini.DefaultSection && len(keys) == 0 {
+	var entries []entry
+	for name, s := range aliases {
+		if strings.TrimSpace(s.HostBase) == "" &&
+			strings.TrimSpace(s.AccessKey) == "" &&
+			strings.TrimSpace(s.SecretKey) == "" {
 			continue
 		}
-		hasValue := false
-		for _, k := range keys {
-			if strings.TrimSpace(k.Value()) != "" {
-				hasValue = true
-				break
-			}
-		}
-		if !hasValue {
-			continue
-		}
-		sections = append(sections, secInfo{name: name, keys: keys})
+		entries = append(entries, entry{name: name, s: s})
 	}
 
-	if len(sections) == 0 {
+	if len(entries) == 0 {
 		myprint.PrintlnYellow("no aliases configured.")
 		myprint.Println("Hint: run `s3cli alias set <name>` to create one.")
 		return nil
 	}
 
-	// DEFAULT 优先，其他按名字排序
-	sort.Slice(sections, func(i, j int) bool {
-		if sections[i].name == ini.DefaultSection {
-			return true
-		}
-		if sections[j].name == ini.DefaultSection {
-			return false
-		}
-		return sections[i].name < sections[j].name
+	sort.Slice(entries, func(i, j int) bool {
+		return entries[i].name < entries[j].name
 	})
 
 	myprint.PrintfDim("Config:")
 	myprint.Printf(" %s\n", ConfPath)
 	myprint.Println()
 
-	for i, s := range sections {
-		if len(alias) > 0 && !stringInSlice(s.name, alias) {
+	for i, e := range entries {
+		if len(alias) > 0 && !stringInSlice(e.name, alias) {
 			continue
 		}
 
 		// 标题：[alias_name]
-		myprint.PrintfBoldCyan("[%s]\n", s.name)
+		myprint.PrintfBoldCyan("[%s]\n", e.name)
 
 		// 只展示核心字段：URL、AK、SK
-		coreKeys := map[string]bool{
-			"host_base":  true,
-			"access_key": true,
-			"secret_key": true,
+		type field struct {
+			key string
+			val string
 		}
-		for _, k := range s.keys {
-			if !coreKeys[k.Name()] {
-				continue
-			}
-			val := strings.TrimSpace(k.Value())
+		fields := []field{
+			{"host_base", e.s.HostBase},
+			{"access_key", e.s.AccessKey},
+			{"secret_key", e.s.SecretKey},
+		}
+		for _, f := range fields {
+			val := strings.TrimSpace(f.val)
 			if val == "" {
 				continue
 			}
-			if k.Name() == "secret_key" && !G.F.Quiet {
+			if f.key == "secret_key" && !G.F.Quiet {
 				val = maskSecret(val)
 			}
 			myprint.Printf("  ")
-			myprint.PrintfGreen("%s", k.Name())
+			myprint.PrintfGreen("%s", f.key)
 			myprint.PrintfDim(" = ")
 			myprint.PrintfYellow("%s\n", val)
 		}
 
-		if i != len(sections)-1 {
+		if i != len(entries)-1 {
 			myprint.Println()
 		}
 	}

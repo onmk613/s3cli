@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"gopkg.in/ini.v1"
+	"github.com/BurntSushi/toml"
 )
 
 // snapshotGlobals 保存 G 与 ConfPath, 返回 restore; 测试必须用它隔离全局状态。
@@ -145,14 +145,16 @@ func TestSaveConfig(t *testing.T) {
 	restore := snapshotGlobals(t)
 	defer restore()
 
-	cfg := ini.Empty()
-	sec, _ := cfg.NewSection("myalias")
-	_, _ = sec.NewKey("access_key", "AKIA123")
-	_, _ = sec.NewKey("host_base", "https://s3.example.com")
+	aliases := map[string]Static{
+		"myalias": {
+			AccessKey: "AKIA123",
+			HostBase:  "https://s3.example.com",
+		},
+	}
 
 	dir := t.TempDir()
 	p := filepath.Join(dir, "sub", "nested", ".s3cli") // 测 MkdirAll
-	if err := saveConfig(cfg, p); err != nil {
+	if err := saveConfig(aliases, p); err != nil {
 		t.Fatalf("saveConfig: %v", err)
 	}
 
@@ -164,8 +166,12 @@ func TestSaveConfig(t *testing.T) {
 		t.Errorf("perm = %o, want 0600", mode)
 	}
 	// 内容可重新加载
-	if _, err := ini.Load(p); err != nil {
+	var got map[string]Static
+	if _, err := toml.DecodeFile(p, &got); err != nil {
 		t.Fatalf("reload: %v", err)
+	}
+	if got["myalias"].AccessKey != "AKIA123" {
+		t.Errorf("after reload: AccessKey = %q, want AKIA123", got["myalias"].AccessKey)
 	}
 }
 
@@ -174,8 +180,8 @@ func TestLoadConf(t *testing.T) {
 	defer restore()
 
 	t.Run("valid", func(t *testing.T) {
-		content := "[alias1]\naccess_key = AK\nsecret_key = SK\nhost_base = https://s3.example.com\nverify_ssl = true\n" +
-			"[alias2]\naccess_key = AK2\nsecret_key = SK2\nhost_base = https://s3b.example.com\n"
+		content := "[alias1]\naccess_key = \"AK\"\nsecret_key = \"SK\"\nhost_base = \"https://s3.example.com\"\nverify_ssl = true\n" +
+			"[alias2]\naccess_key = \"AK2\"\nsecret_key = \"SK2\"\nhost_base = \"https://s3b.example.com\"\n"
 		ConfPath = writeTempConfig(t, content)
 		if err := LoadConf(); err != nil {
 			t.Fatal(err)
@@ -209,9 +215,9 @@ func TestLoadConf(t *testing.T) {
 	})
 
 	t.Run("malformed", func(t *testing.T) {
-		ConfPath = writeTempConfig(t, "[bad\nkey = =\n")
+		ConfPath = writeTempConfig(t, "foo = \"unterminated string\n")
 		if err := LoadConf(); err == nil {
-			t.Error("expected error for malformed ini")
+			t.Error("expected error for malformed toml")
 		}
 	})
 }
@@ -233,7 +239,7 @@ func TestListAliasConf(t *testing.T) {
 		}
 	})
 	t.Run("valid sections no error", func(t *testing.T) {
-		content := "[prod]\nhost_base = https://s3.example.com\naccess_key = AK\nsecret_key = SECRET123456\n"
+		content := "[prod]\nhost_base = \"https://s3.example.com\"\naccess_key = \"AK\"\nsecret_key = \"SECRET123456\"\n"
 		ConfPath = writeTempConfig(t, content)
 		if err := ListAliasConf(nil); err != nil {
 			t.Fatalf("unexpected error: %v", err)
@@ -268,39 +274,32 @@ func TestDelConf(t *testing.T) {
 	defer restore()
 
 	t.Run("empty name", func(t *testing.T) {
-		ConfPath = writeTempConfig(t, "[a]\nhost_base = x\n")
+		ConfPath = writeTempConfig(t, "[a]\nhost_base = \"x\"\n")
 		if err := delConf("  "); err == nil {
 			t.Error("expected error for empty name")
 		}
 	})
 
-	t.Run("reject DEFAULT", func(t *testing.T) {
-		ConfPath = writeTempConfig(t, "[a]\nhost_base = x\n")
-		if err := delConf("DEFAULT"); err == nil {
-			t.Error("expected error for DEFAULT")
-		}
-		if err := delConf("default"); err == nil {
-			t.Error("expected error for default (case-insensitive)")
-		}
-	})
-
 	t.Run("unknown section", func(t *testing.T) {
-		ConfPath = writeTempConfig(t, "[a]\nhost_base = x\n")
+		ConfPath = writeTempConfig(t, "[a]\nhost_base = \"x\"\n")
 		if err := delConf("missing"); err == nil {
 			t.Error("expected error for missing section")
 		}
 	})
 
 	t.Run("delete existing", func(t *testing.T) {
-		ConfPath = writeTempConfig(t, "[a]\nhost_base = x\n[b]\nhost_base = y\n")
+		ConfPath = writeTempConfig(t, "[a]\nhost_base = \"x\"\n[b]\nhost_base = \"y\"\n")
 		if err := delConf("a"); err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
-		cfg, _ := ini.Load(ConfPath)
-		if cfg.HasSection("a") {
+		var got map[string]Static
+		if _, err := toml.DecodeFile(ConfPath, &got); err != nil {
+			t.Fatalf("reload: %v", err)
+		}
+		if _, ok := got["a"]; ok {
 			t.Error("section a should be deleted")
 		}
-		if !cfg.HasSection("b") {
+		if _, ok := got["b"]; !ok {
 			t.Error("section b should remain")
 		}
 	})
@@ -310,13 +309,16 @@ func TestDelConfTopLevel(t *testing.T) {
 	restore := snapshotGlobals(t)
 	defer restore()
 
-	ConfPath = writeTempConfig(t, "[a]\nhost_base = x\n[b]\nhost_base = y\n")
+	ConfPath = writeTempConfig(t, "[a]\nhost_base = \"x\"\n[b]\nhost_base = \"y\"\n")
 	// 非 TTY (go test 的 stdin 是管道) → 直接删除无需确认
 	if err := DelConf([]string{"a"}); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	cfg, _ := ini.Load(ConfPath)
-	if cfg.HasSection("a") {
+	var got map[string]Static
+	if _, err := toml.DecodeFile(ConfPath, &got); err != nil {
+		t.Fatalf("reload: %v", err)
+	}
+	if _, ok := got["a"]; ok {
 		t.Error("section a should be deleted")
 	}
 

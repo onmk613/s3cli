@@ -1,3 +1,6 @@
+// stream.go 实现流式传输框架 RunStream: 扫描 -> 并发处理 -> 进度跟踪,
+// 统一支撑 put/get/cp/mv 的批量并发传输, 带可选的预统计 (Count) 与进度条.
+
 package action
 
 import (

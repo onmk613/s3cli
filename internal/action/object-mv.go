@@ -1,3 +1,6 @@
+// object-mv.go 实现同 endpoint 内的对象移动 Mv (mv) = copy + delete 源;
+// 单文件与目录递归语义, 目标 key 解析与 cp 一致.
+
 package action
 
 import (

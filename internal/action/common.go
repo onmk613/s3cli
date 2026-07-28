@@ -1,3 +1,7 @@
+// common.go 定义 action 包的核心: S3Client 类型、S3 路径格式化与存在性/目录探测
+// (S3Path / IsS3File / DestStateOf), 以及对象遍历器 forEachObject.
+// 凭证/错误/MIME 等通用工具在 utils.go.
+
 package action
 
 import (
@@ -29,7 +33,7 @@ func (c *S3Client) S3Path(bucket, key string) string {
 	return c.Alias + ":" + bucket + "/" + key
 }
 
-// S3PathStatic 静态版本，无需 S3Client 实例
+// S3PathStatic 静态版本, 无需 S3Client 实例, 用于无客户端上下文的格式化场景.
 func S3PathStatic(alias, bucket, key string) string {
 	if key == "" {
 		return alias + ":" + bucket
@@ -160,6 +164,7 @@ func (c *S3Client) DestStateOf(bucket, key string) (s3path.DestState, error) {
 	return s3path.DestNone, nil
 }
 
+// Cred 描述一份 S3 凭证 (用于跨端 mirror/diff 判断是否同 endpoint).
 type Cred struct {
 	AccessKeyID     string
 	SecretAccessKey string
@@ -167,6 +172,7 @@ type Cred struct {
 	BaseEndpoint    string
 }
 
+// GetS3Credentials 返回底层 s3api.Client 持有的凭证与 endpoint.
 func (c *S3Client) GetS3Credentials() (Cred, error) {
 	if c.S3 == nil {
 		return Cred{}, fmt.Errorf("s3 client is nil")

@@ -1,15 +1,21 @@
+// bucket-common.go 实现桶基础操作 (ListBuckets / CreateBucket / DeleteBucket)
+// 以及桶子资源 (subresource) 的 PUT/GET/DELETE 通用辅助函数.
+// CORS / 加密 / 标签 / 版本 / 通知 / 生命周期 等具体子资源在此基础上构建.
+
 package s3api
 
 import (
 	"bytes"
 	"context"
-	"encoding/xml"
 	"io"
 	"net/http"
 	"net/url"
+	"time"
 )
 
 // ListBuckets 列出当前凭证下所有可访问的 bucket.
+//
+// 对应 GET / (ListBuckets), 返回所有者及其可访问的全部 bucket.
 func (c *Client) ListBuckets(ctx context.Context) ([]BucketInfo, error) {
 	resp, err := c.Do(ctx, http.MethodGet, requestMetadata{})
 	if err != nil {
@@ -27,6 +33,33 @@ func (c *Client) ListBuckets(ctx context.Context) ([]BucketInfo, error) {
 	return result.Buckets.Bucket, nil
 }
 
+// owner 对应 ListBuckets 响应中的 Owner 节点 (桶所有者).
+type owner struct {
+	ID          string
+	DisplayName string
+}
+
+// listAllMyBucketsResult 对应 ListBuckets 响应体根节点.
+//
+//	<ListAllMyBucketsResult>
+//	  <Owner><ID>...</ID><DisplayName>...</DisplayName></Owner>
+//	  <Buckets><Bucket><Name>...</Name><CreationDate>...</CreationDate></Bucket></Buckets>
+//	</ListAllMyBucketsResult>
+type listAllMyBucketsResult struct {
+	Owner   owner
+	Buckets struct {
+		Bucket []BucketInfo
+	}
+}
+
+// BucketInfo 描述单个 bucket 的基本信息.
+type BucketInfo struct {
+	Name         string
+	CreationDate time.Time
+	BucketRegion string
+}
+
+// MakeBucketOptions 控制 CreateBucket 的可选参数.
 type MakeBucketOptions struct {
 	Region        string
 	ObjectLocking bool
@@ -182,13 +215,4 @@ func (c *Client) deleteBucketSubresource(ctx context.Context, bucket, subresourc
 		_ = Body.Close()
 	}(resp.Body)
 	return nil
-}
-
-// marshalXMLWithHeader 序列化为 XML 并加上 XML 声明头.
-func marshalXMLWithHeader(v any) ([]byte, error) {
-	body, err := xml.Marshal(v)
-	if err != nil {
-		return nil, err
-	}
-	return append([]byte(xml.Header), body...), nil
 }

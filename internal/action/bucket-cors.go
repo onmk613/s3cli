@@ -1,3 +1,5 @@
+// bucket-cors.go 实现桶 CORS 配置管理: Set/Get/DelCors, 配置文件支持 JSON 或 XML.
+
 package action
 
 import (

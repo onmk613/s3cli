@@ -1,3 +1,7 @@
+// signer.go 实现 AWS Signature Version 4 签名 (纯标准库, 不依赖 SDK).
+// 包含规范请求构建、签名密钥派生、HMAC-SHA256 计算等 SigV4 所需的全部逻辑.
+// 参考: https://docs.aws.amazon.com/AmazonS3/latest/developerguide/sigv4-auth-using-authorization-header.html
+
 package s3api
 
 import (
@@ -7,8 +11,6 @@ import (
 	"strings"
 	"time"
 )
-
-// AWS Signature Version 4 实现 (纯标准库, 不依赖 SDK).
 
 const (
 	signV4Algorithm = "AWS4-HMAC-SHA256"

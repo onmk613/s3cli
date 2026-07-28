@@ -1,3 +1,6 @@
+// object-put.go 实现对象上传 PutObject: 单文件与目录递归上传,
+// 走 RunStream 并发框架, 大文件自动分片, 支持 MIME 探测与默认跳过已存在对象.
+
 package action
 
 import (

@@ -1,3 +1,6 @@
+// completion.go 提供 shell 补全所需的桶/对象列举 (CompleteBucket / CompleteKey),
+// 仅返回候选列表不做任何打印, 供 cobra ValidArgsFunction 调用.
+
 package action
 
 import (

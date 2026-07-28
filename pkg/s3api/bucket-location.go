@@ -1,3 +1,6 @@
+// bucket-location.go 实现 GetBucketLocation, 查询 bucket 所在区域.
+// 兼容 AWS S3 及大多数 S3 兼容厂商; 注意 AWS us-east-1 区域返回空字符串.
+
 package s3api
 
 import (
@@ -7,8 +10,6 @@ import (
 	"net/http"
 	"net/url"
 )
-
-// 兼容大多数厂商的获取 Bucket Location API
 
 // getBucketLocationResult 对应 GetBucketLocation 响应体.
 //

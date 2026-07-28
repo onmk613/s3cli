@@ -10,7 +10,6 @@ import (
 	myprint "s3cli/pkg/fmtutil"
 
 	"golang.org/x/term"
-	"gopkg.in/ini.v1"
 )
 
 // DelConf 从配置文件中删除指定别名 section。
@@ -60,22 +59,17 @@ func delConf(section string) error {
 		return fmt.Errorf("alias name cannot be empty")
 	}
 
-	cfg, err := ini.Load(ConfPath)
+	aliases, _, err := loadRaw()
 	if err != nil {
 		return fmt.Errorf("load config %s: %w", ConfPath, err)
 	}
 
-	// ini.DefaultSection 名为 "DEFAULT"，禁止显式删除
-	if strings.EqualFold(section, ini.DefaultSection) {
-		return fmt.Errorf("cannot delete the [%s] section", ini.DefaultSection)
-	}
-
-	if !cfg.HasSection(section) {
+	if _, ok := aliases[section]; !ok {
 		return fmt.Errorf("alias [%s] not found in %s", section, ConfPath)
 	}
 
-	cfg.DeleteSection(section)
-	if err := saveConfig(cfg, ConfPath); err != nil {
+	delete(aliases, section)
+	if err := saveConfig(aliases, ConfPath); err != nil {
 		return fmt.Errorf("save config: %w", err)
 	}
 

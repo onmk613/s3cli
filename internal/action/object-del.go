@@ -1,3 +1,6 @@
+// object-del.go 实现对象删除 DeleteObjects: 单对象、指定版本、目录前缀批量删除,
+// 批量删除按 S3 上限分批, 并清理删除后变空的目录标记对象.
+
 package action
 
 import (

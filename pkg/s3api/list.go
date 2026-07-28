@@ -1,3 +1,6 @@
+// list.go 实现对象列举: ListObjectsV2 与 ListObjectVersions, 以及对应的自动分页器.
+// 分页器封装了 continuation-token / key-marker 的传递逻辑, 简化全量遍历场景.
+
 package s3api
 
 import (
@@ -49,6 +52,18 @@ type listObjectsV2Result struct {
 // commonPrefix 对应 ListObjectsV2 响应中的 CommonPrefixes 节点.
 type commonPrefix struct {
 	Prefix string
+}
+
+// ObjectInfo 对应 ListObjectsV2 / ListObjectVersions 响应中单个对象的元数据.
+//
+// Owner 字段仅在请求显式设置 FetchOwner=true 时由服务端返回.
+type ObjectInfo struct {
+	Key          string
+	LastModified time.Time
+	ETag         string
+	Size         int64
+	StorageClass string
+	Owner        *owner
 }
 
 // ListObjectsV2Options 控制 ListObjectsV2 的可选参数.

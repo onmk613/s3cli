@@ -1,3 +1,7 @@
+// api.go 定义 S3 客户端核心: Client / Options / 构造函数 New, 以及一次完整
+// 请求的生命周期 (requestMetadata -> newRequest 签名 -> Do 发送+重试).
+// 签名细节见 signer.go, 错误解析见 error.go.
+
 package s3api
 
 import (
@@ -14,6 +18,8 @@ import (
 	"s3cli/pkg/kvcache"
 )
 
+// Client 是一个 S3 兼容客户端, 封装了凭证、寻址方式与 HTTP 传输, 可复用于多次请求.
+// 通过 New 构造; 所有 S3 操作均为其方法. Client 并发安全 (构造后不再修改内部状态).
 type Client struct {
 	// 基础配置
 	endpointURL  *url.URL
@@ -39,27 +45,30 @@ type Client struct {
 	maxRetries int
 }
 
+// Options 是构造 Client 的参数集合. 传给 New 后部分字段会被填充默认值.
 type Options struct {
 	// 基础配置
-	Endpoint     string
-	AccessKey    string
-	SecretKey    string
-	SessionToken string
+	Endpoint     string // S3 服务入口, 如 "https://s3.example.com" (缺省协议时按 http 处理)
+	AccessKey    string // 访问密钥 ID
+	SecretKey    string // 访问密钥
+	SessionToken string // 临时凭证会话令牌 (STS), 永久凭证留空
 
 	// 地区和厂商
-	Region string
+	Region string // 服务区域, 缺省为 us-east-1
 
 	// bucket 寻址方式和自定义寻址函数
-	BucketLookup       BucketLookupType
-	BucketLookupViaURL BucketLookupFunc
+	BucketLookup       BucketLookupType // path / DNS / auto 寻址
+	BucketLookupViaURL BucketLookupFunc // 自定义寻址模板, 优先级高于 BucketLookup
 
 	// 自定义http.Transport, 用于注入自定义header / 代理 / 证书等.
 	Transport http.RoundTripper
 
 	// 最大重试次数
-	MaxRetries int
+	MaxRetries int // 失败重试次数, <=0 时默认 3
 }
 
+// New 根据	opts 构造一个 S3 客户端. 必填字段为 Endpoint / AccessKey / SecretKey.
+// 未提供的可选字段会使用合理默认值 (region=us-east-1, 重试 3 次, path-style 寻址等).
 func New(opts *Options) (*Client, error) {
 	// 检查必填参数
 	if opts == nil || opts.Endpoint == "" || opts.AccessKey == "" || opts.SecretKey == "" {

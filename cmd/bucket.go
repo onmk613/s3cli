@@ -124,15 +124,21 @@ func LifecycleCmd() *cobra.Command {
 }
 
 func SetLifecycleSetCmd() *cobra.Command {
-	return &cobra.Command{
-		Use:               "set [lifecycle-file] [alias:bucket] ...",
-		Short:             "Set lifecycle rules (JSON, AWS CLI compatible)",
-		ValidArgsFunction: CompleteLocalFirst(AutoCompleteBucket),
-		Args:              cobra.MinimumNArgs(2),
-		RunE: NewRunE(func(S3 action.S3Client, opts *Context, s3path *s3path.Path) error {
-			return S3.SetLifecycle(opts.Global.Args, s3path.Bucket)
-		}, &Context{ArgParseMode: ParseArgsAndS3Path}),
+	var opt action.LifecycleOptions
+	opts := newCmdContext()
+	cmd := &cobra.Command{
+		Use:               "set [alias:bucket] ...",
+		Short:             "Set lifecycle rules (by --prefix/--ttl flags or JSON/XML file)",
+		ValidArgsFunction: AutoCompleteBucket,
+		Args:              cobra.MinimumNArgs(1),
+		RunE: NewRunE(func(S3 action.S3Client, _ *Context, s3path *s3path.Path) error {
+			return S3.SetLifecycle(opt, s3path.Bucket)
+		}, &opts),
 	}
+	cmd.Flags().StringVar(&opt.Prefix, "prefix", "", "Object key prefix the expiration rule applies to")
+	cmd.Flags().StringVar(&opt.TTL, "ttl", "", "Expiration TTL, e.g. 30d / 12h / 1w / 2m (bare number = days)")
+	cmd.Flags().StringVar(&opt.ConfigFile, "from-file", "", "Set lifecycle from a JSON/XML file (overrides --prefix/--ttl)")
+	return cmd
 }
 
 func LifecycleGetCmd() *cobra.Command {
@@ -160,68 +166,38 @@ func LifecycleDelCmd() *cobra.Command {
 }
 
 // PolicyCmd 管理桶的访问策略。
-// 预定义策略 (public-read / public-read-write / private) 可用 --prefix 限定 key 范围;
-// custom 用自定义 JSON 文件; get/del 读取/删除策略。
+// set 统一入口: --type 套用预定义策略 (public-read 等, 可选 --prefix 限定范围),
+// 或 -f 指定自定义 JSON 文件; get/del 读取/删除策略。
 func PolicyCmd() *cobra.Command {
 	policyCmd := &cobra.Command{
 		Use:   "policy",
 		Short: "Manage bucket policy",
 	}
 	policyCmd.AddCommand(
-		PolicyPublicReadCmd(),
-		PolicyPublicReadWriteCmd(),
-		PolicyPrivateCmd(),
-		PolicyCustomCmd(),
+		PolicySetCmd(),
 		PolicyGetCmd(),
 		PolicyDelCmd(),
 	)
 	return policyCmd
 }
 
-// newCannedPolicyCmd 构造预定义策略子命令。
-// public-read / public-read-write 支持 --prefix 限定 key 范围;
-// private 删除整个桶策略 (无前缀概念), 故不注册 --prefix。
-func newCannedPolicyCmd(name, short string) *cobra.Command {
-	var prefix string
+// PolicySetCmd 设置桶策略的统一入口: --type 预定义策略 或 -f 自定义 JSON 文件.
+func PolicySetCmd() *cobra.Command {
+	var opt action.PolicyOptions
 	opts := newCmdContext()
 	cmd := &cobra.Command{
-		Use:               name + " [alias:bucket] ...",
-		Short:             short,
+		Use:               "set [alias:bucket] ...",
+		Short:             "Set bucket policy (canned type or custom JSON file)",
 		ValidArgsFunction: AutoCompleteBucket,
 		Args:              cobra.MinimumNArgs(1),
 		RunE: NewRunE(func(S3 action.S3Client, _ *Context, s3path *s3path.Path) error {
-			return S3.ApplyCannedPolicy(name, s3path.Bucket, prefix)
+			return S3.SetPolicy(opt, s3path.Bucket)
 		}, &opts),
 	}
-	if name != "private" {
-		cmd.Flags().StringVar(&prefix, "prefix", "", "Scope the policy to objects under this key prefix (default: whole bucket)")
-	}
+	cmd.Flags().StringVar(&opt.Type, "type", "", "Canned policy: public-read / public-write / public-read-write / private")
+	cmd.Flags().StringVar(&opt.Prefix, "prefix", "", "Scope canned policy to objects under this key prefix (default: whole bucket)")
+	cmd.Flags().StringVar(&opt.ConfigFile, "from-file", "", "Set policy from a custom JSON file (overrides --type)")
 	return cmd
-}
-
-func PolicyPublicReadCmd() *cobra.Command {
-	return newCannedPolicyCmd("public-read", "Allow anonymous read (download) access")
-}
-
-func PolicyPublicReadWriteCmd() *cobra.Command {
-	return newCannedPolicyCmd("public-read-write", "Allow anonymous read and write access")
-}
-
-func PolicyPrivateCmd() *cobra.Command {
-	return newCannedPolicyCmd("private", "Remove bucket policy (make bucket private)")
-}
-
-// PolicyCustomCmd 用自定义 JSON 文件设置桶策略。
-func PolicyCustomCmd() *cobra.Command {
-	return &cobra.Command{
-		Use:               "custom [policy-file] [alias:bucket] ...",
-		Short:             "Set bucket policy from a JSON file",
-		ValidArgsFunction: CompleteLocalFirst(AutoCompleteBucket),
-		Args:              cobra.MinimumNArgs(2),
-		RunE: NewRunE(func(S3 action.S3Client, opts *Context, s3path *s3path.Path) error {
-			return S3.SetPolicy(opts.Global.Args, s3path.Bucket)
-		}, &Context{ArgParseMode: ParseArgsAndS3Path}),
-	}
 }
 
 func PolicyGetCmd() *cobra.Command {

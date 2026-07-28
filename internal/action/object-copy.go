@@ -1,3 +1,6 @@
+// object-copy.go 实现同 endpoint 内的对象复制 CopyObjects (cp):
+// 单文件直传与目录递归 (走 RunStream), 目标 key 解析复用 s3path 规则.
+
 package action
 
 import (

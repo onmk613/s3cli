@@ -1,3 +1,6 @@
+// object-pipe.go 实现从 stdin 流式上传 (PipeUpload), 适合管道场景;
+// 输入大小未知, 小输入走单次 PUT, 大输入自动转分片上传.
+
 package action
 
 import (

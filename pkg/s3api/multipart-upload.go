@@ -1,3 +1,8 @@
+// multipart-upload.go 实现分片上传完整生命周期:
+// CreateMultipartUpload (初始化) -> UploadPart (逐片上传) -> CompleteMultipartUpload (完成)
+// 以及 AbortMultipartUpload (中止)、ListMultipartUploads (列出进行中的上传)、
+// ListParts (列出已上传分片).
+
 package s3api
 
 import (
