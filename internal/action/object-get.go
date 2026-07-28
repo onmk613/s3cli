@@ -1,3 +1,7 @@
+// object-get.go 实现对象下载 GetObject: 单文件直传与目录递归下载,
+// 走 RunStream 并发框架, 默认跳过已存在本地文件 (--overwrite 强制覆盖),
+// 含路径穿越防护与临时文件原子替换.
+
 package action
 
 import (

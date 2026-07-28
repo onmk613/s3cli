@@ -1,7 +1,7 @@
 package main
 
 import (
-	"s3cli/internal/cmd"
+	"s3cli/cmd"
 )
 
 func main() {

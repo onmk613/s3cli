@@ -1,3 +1,6 @@
+// bucket-config-common.go 提供桶子资源 (CORS/Lifecycle/Encryption/Notification 等)
+// 配置命令的通用辅助: pretty-JSON 打印、删除样板、AWS CLI 兼容 JSON 加载.
+
 package action
 
 import (

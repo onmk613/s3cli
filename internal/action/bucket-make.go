@@ -1,3 +1,6 @@
+// bucket-make.go 实现桶创建 (MakeBuckets), 支持在创建的同时一次性套用
+// CORS / Policy / Lifecycle / Versioning 配置.
+
 package action
 
 import (
@@ -40,10 +43,10 @@ func (c *S3Client) MakeBuckets(opt MakeBucketOptions, bucket string) error {
 		step("cors", func() error { return c.SetCors(opt.CorsFile, bucket) })
 	}
 	if opt.PolicyFile != "" {
-		step("policy", func() error { return c.SetPolicy(opt.PolicyFile, bucket) })
+		step("policy", func() error { return c.SetPolicy(PolicyOptions{ConfigFile: opt.PolicyFile}, bucket) })
 	}
 	if opt.LifecycleFile != "" {
-		step("lifecycle", func() error { return c.SetLifecycle(opt.LifecycleFile, bucket) })
+		step("lifecycle", func() error { return c.SetLifecycle(LifecycleOptions{ConfigFile: opt.LifecycleFile}, bucket) })
 	}
 	if opt.Versioning {
 		step("versioning", func() error { return c.SetVersioning(bucket, "Enabled") })

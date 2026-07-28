@@ -1,3 +1,9 @@
+// presigned.go 实现预签名 URL 生成:
+//   - PresignedURL / Presign{Get,Put,Delete,Head}: 基于 SigV4, 最长有效期 7 天;
+//   - PresignV2: 基于 SigV2, 兼容旧式 S3 服务, 有效期无限制.
+//
+// 预签名 URL 允许无凭证客户端在有效期内访问指定对象.
+
 package s3api
 
 import (

@@ -1,3 +1,6 @@
+// bucket-tagging.go 实现桶标签集合管理: Set/Get/DeleteBucketTagging,
+// 并定义标签结构 Tagging (同时被 object-tagging.go 复用).
+
 package s3api
 
 import (
@@ -5,7 +8,7 @@ import (
 	"encoding/xml"
 )
 
-// Tag 是单个标签.
+// Tagging 描述单个键值标签, 同时用于桶标签与对象标签.
 type Tagging struct {
 	XMLName xml.Name `xml:"Tag"`
 	Key     string   `xml:"Key"`

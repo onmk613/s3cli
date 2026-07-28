@@ -13,7 +13,6 @@ import (
 	myprint "s3cli/pkg/fmtutil"
 
 	"golang.org/x/term"
-	"gopkg.in/ini.v1"
 )
 
 // errInterrupted 表示交互式输入被用户中断（Ctrl+C）或 stdin 关闭（EOF）。
@@ -28,17 +27,20 @@ func SetAliasConf(ctx context.Context, section string) error {
 	}
 
 	var conf Static
-	var cfg *ini.File
+	var aliases map[string]Static
 
 	ensureConfPath()
 
+	// 文件存在则加载现有别名表，不存在则从空 map 起步。
+	// 解析失败一律按错误返回，避免静默覆盖用户已有配置。
 	if _, err := os.Stat(ConfPath); err == nil {
-		cfg, err = ini.Load(ConfPath)
-		if err != nil {
-			return fmt.Errorf("load existing config: %w", err)
+		loaded, _, lerr := loadRaw()
+		if lerr != nil {
+			return fmt.Errorf("load existing config: %w", lerr)
 		}
+		aliases = loaded
 	} else {
-		cfg = ini.Empty()
+		aliases = make(map[string]Static)
 	}
 
 	reader := bufio.NewReader(os.Stdin)
@@ -182,45 +184,13 @@ func SetAliasConf(ctx context.Context, section string) error {
 	}
 
 	// 交互不覆盖用户手工维护的非交互字段 (max_retries):
-	// 重新 alias set 前从已有 section 读出旧值, 避免 ReflectFrom 后被 DeleteKey 擦掉。
-	if cfg.HasSection(section) {
-		old := cfg.Section(section)
-		if old.HasKey("max_retries") {
-			conf.MaxRetries, _ = old.Key("max_retries").Int()
-		}
+	// 重新 alias set 前从已有 alias 读出旧值, 避免保存时被 buildOutputMap 当默认值擦掉。
+	if old, ok := aliases[section]; ok && old.MaxRetries > 0 {
+		conf.MaxRetries = old.MaxRetries
 	}
 
-	sec, err := cfg.NewSection(section)
-	if err != nil {
-		return fmt.Errorf("create section: %w", err)
-	}
-	if err := sec.ReflectFrom(&conf); err != nil {
-		return fmt.Errorf("reflect config: %w", err)
-	}
-
-	if conf.SessionToken == "" {
-		sec.DeleteKey("session_token")
-	}
-	if conf.VerifySSL {
-		sec.DeleteKey("verify_ssl")
-	}
-	if conf.DefaultMimeType == "" {
-		sec.DeleteKey("default_mime_type")
-	}
-	if conf.MultipartChunkSizeMb == 15 {
-		sec.DeleteKey("multipart_chunk_size_mb")
-	}
-	if conf.Region == "" {
-		sec.DeleteKey("region")
-	}
-	if conf.BucketLookup == "" {
-		sec.DeleteKey("bucket_lookup")
-	}
-	if conf.MaxRetries == 0 {
-		sec.DeleteKey("max_retries")
-	}
-
-	if err := saveConfig(cfg, ConfPath); err != nil {
+	aliases[section] = conf
+	if err := saveConfig(aliases, ConfPath); err != nil {
 		return fmt.Errorf("save config: %w", err)
 	}
 	myprint.PrintfGreen("S3 configuration saved to %s\n", ConfPath)

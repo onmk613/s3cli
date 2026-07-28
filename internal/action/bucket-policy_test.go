@@ -16,6 +16,7 @@ func TestBuildCannedPolicy(t *testing.T) {
 	}{
 		{"public-read", "mybucket", "", "s3:GetObject", "arn:aws:s3:::mybucket/*"},
 		{"public-read", "mybucket", "logs/", "s3:GetObject", "arn:aws:s3:::mybucket/logs/*"},
+		{"public-write", "mybucket", "", []string{"s3:PutObject", "s3:DeleteObject"}, "arn:aws:s3:::mybucket/*"},
 		{"public-read-write", "mybucket", "", []string{"s3:GetObject", "s3:PutObject", "s3:DeleteObject"}, "arn:aws:s3:::mybucket/*"},
 		{"public-read-write", "mybucket", "data/", []string{"s3:GetObject", "s3:PutObject", "s3:DeleteObject"}, "arn:aws:s3:::mybucket/data/*"},
 		{"public-read", "mybucket", "img", "s3:GetObject", "arn:aws:s3:::mybucket/img*"},

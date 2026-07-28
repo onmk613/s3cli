@@ -1,3 +1,6 @@
+// bucket-cors.go 实现桶的 CORS (跨域资源共享) 配置管理: Set/Get/DeleteBucketCors,
+// 并定义 CORS 线协议结构 CorsConfig / CorsRule.
+
 package s3api
 
 import (

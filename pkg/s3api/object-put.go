@@ -1,3 +1,6 @@
+// object-put.go 实现对象上传: PutObject (内存 bytes) / PutObjectStream (流式, 不读入全部内容)
+// / PutString (便捷字符串上传). 支持元数据、存储类型、服务端加密、对象锁等选项.
+
 package s3api
 
 import (

@@ -1,3 +1,10 @@
+// multipart-transfer.go 实现分片上传的底层传输:
+//   - uploadMultipart: 已知大小 reader 的分片上传;
+//   - uploadUnknownSize: stdin 等未知大小流的分片上传 (先试探首片再决定 PUT/MPU);
+//   - uploadMultipartFile: 基于本地状态文件的服务端对账式断点续传.
+//
+// 任何分片或完成失败都会中止服务端 upload 以释放空间.
+
 package action
 
 import (

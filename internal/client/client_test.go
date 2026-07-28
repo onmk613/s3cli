@@ -12,26 +12,6 @@ import (
 	"s3cli/pkg/s3api"
 )
 
-func TestParseProvider(t *testing.T) {
-	cases := []struct {
-		in   string
-		want s3api.Provider
-	}{
-		{"", s3api.ProviderAws},
-		{"aws", s3api.ProviderAws},
-		{"AWS", s3api.ProviderAws},
-		{" minio ", s3api.ProviderMinIO},
-		{"MINIO", s3api.ProviderMinIO},
-		{"seaweedfs", s3api.ProviderSeaweedFS},
-		{"unknown", s3api.ProviderAws},
-	}
-	for _, tc := range cases {
-		if got := parseProvider(tc.in); got != tc.want {
-			t.Errorf("parseProvider(%q) = %v, want %v", tc.in, got, tc.want)
-		}
-	}
-}
-
 func TestNewS3Client(t *testing.T) {
 	t.Run("valid path-style", func(t *testing.T) {
 		cfg := config.Static{

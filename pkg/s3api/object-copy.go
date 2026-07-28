@@ -1,3 +1,7 @@
+// object-copy.go 实现服务端对象复制 CopyObject (同 endpoint 内).
+// 支持元数据/标签指令 (COPY/REPLACE)、条件复制、加密与存储类型设置.
+// 注意 S3 可能在 HTTP 200 的响应体内返回 <Error>, 此处会探测并转为错误.
+
 package s3api
 
 import (

@@ -7,7 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"gopkg.in/ini.v1"
+	"github.com/BurntSushi/toml"
 )
 
 // Defaults 集中管理硬编码默认值，避免散落各处。
@@ -47,20 +47,21 @@ type Flags struct {
 }
 
 // Static 描述单个别名（一个 S3 端点）的静态配置。
+// TOML tag 与磁盘文件 key 一一对应；与 INI 版本字段名完全一致，便于老用户对照迁移。
 type Static struct {
-	AccessKey    string `ini:"access_key"`
-	SecretKey    string `ini:"secret_key"`
-	SessionToken string `ini:"session_token"`
-	HostBase     string `ini:"host_base"`
+	AccessKey    string `toml:"access_key"`
+	SecretKey    string `toml:"secret_key"`
+	SessionToken string `toml:"session_token"`
+	HostBase     string `toml:"host_base"`
 
-	Region    string `ini:"region"`
-	VerifySSL bool   `ini:"verify_ssl"`
+	Region    string `toml:"region"`
+	VerifySSL bool   `toml:"verify_ssl"`
 	// path / dns / https://www.%(bucket).example.com
-	BucketLookup string `ini:"bucket_lookup"`
+	BucketLookup string `toml:"bucket_lookup"`
 
-	DefaultMimeType      string `ini:"default_mime_type"`
-	MultipartChunkSizeMb int    `ini:"multipart_chunk_size_mb"`
-	MaxRetries           int    `ini:"max_retries"`
+	DefaultMimeType      string `toml:"default_mime_type"`
+	MultipartChunkSizeMb int    `toml:"multipart_chunk_size_mb"`
+	MaxRetries           int    `toml:"max_retries"`
 }
 
 // ResolveBucketLookup 解析 bucket_lookup 配置，返回模式和模板。
@@ -129,8 +130,52 @@ func validateCustomTemplate(tpl string) bool {
 	return true
 }
 
-// saveConfig 以原子方式写入凭据，并设置仅限所有者访问的权限
-func saveConfig(cfg *ini.File, filename string) error {
+// buildOutputMap 把单个别名转换为 map[string]any，跳过取默认值的字段，
+// 让写入的配置文件保持简洁（与原 INI 版本里 DeleteKey 默认值字段的语义一致）。
+// 字段裁剪规则：
+//   - access_key / secret_key / host_base 必写
+//   - session_token / region / bucket_lookup / default_mime_type: 非空才写
+//   - verify_ssl: 仅 false 才写 (缺省 = true，由 LoadConf 在读取时回填)
+//   - multipart_chunk_size_mb: > 0 且 != 15 才写
+//   - max_retries: > 0 才写
+func buildOutputMap(s Static) map[string]any {
+	m := map[string]any{
+		"access_key": s.AccessKey,
+		"secret_key": s.SecretKey,
+		"host_base":  s.HostBase,
+	}
+	if s.SessionToken != "" {
+		m["session_token"] = s.SessionToken
+	}
+	if s.Region != "" {
+		m["region"] = s.Region
+	}
+	if !s.VerifySSL {
+		m["verify_ssl"] = false
+	}
+	if s.BucketLookup != "" {
+		m["bucket_lookup"] = s.BucketLookup
+	}
+	if s.DefaultMimeType != "" {
+		m["default_mime_type"] = s.DefaultMimeType
+	}
+	if s.MultipartChunkSizeMb > 0 && s.MultipartChunkSizeMb != DefaultPartSizeMB {
+		m["multipart_chunk_size_mb"] = s.MultipartChunkSizeMb
+	}
+	if s.MaxRetries > 0 {
+		m["max_retries"] = s.MaxRetries
+	}
+	return m
+}
+
+// saveConfig 以原子方式写入凭据，并设置仅限所有者访问的权限。
+// 输入是 alias 名 → Static 的整张表；内部按 buildOutputMap 过滤后用 TOML 编码。
+func saveConfig(aliases map[string]Static, filename string) error {
+	out := make(map[string]map[string]any, len(aliases))
+	for name, s := range aliases {
+		out[name] = buildOutputMap(s)
+	}
+
 	dir := filepath.Dir(filename)
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return fmt.Errorf("create config directory: %w", err)
@@ -147,9 +192,9 @@ func saveConfig(cfg *ini.File, filename string) error {
 		_ = tmp.Close()
 		return err
 	}
-	if _, err := cfg.WriteTo(tmp); err != nil {
+	if err := toml.NewEncoder(tmp).Encode(out); err != nil {
 		_ = tmp.Close()
-		return err
+		return fmt.Errorf("encode config: %w", err)
 	}
 	if err := tmp.Sync(); err != nil {
 		_ = tmp.Close()

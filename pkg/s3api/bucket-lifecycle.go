@@ -1,3 +1,6 @@
+// bucket-lifecycle.go 实现桶的生命周期配置管理: Set/Get/DeleteBucketLifecycle,
+// 并定义生命周期规则结构 (过滤 / 过渡 / 过期 / 非当前版本 / 中止分片上传).
+
 package s3api
 
 import (

@@ -1,3 +1,6 @@
+// object-du.go 实现磁盘占用统计 DuObject: 遍历前缀下对象累加大小,
+// 可按文件系统块大小向上取整估算实际磁盘占用.
+
 package action
 
 import (

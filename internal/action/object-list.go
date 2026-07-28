@@ -1,3 +1,6 @@
+// object-list.go 实现对象列举 ListObjects (ls): bucket 为空时列桶, 否则列对象;
+// listAll 控制是否递归 (默认按 "/" 分隔只列一级).
+
 package action
 
 import (
@@ -8,6 +11,8 @@ import (
 	"s3cli/pkg/s3api"
 )
 
+// ListObjects 列出桶 / 对象. bucket 为空时列出当前凭证下所有桶;
+// 否则按 prefix 列出对象, listAll=true 递归列出全部层级.
 func (c *S3Client) ListObjects(bucket, prefix string, listAll bool) error {
 	if bucket == "" {
 		buckets, err := c.S3.ListBuckets(c.Ctx)

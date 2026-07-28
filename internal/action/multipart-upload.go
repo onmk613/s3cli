@@ -1,3 +1,6 @@
+// multipart-upload.go 实现远端分片上传管理: 列出 (MpuList) 与中止 (MpuAbort) 服务端
+// 进行中的 multipart upload.
+
 package action
 
 import (

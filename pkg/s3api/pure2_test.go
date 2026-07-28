@@ -56,7 +56,6 @@ func TestClientGetters(t *testing.T) {
 		SecretKey:    "SK",
 		SessionToken: "ST",
 		Region:       "eu-west-1",
-		Vendor:       ProviderMinIO,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -72,11 +71,6 @@ func TestClientGetters(t *testing.T) {
 	}
 	if c.Endpoint() != "https://s3.example.com" {
 		t.Errorf("Endpoint=%q", c.Endpoint())
-	}
-	// Provider 设置器
-	c.Provider(ProviderSeaweedFS)
-	if c.vendor != ProviderSeaweedFS {
-		t.Error("Provider not set")
 	}
 }
 

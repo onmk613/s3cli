@@ -1,3 +1,7 @@
+// multipart-state.go 实现本地断点续传状态文件的持久化:
+// 状态按 (本地路径, bucket, key) 哈希命名, 记录 uploadId / 分片大小 / 文件指纹,
+// 续传前会与服务端 ListParts 对账, 本地状态从不作为权威.
+
 package action
 
 import (

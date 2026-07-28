@@ -1,3 +1,5 @@
+// bucket-remove.go 实现桶删除 (RemoveBuckets); --force 时先清空全部对象与版本再删桶.
+
 package action
 
 import (
@@ -6,6 +8,7 @@ import (
 	"s3cli/pkg/s3api"
 )
 
+// RemoveBuckets 删除桶; force=true 时先清空桶内全部对象与版本 (不可恢复) 再删桶.
 func (c *S3Client) RemoveBuckets(bucket string, force bool) error {
 	if force {
 		myprint.PrintfBoldYellow("!!! WARNING: --force will permanently delete all objects/versions in %v %s!!!", c.Alias, bucket)

@@ -1,3 +1,6 @@
+// diff.go 实现本地 / S3 之间的内容差异比对 Diff: 自动识别文件 vs 目录,
+// 支持三种模式 (size / quick=size+mtime / md5=流式内容比对), 目录模式并发比对.
+
 package action
 
 import (

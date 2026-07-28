@@ -1,3 +1,6 @@
+// info.go 实现元信息查看 Info: 桶或对象均可, 输出 JSON,
+// 桶模式下聚合 location/versioning/policy/cors 等子项 (未配置时按空值输出).
+
 package action
 
 import (

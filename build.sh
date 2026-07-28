@@ -17,7 +17,7 @@ LDFLAGS="-s -w \
   -X 's3cli/internal/cmd.BuildDate=${DATE}' \
   -X 's3cli/internal/cmd.GoVersion=${GOVERSION}'"
 
-ENTRY=./cmd/s3cli
+ENTRY=.
 
 go mod tidy
 

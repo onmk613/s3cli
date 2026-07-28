@@ -1,3 +1,7 @@
+// bucket-lookup.go 处理 bucket 寻址方式 (path-style / virtual-host-style / 自定义模板),
+// 将 (bucket, object, query) 解析为最终请求 URL. 当自定义模板引用 %(region) 占位符时,
+// 会通过 GetBucketLocation 探测 bucket 的实际 region (带进程内缓存).
+
 package s3api
 
 import (
@@ -8,14 +12,20 @@ import (
 	"strings"
 )
 
+// BucketLookupType 表示 bucket 的寻址方式.
 type BucketLookupType int
 
 const (
+	// BucketLookupAuto 自动选择寻址方式; 未提供自定义模板时默认退化为 BucketLookupPath.
 	BucketLookupAuto BucketLookupType = iota
+	// BucketLookupDNS 虚拟主机风格: http://<bucket>.<host>/<object>.
 	BucketLookupDNS
+	// BucketLookupPath 路径风格: http://<host>/<bucket>/<object>.
 	BucketLookupPath
 )
 
+// BucketLookupFunc 由自定义寻址模板实现, 决定如何把 (bucket, region) 解析为基准 endpoint.
+// 当模板引用了 %(region) 占位符时, Client 会先探测 bucket 的实际 region 再调用 ResolveCustomEndpoint.
 type BucketLookupFunc interface {
 	// NeedsRegion 表示模板是否引用了 region 占位符 (如 %(region))。
 	// 为 true 时, Client 会解析 bucket 的实际 region (带缓存探测) 再注入模板;

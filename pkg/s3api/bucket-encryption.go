@@ -1,3 +1,6 @@
+// bucket-encryption.go 实现桶的默认服务端加密配置管理:
+// Set/Get/DeleteBucketEncryption, 并定义 SSE 配置结构.
+
 package s3api
 
 import (

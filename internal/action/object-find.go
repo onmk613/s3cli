@@ -1,3 +1,6 @@
+// object-find.go 实现对象条件搜索 FindObjects: 按名称 (glob/regex) / 大小区间 /
+// 修改时间 (newer-than / older-than) 过滤, 支持 --limit 提前退出.
+
 package action
 
 import (

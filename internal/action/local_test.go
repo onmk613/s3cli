@@ -180,6 +180,45 @@ func TestParseLifecycleConfig(t *testing.T) {
 	})
 }
 
+func TestParseTTLDays(t *testing.T) {
+	cases := []struct {
+		in      string
+		want    int
+		wantErr bool
+	}{
+		{"30", 30, false},
+		{"30d", 30, false},
+		{"30days", 30, false},
+		{"12h", 1, false},   // ceil(0.5) = 1
+		{"25h", 2, false},   // ceil(25/24) = 2
+		{"1w", 7, false},
+		{"2weeks", 14, false},
+		{"1m", 30, false},
+		{"1y", 365, false},
+		{"0", 0, true},      // 非正数
+		{"-5", 0, true},     // 非正数
+		{"abc", 0, true},    // 非数字
+		{"12x", 0, true},    // 未知单位
+		{"", 0, true},       // 空
+	}
+	for _, tc := range cases {
+		got, err := parseTTLDays(tc.in)
+		if tc.wantErr {
+			if err == nil {
+				t.Errorf("parseTTLDays(%q) = %d, want error", tc.in, got)
+			}
+			continue
+		}
+		if err != nil {
+			t.Errorf("parseTTLDays(%q) unexpected error: %v", tc.in, err)
+			continue
+		}
+		if got != tc.want {
+			t.Errorf("parseTTLDays(%q) = %d, want %d", tc.in, got, tc.want)
+		}
+	}
+}
+
 func TestLoadJSONConfig(t *testing.T) {
 	dir := t.TempDir()
 	t.Run("valid json", func(t *testing.T) {

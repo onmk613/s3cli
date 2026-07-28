@@ -1,3 +1,6 @@
+// object-head.go 实现 HeadObject (获取对象元数据, 不下载 body) 与 HeadBucket (探活桶),
+// 对象元数据全部来自 HTTP 响应头.
+
 package s3api
 
 import (
@@ -5,7 +8,6 @@ import (
 	"io"
 	"net/http"
 	"net/url"
-	"strconv"
 	"time"
 )
 
@@ -135,18 +137,4 @@ func (c *Client) HeadBucket(ctx context.Context, bucket string) error {
 		_ = Body.Close()
 	}(resp.Body)
 	return nil
-}
-
-// trimQuotes 去掉 ETag 周围的引号.
-func trimQuotes(s string) string {
-	if len(s) >= 2 && s[0] == '"' && s[len(s)-1] == '"' {
-		return s[1 : len(s)-1]
-	}
-	return s
-}
-
-// parseInt64 安全解析 int64.
-func parseInt64(s string) int64 {
-	n, _ := strconv.ParseInt(s, 10, 64)
-	return n
 }

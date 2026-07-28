@@ -1,3 +1,7 @@
+// utils.go 提供包内复用的通用工具: SHA256/HMAC/MD5 哈希计算、RFC 3986 百分号编码、
+// XML 编解码辅助、字符串处理 (trimQuotes / parseInt64 / indexOfByte),
+// 以及 S3 桶名严格校验.
+
 package s3api
 
 import (
@@ -11,6 +15,7 @@ import (
 	"io"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 )
 
@@ -99,17 +104,51 @@ func isUnreserved(c byte) bool {
 }
 
 // xmlDecoder provide decoded value in xml
-func xmlDecoder(body io.Reader, v interface{}) error {
+func xmlDecoder(body io.Reader, v any) error {
 	d := xml.NewDecoder(body)
 	return d.Decode(v)
 }
 
-var (
-	bucketNameRegex = regexp.MustCompile(`^[A-Za-z0-9][a-zA-Z0-9_\-.]{1,61}[A-Za-z0-9]$`)
-	ipAddress       = regexp.MustCompile(`^(\d+\.){3}\d+$`)
-)
+// marshalXMLWithHeader 序列化为 XML 并加上 XML 声明头.
+func marshalXMLWithHeader(v any) ([]byte, error) {
+	body, err := xml.Marshal(v)
+	if err != nil {
+		return nil, err
+	}
+	return append([]byte(xml.Header), body...), nil
+}
 
+// trimQuotes 去掉字符串首尾的引号, 常用于清理 ETag 字段两端的引号.
+func trimQuotes(s string) string {
+	if len(s) >= 2 && s[0] == '"' && s[len(s)-1] == '"' {
+		return s[1 : len(s)-1]
+	}
+	return s
+}
+
+// parseInt64 安全解析 int64; 解析失败时返回 0 而非 error.
+func parseInt64(s string) int64 {
+	n, _ := strconv.ParseInt(s, 10, 64)
+	return n
+}
+
+// indexOfByte 返回字节 b 在字符串 s 中首次出现的位置, 不存在返回 -1.
+func indexOfByte(s string, b byte) int {
+	for i := 0; i < len(s); i++ {
+		if s[i] == b {
+			return i
+		}
+	}
+	return -1
+}
+
+// checkValidBucketNameStrict 检查 S3 桶名是否符合严格规则.
 func checkValidBucketNameStrict(bucketName string) error {
+	var (
+		bucketNameRegex = regexp.MustCompile(`^[A-Za-z0-9][a-zA-Z0-9_\-.]{1,61}[A-Za-z0-9]$`)
+		ipAddress       = regexp.MustCompile(`^(\d+\.){3}\d+$`)
+	)
+
 	if strings.TrimSpace(bucketName) == "" {
 		return errors.New("bucket name cannot be empty")
 	}

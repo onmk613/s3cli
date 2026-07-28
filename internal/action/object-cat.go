@@ -1,3 +1,5 @@
+// object-cat.go 实现对象内容输出到 stdout (CatObject), 支持 HTTP Range.
+
 package action
 
 import (

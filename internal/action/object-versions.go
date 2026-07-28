@@ -1,3 +1,5 @@
+// object-versions.go 实现对象版本列举 ListObjectVersions, 展示各版本与 delete-marker.
+
 package action
 
 import (

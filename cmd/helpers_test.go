@@ -23,19 +23,6 @@ func snapshotConfig(t *testing.T) func() {
 	}
 }
 
-func TestFormatUserError(t *testing.T) {
-	if got := formatUserError(nil); got != "" {
-		t.Errorf("nil -> %q", got)
-	}
-	apiErr := &s3api.ErrorResponse{Code: "AccessDenied", Message: "no perms"}
-	if got := formatUserError(apiErr); got != "AccessDenied: no perms" {
-		t.Errorf("got %q", got)
-	}
-	if got := formatUserError(errors.New("boom")); got != "boom" {
-		t.Errorf("got %q", got)
-	}
-}
-
 func TestWrapDisplayed(t *testing.T) {
 	orig := &s3api.ErrorResponse{Code: "X", StatusCode: 404}
 	wrapped := wrapDisplayed(orig)
