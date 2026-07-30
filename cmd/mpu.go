@@ -58,7 +58,6 @@ func newMpuListCmd() *cobra.Command {
 
 func newMpuAbortCmd() *cobra.Command {
 	var uploadID string
-	opts := newCmdContext()
 	cmd := &cobra.Command{
 		Use:               "abort [alias:bucket[/key-or-prefix]]",
 		Aliases:           []string{"rm", "delete", "del"},
@@ -67,7 +66,7 @@ func newMpuAbortCmd() *cobra.Command {
 		ValidArgsFunction: AutoCompletePath,
 		RunE: NewRunE(func(S3 action.S3Client, _ *Context, s3path *s3path.Path) error {
 			return S3.MpuAbort(s3path.Bucket, s3path.Key, uploadID)
-		}, &opts),
+		}, nil),
 	}
 
 	cmd.Flags().StringVar(&uploadID, "upload-id", "", "Specific UploadId to abort. If the object key is omitted, it is auto-resolved by listing uploads under the prefix")

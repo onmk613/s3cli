@@ -189,17 +189,17 @@ func TestParseTTLDays(t *testing.T) {
 		{"30", 30, false},
 		{"30d", 30, false},
 		{"30days", 30, false},
-		{"12h", 1, false},   // ceil(0.5) = 1
-		{"25h", 2, false},   // ceil(25/24) = 2
+		{"12h", 1, false}, // ceil(0.5) = 1
+		{"25h", 2, false}, // ceil(25/24) = 2
 		{"1w", 7, false},
 		{"2weeks", 14, false},
 		{"1m", 30, false},
 		{"1y", 365, false},
-		{"0", 0, true},      // 非正数
-		{"-5", 0, true},     // 非正数
-		{"abc", 0, true},    // 非数字
-		{"12x", 0, true},    // 未知单位
-		{"", 0, true},       // 空
+		{"0", 0, true},   // 非正数
+		{"-5", 0, true},  // 非正数
+		{"abc", 0, true}, // 非数字
+		{"12x", 0, true}, // 未知单位
+		{"", 0, true},    // 空
 	}
 	for _, tc := range cases {
 		got, err := parseTTLDays(tc.in)
