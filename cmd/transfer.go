@@ -77,7 +77,6 @@ func NewPutCmd() *cobra.Command {
 
 func NewRmCmd() *cobra.Command {
 	var delOpt action.DelOptions
-	opts := newCmdContext()
 	cmd := &cobra.Command{
 		Use:               "rm [s3://bucket/path] ...",
 		Aliases:           []string{"delete", "del"},
@@ -86,7 +85,7 @@ func NewRmCmd() *cobra.Command {
 		ValidArgsFunction: AutoCompletePath,
 		RunE: NewRunE(func(S3 action.S3Client, opts *Context, s3path *s3path.Path) error {
 			return S3.DeleteObjects(s3path.Bucket, s3path.Key, delOpt)
-		}, &opts),
+		}, nil),
 	}
 	cmd.Flags().BoolVarP(&delOpt.Recursive, "recursive", "r", false, "Delete recursively")
 	cmd.Flags().StringVarP(&delOpt.VersionID, "version-id", "v", "", "Delete a specific version of the object")
@@ -95,7 +94,6 @@ func NewRmCmd() *cobra.Command {
 
 func NewCatCmd() *cobra.Command {
 	var catOpt action.CatOptions
-	opts := newCmdContext()
 	cmd := &cobra.Command{
 		Use:               "cat [alias:bucket/key] ...",
 		Short:             "Print object contents to stdout",
@@ -103,7 +101,7 @@ func NewCatCmd() *cobra.Command {
 		ValidArgsFunction: AutoCompletePath,
 		RunE: NewRunE(func(S3 action.S3Client, _ *Context, s3path *s3path.Path) error {
 			return S3.CatObject(catOpt, s3path.Bucket, s3path.Key)
-		}, &opts),
+		}, nil),
 	}
 	cmd.Flags().StringVar(&catOpt.Range, "range", "", "HTTP Range header, e.g. 'bytes=0-1023'")
 	return cmd
@@ -111,7 +109,6 @@ func NewCatCmd() *cobra.Command {
 
 func NewPipeCmd() *cobra.Command {
 	var pipeOpt action.PipeOptions
-	opts := newCmdContext()
 	// cmd 先声明后赋值: RunE 闭包需要引用 cmd 判断 --part-size 是否被显式设置
 	var cmd *cobra.Command
 	cmd = &cobra.Command{
@@ -130,7 +127,7 @@ func NewPipeCmd() *cobra.Command {
 				}
 			}
 			return S3.PipeUpload(p, s3path.Bucket, s3path.Key)
-		}, &opts),
+		}, nil),
 	}
 	cmd.Flags().StringVar(&pipeOpt.ContentType, "content-type", config.DefaultMimeType, "Content-Type of the uploaded object")
 	cmd.Flags().IntVar(&pipeOpt.Concurrency, "concurrency", config.DefaultConcurrency, "Reserved for future parallel stream uploads")

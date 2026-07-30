@@ -14,7 +14,6 @@ func init() {
 
 func NewFindCmd() *cobra.Command {
 	var findOpt action.FindOptions
-	opts := newCmdContext()
 	cmd := &cobra.Command{
 		Use:               "find [alias:bucket[/prefix]] ...",
 		Short:             "Search objects by name pattern, size and modification time",
@@ -22,7 +21,7 @@ func NewFindCmd() *cobra.Command {
 		ValidArgsFunction: AutoCompletePath,
 		RunE: NewRunE(func(S3 action.S3Client, _ *Context, s3path *s3path.Path) error {
 			return S3.FindObjects(findOpt, s3path.Bucket, s3path.Key)
-		}, &opts),
+		}, nil),
 	}
 	cmd.Flags().StringVar(&findOpt.Name, "name", "", "Match object basename (shell glob, e.g. '*.log')")
 	cmd.Flags().BoolVar(&findOpt.NameRegex, "regex", false, "Treat --name as RE2 regular expression")
@@ -38,7 +37,6 @@ func NewFindCmd() *cobra.Command {
 
 func NewTreeCmd() *cobra.Command {
 	var treeOpt action.TreeOptions
-	opts := newCmdContext()
 	cmd := &cobra.Command{
 		Use:               "tree [alias:bucket[/prefix]] ...",
 		Short:             "Display objects as a tree of directories",
@@ -46,7 +44,7 @@ func NewTreeCmd() *cobra.Command {
 		ValidArgsFunction: AutoCompletePath,
 		RunE: NewRunE(func(S3 action.S3Client, _ *Context, s3path *s3path.Path) error {
 			return S3.TreeObjects(treeOpt, s3path.Bucket, s3path.Key)
-		}, &opts),
+		}, nil),
 	}
 	cmd.Flags().IntVarP(&treeOpt.MaxDepth, "max-depth", "L", 0, "Limit display depth (0 = unlimited)")
 	cmd.Flags().BoolVarP(&treeOpt.ShowSize, "size", "s", false, "Show object size next to file names")

@@ -34,14 +34,13 @@ func NewBucketCmd() *cobra.Command {
 // CreateBucketCmd 创建存储桶
 func CreateBucketCmd() *cobra.Command {
 	var mkOpt action.MakeBucketOptions
-	opts := newCmdContext()
 	cmd := &cobra.Command{
 		Use:   "create [alias:bucket] ...",
 		Short: "Create bucket",
 		Args:  cobra.MinimumNArgs(1),
 		RunE: NewRunE(func(S3 action.S3Client, _ *Context, s3path *s3path.Path) error {
 			return S3.MakeBuckets(mkOpt, s3path.Bucket)
-		}, &opts),
+		}, new(newCmdContext())),
 	}
 	cmd.Flags().StringVar(&mkOpt.CorsFile, "set-cors", "", "cors-file")
 	cmd.Flags().StringVar(&mkOpt.LifecycleFile, "set-lifecycle", "", "lifecycle-file")
@@ -125,7 +124,6 @@ func LifecycleCmd() *cobra.Command {
 
 func SetLifecycleSetCmd() *cobra.Command {
 	var opt action.LifecycleOptions
-	opts := newCmdContext()
 	cmd := &cobra.Command{
 		Use:               "set [alias:bucket] ...",
 		Short:             "Set lifecycle rules (by --prefix/--ttl flags or JSON/XML file)",
@@ -133,7 +131,7 @@ func SetLifecycleSetCmd() *cobra.Command {
 		Args:              cobra.MinimumNArgs(1),
 		RunE: NewRunE(func(S3 action.S3Client, _ *Context, s3path *s3path.Path) error {
 			return S3.SetLifecycle(opt, s3path.Bucket)
-		}, &opts),
+		}, nil),
 	}
 	cmd.Flags().StringVar(&opt.Prefix, "prefix", "", "Object key prefix the expiration rule applies to")
 	cmd.Flags().StringVar(&opt.TTL, "ttl", "", "Expiration TTL, e.g. 30d / 12h / 1w / 2m (bare number = days)")
@@ -184,7 +182,6 @@ func PolicyCmd() *cobra.Command {
 // PolicySetCmd 设置桶策略的统一入口: --type 预定义策略 或 -f 自定义 JSON 文件.
 func PolicySetCmd() *cobra.Command {
 	var opt action.PolicyOptions
-	opts := newCmdContext()
 	cmd := &cobra.Command{
 		Use:               "set [alias:bucket] ...",
 		Short:             "Set bucket policy (canned type or custom JSON file)",
@@ -192,7 +189,7 @@ func PolicySetCmd() *cobra.Command {
 		Args:              cobra.MinimumNArgs(1),
 		RunE: NewRunE(func(S3 action.S3Client, _ *Context, s3path *s3path.Path) error {
 			return S3.SetPolicy(opt, s3path.Bucket)
-		}, &opts),
+		}, nil),
 	}
 	cmd.Flags().StringVar(&opt.Type, "type", "", "Canned policy: public-read / public-write / public-read-write / private")
 	cmd.Flags().StringVar(&opt.Prefix, "prefix", "", "Scope canned policy to objects under this key prefix (default: whole bucket)")
@@ -208,7 +205,7 @@ func PolicyGetCmd() *cobra.Command {
 		Args:              cobra.MinimumNArgs(1),
 		RunE: NewRunE(func(S3 action.S3Client, _ *Context, s3path *s3path.Path) error {
 			return S3.GetPolicy(s3path.Bucket)
-		}, &Context{}),
+		}, nil),
 	}
 }
 
@@ -220,7 +217,7 @@ func PolicyDelCmd() *cobra.Command {
 		Args:              cobra.MinimumNArgs(1),
 		RunE: NewRunE(func(S3 action.S3Client, _ *Context, s3path *s3path.Path) error {
 			return S3.DelPolicy(s3path.Bucket)
-		}, &Context{}),
+		}, nil),
 	}
 }
 
@@ -282,7 +279,6 @@ func EncryptionCmd() *cobra.Command {
 
 func EncryptionSetCmd() *cobra.Command {
 	var encOpt action.EncryptionOptions
-	opts := newCmdContext()
 	cmd := &cobra.Command{
 		Use:               "set [alias:bucket] ...",
 		Short:             "Set bucket default encryption (SSE-S3 / SSE-KMS)",
@@ -290,7 +286,7 @@ func EncryptionSetCmd() *cobra.Command {
 		Args:              cobra.MinimumNArgs(1),
 		RunE: NewRunE(func(S3 action.S3Client, _ *Context, s3path *s3path.Path) error {
 			return S3.SetEncryption(encOpt, s3path.Bucket)
-		}, &opts),
+		}, nil),
 	}
 
 	cmd.Flags().StringVar(&encOpt.Algorithm, "algorithm", "AES256", "Encryption algorithm: AES256 / aws:kms")

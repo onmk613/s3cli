@@ -20,7 +20,6 @@ func NewTagCmd() *cobra.Command {
 
 func NewSetTagCmd() *cobra.Command {
 	var tagString map[string]string
-	opts := newCmdContext()
 	cmd := &cobra.Command{
 		Use:               "set --tag k=v,k2=v2 [alias:bucket[/key]]",
 		Aliases:           []string{"s"},
@@ -29,7 +28,7 @@ func NewSetTagCmd() *cobra.Command {
 		ValidArgsFunction: AutoCompletePath,
 		RunE: NewRunE(func(S3 action.S3Client, _ *Context, s3path *s3path.Path) error {
 			return S3.SetTag(s3path.Bucket, s3path.Key, tagString)
-		}, &opts),
+		}, nil),
 	}
 	cmd.Flags().StringToStringVar(&tagString, "tag", nil, "Comma-separated tag set, e.g. env=prod,team=infra")
 	_ = cmd.MarkFlagRequired("tag")

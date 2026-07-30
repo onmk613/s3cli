@@ -62,7 +62,6 @@ func NewDuCmd() *cobra.Command {
 }
 
 func NewInfoCmd() *cobra.Command {
-	opts := newCmdContext()
 	cmd := &cobra.Command{
 		Use:               "info [alias:bucket[/path]] ...",
 		Short:             "Show information about bucket or object",
@@ -70,7 +69,7 @@ func NewInfoCmd() *cobra.Command {
 		Args:              cobra.MinimumNArgs(1),
 		RunE: NewRunE(func(S3 action.S3Client, opts *Context, s3path *s3path.Path) error {
 			return S3.Info(s3path.Bucket, s3path.Key)
-		}, &opts),
+		}, nil),
 	}
 	return cmd
 }

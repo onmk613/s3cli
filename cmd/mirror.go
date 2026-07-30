@@ -78,7 +78,6 @@ func NewMirrorCmd() *cobra.Command {
 		resume      bool
 	)
 
-	opts := newCmdContext()
 	// cmd 先声明后赋值: RunE 闭包需要引用 cmd 判断 --part-size 是否被显式设置
 	var cmd *cobra.Command
 	cmd = &cobra.Command{
@@ -127,7 +126,7 @@ func NewMirrorCmd() *cobra.Command {
 				Resume:       resume,
 				NoProgress:   config.G.F.Quiet,
 			})
-		}, &opts),
+		}, nil),
 	}
 
 	f := cmd.Flags()
