@@ -1,3 +1,5 @@
+//go:build !aws
+
 // bucket-lifecycle.go 实现桶的生命周期配置管理: Set/Get/DeleteBucketLifecycle.
 // LifecycleConfig 等类型定义在中立包 s3iface, 此处仅含操作逻辑.
 

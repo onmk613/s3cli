@@ -1,3 +1,5 @@
+//go:build aws
+
 // aws-config.go 实现 AWS 上的桶子资源配置管理:
 // CORS / 加密 / 生命周期 / 事件通知 / 版本控制 / 桶策略.
 //

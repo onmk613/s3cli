@@ -1,3 +1,5 @@
+//go:build aws
+
 // aws-tagging.go 实现 AWS 上的标签管理: 桶标签与对象标签的 Set/Get/Delete.
 
 package awss3

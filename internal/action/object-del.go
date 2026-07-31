@@ -8,7 +8,7 @@ import (
 	"strings"
 
 	myprint "s3cli/pkg/fmtutil"
-	"s3cli/pkg/s3api"
+	"s3cli/pkg/s3iface"
 )
 
 // DelOptions Delete 命令参数
@@ -90,7 +90,7 @@ func (c *S3Client) deleteObjectsWithPrefix(bucket, prefix string) error {
 	// 以兼容 SeaweedFS 等仅通过 filer 目录而非 S3 对象来表示空目录的后端。
 	if prefix != "" && !strings.HasSuffix(prefix, "/") {
 		dirPrefix := prefix + "/"
-		listResp, err := c.S3.ListObjectsV2(c.Ctx, bucket, &s3api.ListObjectsV2Options{
+		listResp, err := c.S3.ListObjectsV2(c.Ctx, bucket, &s3iface.ListObjectsV2Options{
 			Prefix:    dirPrefix,
 			Delimiter: "/",
 			MaxKeys:   1,
@@ -102,11 +102,11 @@ func (c *S3Client) deleteObjectsWithPrefix(bucket, prefix string) error {
 			prefix = dirPrefix
 		}
 	}
-	paginator := c.S3.NewListObjectsV2Paginator(bucket, &s3api.ListObjectsV2Options{
+	paginator := c.S3.NewListObjectsV2Paginator(bucket, &s3iface.ListObjectsV2Options{
 		Prefix: prefix,
 	})
 
-	var toDelete []s3api.ObjectIdentifier
+	var toDelete []s3iface.ObjectIdentifier
 	var total int
 	for paginator.HasMorePages() {
 		page, err := paginator.NextPage(c.Ctx)
@@ -114,7 +114,7 @@ func (c *S3Client) deleteObjectsWithPrefix(bucket, prefix string) error {
 			return fmt.Errorf("list objects: %s", FormatAPIError(err))
 		}
 		for _, item := range page.Contents {
-			toDelete = append(toDelete, s3api.ObjectIdentifier{Key: item.Key})
+			toDelete = append(toDelete, s3iface.ObjectIdentifier{Key: item.Key})
 		}
 		if len(toDelete) >= 1000 {
 			if err := c.deleteBatch(bucket, toDelete); err != nil {
@@ -165,7 +165,7 @@ func parentDirectory(key string) string {
 // deleteEmptyParentDirectories removes explicit directory marker objects left empty by a deletion.
 func (c *S3Client) deleteEmptyParentDirectories(bucket, directory string) error {
 	for directory != "" {
-		listResp, err := c.S3.ListObjectsV2(c.Ctx, bucket, &s3api.ListObjectsV2Options{
+		listResp, err := c.S3.ListObjectsV2(c.Ctx, bucket, &s3iface.ListObjectsV2Options{
 			Prefix:  directory,
 			MaxKeys: 2,
 		})
@@ -185,7 +185,7 @@ func (c *S3Client) deleteEmptyParentDirectories(bucket, directory string) error 
 	return nil
 }
 
-func (c *S3Client) deleteBatch(bucket string, objects []s3api.ObjectIdentifier) error {
+func (c *S3Client) deleteBatch(bucket string, objects []s3iface.ObjectIdentifier) error {
 	result, err := c.S3.DeleteObjects(c.Ctx, bucket, objects, true)
 	if err != nil {
 		return fmt.Errorf("delete batch of %d: %s", len(objects), FormatAPIError(err))

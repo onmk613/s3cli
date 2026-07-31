@@ -6,13 +6,13 @@ import (
 	"fmt"
 
 	myprint "s3cli/pkg/fmtutil"
-	"s3cli/pkg/s3api"
+	"s3cli/pkg/s3iface"
 )
 
 // ListObjectVersions 列出对象版本 + delete-marker
 func (c *S3Client) ListObjectVersions(bucket, prefix string) error {
 	paginator := c.S3.NewListObjectVersionsPaginator(bucket,
-		&s3api.ListObjectVersionsOptions{Prefix: prefix})
+		&s3iface.ListObjectVersionsOptions{Prefix: prefix})
 
 	for paginator.HasMorePages() {
 		page, err := paginator.NextPage(c.Ctx)

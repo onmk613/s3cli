@@ -1,3 +1,5 @@
+//go:build aws
+
 // aws_lookup_test.go 覆盖官方 SDK 后端的自定义 bucket 寻址 (templateEndpointResolver):
 // 占位符替换 / path 与 host 模板 / %(region) 探测与缓存 / 空 bucket 报错.
 

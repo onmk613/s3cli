@@ -13,7 +13,7 @@ import (
 	"strings"
 
 	myprint "s3cli/pkg/fmtutil"
-	"s3cli/pkg/s3api"
+	"s3cli/pkg/s3iface"
 )
 
 // PutOptions put 命令参数
@@ -152,7 +152,7 @@ func (c *S3Client) uploadFile(ctx context.Context, opt PutOptions, mimeType, buc
 		return fmt.Errorf("stat %s: %w", filePath, err)
 	}
 
-	putOpts := &s3api.PutObjectOptions{
+	putOpts := &s3iface.PutObjectOptions{
 		ContentType:  mimeType,
 		StorageClass: opt.StorageClass,
 		Metadata:     opt.Metadata,

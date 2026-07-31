@@ -6,7 +6,7 @@ import (
 	"fmt"
 
 	myprint "s3cli/pkg/fmtutil"
-	"s3cli/pkg/s3api"
+	"s3cli/pkg/s3iface"
 )
 
 // SetTag 设置桶或对象标签; prefix 为空时操作桶标签, 否则操作对象标签.
@@ -30,7 +30,7 @@ func (c *S3Client) SetTag(bucket, prefix string, tagStr map[string]string) error
 
 // GetTag 查询并打印桶或对象的标签集合.
 func (c *S3Client) GetTag(bucket, prefix string) error {
-	var tags []s3api.Tagging
+	var tags []s3iface.Tagging
 	if prefix == "" {
 		result, err := c.S3.GetBucketTagging(c.Ctx, bucket)
 		if err != nil {
@@ -72,10 +72,10 @@ func (c *S3Client) DelTag(bucket, prefix string) error {
 	return nil
 }
 
-func parseTagPairs(m map[string]string) []s3api.Tagging {
-	tags := make([]s3api.Tagging, 0, len(m))
+func parseTagPairs(m map[string]string) []s3iface.Tagging {
+	tags := make([]s3iface.Tagging, 0, len(m))
 	for k, v := range m {
-		tags = append(tags, s3api.Tagging{
+		tags = append(tags, s3iface.Tagging{
 			Key:   k,
 			Value: v,
 		})

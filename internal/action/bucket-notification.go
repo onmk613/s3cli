@@ -7,12 +7,12 @@ import (
 	"fmt"
 
 	myprint "s3cli/pkg/fmtutil"
-	"s3cli/pkg/s3api"
+	"s3cli/pkg/s3iface"
 )
 
 // SetNotification 设置桶事件通知 (JSON, AWS CLI 兼容)
 func (c *S3Client) SetNotification(configure, bucket string) error {
-	loaded, err := loadJSONConfig[s3api.NotificationConfiguration](configure, "notification")
+	loaded, err := loadJSONConfig[s3iface.NotificationConfiguration](configure, "notification")
 	if err != nil {
 		return err
 	}

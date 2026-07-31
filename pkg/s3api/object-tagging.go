@@ -1,3 +1,5 @@
+//go:build !aws
+
 // object-tagging.go 实现对象标签集合管理: Set/Get/DeleteObjectTagging,
 // 标签结构 Tagging 复用自 bucket-tagging.go, 支持按版本操作.
 

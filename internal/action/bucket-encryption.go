@@ -8,7 +8,7 @@ import (
 	"strings"
 
 	myprint "s3cli/pkg/fmtutil"
-	"s3cli/pkg/s3api"
+	"s3cli/pkg/s3iface"
 )
 
 // EncryptionOptions set encryption 命令参数
@@ -22,10 +22,10 @@ type EncryptionOptions struct {
 
 // SetEncryption 设置 bucket 默认加密
 func (c *S3Client) SetEncryption(opt EncryptionOptions, bucket string) error {
-	var cfg s3api.ServerSideEncryptionConfiguration
+	var cfg s3iface.ServerSideEncryptionConfiguration
 
 	if opt.ConfigFile != "" {
-		loaded, err := loadJSONConfig[s3api.ServerSideEncryptionConfiguration](opt.ConfigFile, "encryption")
+		loaded, err := loadJSONConfig[s3iface.ServerSideEncryptionConfiguration](opt.ConfigFile, "encryption")
 		if err != nil {
 			return err
 		}
@@ -35,8 +35,8 @@ func (c *S3Client) SetEncryption(opt EncryptionOptions, bucket string) error {
 		if algo == "" {
 			algo = "AES256"
 		}
-		rule := s3api.ServerSideEncryptionRule{
-			ApplyServerSideEncryptionByDefault: s3api.ServerSideEncryptionByDefault{
+		rule := s3iface.ServerSideEncryptionRule{
+			ApplyServerSideEncryptionByDefault: s3iface.ServerSideEncryptionByDefault{
 				SSEAlgorithm: algo,
 			},
 		}
@@ -50,7 +50,7 @@ func (c *S3Client) SetEncryption(opt EncryptionOptions, bucket string) error {
 				rule.BucketKeyEnabled = &bk
 			}
 		}
-		cfg.Rules = []s3api.ServerSideEncryptionRule{rule}
+		cfg.Rules = []s3iface.ServerSideEncryptionRule{rule}
 	}
 
 	if len(cfg.Rules) == 0 {

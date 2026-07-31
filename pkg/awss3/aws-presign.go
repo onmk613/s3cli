@@ -1,3 +1,5 @@
+//go:build aws
+
 // aws-presign.go 实现 AWS 上的预签名 URL: PresignedURL (SigV4) / PresignV2 (SigV2).
 //
 // PresignedURL 委托给 SDK 的 PresignClient; PresignV2 因 SDK 不原生支持,

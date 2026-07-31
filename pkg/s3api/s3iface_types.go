@@ -1,8 +1,10 @@
-// s3iface_types.go 将 s3api 的全部对外 DTO 类型别名到中立的 s3iface 包.
+//go:build !aws
+
+// s3iface_types.go 将 s3api 的对外 DTO 类型别名到中立的 s3iface 包.
 //
 // s3iface 拥有类型定义; s3api 通过别名引用, 使得:
 //   - s3api.Client 的方法签名使用 s3iface 类型, 从而结构化满足 s3iface.S3Operations 接口
-//   - 已有代码引用 s3api.XxxType 的地方无需修改 (别名透明)
+//   - 上层代码 (internal/action) 直接用 s3iface 类型, 不依赖具体后端
 //
 // 仅为类型别名, 不含任何逻辑. 所有 HTTP/签名/XML 逻辑留在各自实现文件中.
 

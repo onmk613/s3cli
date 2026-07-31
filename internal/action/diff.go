@@ -20,7 +20,6 @@ import (
 	"sync/atomic"
 
 	myprint "s3cli/pkg/fmtutil"
-	"s3cli/pkg/s3api"
 	"s3cli/pkg/s3iface"
 )
 
@@ -436,7 +435,7 @@ func listS3Dir(cli s3iface.S3Operations, ctx context.Context, alias, bucket, pre
 	if prefix != "" && !strings.HasSuffix(prefix, "/") {
 		prefix += "/"
 	}
-	paginator := cli.NewListObjectsV2Paginator(bucket, &s3api.ListObjectsV2Options{
+	paginator := cli.NewListObjectsV2Paginator(bucket, &s3iface.ListObjectsV2Options{
 		Prefix: prefix,
 	})
 	var out []fileEntry

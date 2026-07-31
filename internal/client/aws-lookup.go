@@ -1,3 +1,5 @@
+//go:build aws
+
 // aws-lookup.go 为官方 SDK 后端 (awss3.AWS) 实现与 s3api 等价的 bucket 寻址:
 // path-style (UsePathStyle) / virtual-host (默认) / 自定义占位符模板.
 //

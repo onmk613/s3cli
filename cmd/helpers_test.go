@@ -8,7 +8,7 @@ import (
 
 	"s3cli/internal/config"
 	"s3cli/internal/s3path"
-	"s3cli/pkg/s3api"
+	"s3cli/pkg/s3iface"
 
 	"github.com/spf13/cobra"
 )
@@ -24,7 +24,7 @@ func snapshotConfig(t *testing.T) func() {
 }
 
 func TestWrapDisplayed(t *testing.T) {
-	orig := &s3api.ErrorResponse{Code: "X", StatusCode: 404}
+	orig := &s3iface.ErrorResponse{Code: "X", StatusCode: 404}
 	wrapped := wrapDisplayed(orig)
 	if !errors.Is(wrapped, errAlreadyDisplayed) {
 		t.Error("should wrap errAlreadyDisplayed")

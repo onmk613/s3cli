@@ -7,7 +7,7 @@ import (
 	"fmt"
 
 	myprint "s3cli/pkg/fmtutil"
-	"s3cli/pkg/s3api"
+	"s3cli/pkg/s3iface"
 )
 
 // SetVersioning 设置桶版本控制状态 (Enabled / Suspended).
@@ -16,7 +16,7 @@ func (c *S3Client) SetVersioning(bucket string, status string) error {
 		return errors.New("status cannot be empty")
 	}
 
-	if err := c.S3.SetBucketVersioning(c.Ctx, bucket, s3api.BucketVersioningStatus(status)); err != nil {
+	if err := c.S3.SetBucketVersioning(c.Ctx, bucket, s3iface.BucketVersioningStatus(status)); err != nil {
 		return fmt.Errorf("set versioning %s: %s", bucket, FormatAPIError(err))
 	}
 

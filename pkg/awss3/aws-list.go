@@ -1,3 +1,5 @@
+//go:build aws
+
 // aws-list.go 实现 AWS 上的对象列举: ListObjectsV2 / ListObjectVersions 及分页器.
 
 package awss3

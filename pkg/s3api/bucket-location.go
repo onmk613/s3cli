@@ -1,3 +1,5 @@
+//go:build !aws
+
 // bucket-location.go 实现 GetBucketLocation, 查询 bucket 所在区域.
 // 兼容 AWS S3 及大多数 S3 兼容厂商; 注意 AWS us-east-1 区域返回空字符串.
 

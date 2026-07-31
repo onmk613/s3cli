@@ -5,7 +5,7 @@ package action
 
 import (
 	myprint "s3cli/pkg/fmtutil"
-	"s3cli/pkg/s3api"
+	"s3cli/pkg/s3iface"
 )
 
 // DuOptions du 命令参数。
@@ -23,7 +23,7 @@ func roundUpToBlock(size, block int64) int64 {
 // DuObject 显示磁盘占用, 只支持bucket及以下级别
 func (c *S3Client) DuObject(opt DuOptions, bucket, prefix string) error {
 	var totalSize, diskSize, count int64
-	err := c.forEachObject(c.Ctx, bucket, prefix, func(o s3api.ObjectInfo) error {
+	err := c.forEachObject(c.Ctx, bucket, prefix, func(o s3iface.ObjectInfo) error {
 		sz := o.Size
 		totalSize += sz                               // 真实文件大小累加（始终）
 		diskSize += roundUpToBlock(sz, opt.BlockSize) // 按块向上取整的磁盘占用

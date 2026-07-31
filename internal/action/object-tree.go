@@ -9,7 +9,7 @@ import (
 	"strings"
 
 	myprint "s3cli/pkg/fmtutil"
-	"s3cli/pkg/s3api"
+	"s3cli/pkg/s3iface"
 )
 
 // TreeOptions tree 命令参数
@@ -27,7 +27,7 @@ func (c *S3Client) TreeObjects(opt TreeOptions, bucket, prefix string) error {
 	var fileCount, dirCount int
 	var totalSize int64
 
-	err := c.forEachObject(c.Ctx, bucket, prefix, func(obj s3api.ObjectInfo) error {
+	err := c.forEachObject(c.Ctx, bucket, prefix, func(obj s3iface.ObjectInfo) error {
 		rel := strings.TrimPrefix(obj.Key, prefix)
 		rel = strings.TrimPrefix(rel, "/")
 		if rel == "" {

@@ -1,3 +1,5 @@
+//go:build aws
+
 // aws-object.go 实现 AWS 上的对象操作: HeadObject / GetObject / PutObject / PutObjectStream /
 // CopyObject / DeleteObject / DeleteObjects.
 

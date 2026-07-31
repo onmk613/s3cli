@@ -9,7 +9,6 @@ import (
 	"errors"
 	"fmt"
 	"s3cli/internal/s3path"
-	"s3cli/pkg/s3api"
 	"s3cli/pkg/s3iface"
 	"strings"
 )
@@ -19,8 +18,8 @@ import (
 const defaultConcurrency = 10
 
 // S3Client 封装 S3 操作后端, 持有 alias 和 ctx.
-// S3 字段为 s3iface.S3Operations 接口, 可在自建请求 (s3api.Client) 与
-// 官方 SDK (awss3.AWS) 之间无缝切换.
+// S3 字段为 s3iface.S3Operations 接口, 底层实现由 build tag 编译期选定:
+// 默认自建请求 (s3api.Client), -tags aws 时为官方 SDK (awss3.AWS).
 type S3Client struct {
 	S3    s3iface.S3Operations
 	Alias string
@@ -56,7 +55,7 @@ func (c *S3Client) IsS3File(bucket, key string) (bool, error) {
 	}
 
 	// 按 ErrorResponse 的 Code 判断
-	var apiErr *s3api.ErrorResponse
+	var apiErr *s3iface.ErrorResponse
 	if errors.As(err, &apiErr) {
 		switch apiErr.Code {
 		case "NoSuchKey", "NotFound", "404":
@@ -78,7 +77,7 @@ func (c *S3Client) objectExists(ctx context.Context, bucket, key string) (bool, 
 	if err == nil {
 		return true, nil
 	}
-	var apiErr *s3api.ErrorResponse
+	var apiErr *s3iface.ErrorResponse
 	if errors.As(err, &apiErr) {
 		switch apiErr.Code {
 		case "NoSuchKey", "NotFound", "404":
@@ -92,7 +91,7 @@ func (c *S3Client) objectExists(ctx context.Context, bucket, key string) (bool, 
 // 返回 (false, nil) 表示是目录前缀（非文件），(false, err) 表示路径不存在。
 func (c *S3Client) checkIfDirectory(bucket, key string) (bool, error) {
 	// 1) 先按标准目录探测：prefix = key + "/"。
-	listResp, err := c.S3.ListObjectsV2(c.Ctx, bucket, &s3api.ListObjectsV2Options{
+	listResp, err := c.S3.ListObjectsV2(c.Ctx, bucket, &s3iface.ListObjectsV2Options{
 		Prefix:    key + "/",
 		Delimiter: "/",
 		MaxKeys:   1,
@@ -106,7 +105,7 @@ func (c *S3Client) checkIfDirectory(bucket, key string) (bool, error) {
 
 	// 2) 兜底：用裸 key 作为前缀探测（覆盖无尾斜杠的伪目录前缀，
 	//    例如 key="dir/name" 实际匹配 "dir/name/..." 或 "dir/name-xxx"）。
-	listResp2, err := c.S3.ListObjectsV2(c.Ctx, bucket, &s3api.ListObjectsV2Options{
+	listResp2, err := c.S3.ListObjectsV2(c.Ctx, bucket, &s3iface.ListObjectsV2Options{
 		Prefix:  key,
 		MaxKeys: 1,
 	})
@@ -136,7 +135,7 @@ func (c *S3Client) DestStateOf(bucket, key string) (s3path.DestState, error) {
 	}
 
 	// 仅对 404 继续目录探测；403 等直接返回错误
-	var apiErr *s3api.ErrorResponse
+	var apiErr *s3iface.ErrorResponse
 	if errors.As(err, &apiErr) {
 		switch apiErr.Code {
 		case "NoSuchKey", "NotFound", "404":
@@ -151,7 +150,7 @@ func (c *S3Client) DestStateOf(bucket, key string) (s3path.DestState, error) {
 	}
 
 	// 2) 目录探测：prefix = key + "/"
-	listResp, err := c.S3.ListObjectsV2(c.Ctx, bucket, &s3api.ListObjectsV2Options{
+	listResp, err := c.S3.ListObjectsV2(c.Ctx, bucket, &s3iface.ListObjectsV2Options{
 		Prefix:    probe + "/",
 		Delimiter: "/",
 		MaxKeys:   1,

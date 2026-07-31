@@ -9,13 +9,13 @@ import (
 	"strings"
 	"time"
 
-	"s3cli/pkg/s3api"
+	"s3cli/pkg/s3iface"
 )
 
 // =============== 对象信息 ===============
 
 // ObjectInfo 描述 mirror 列举阶段的单个对象 (相对源前缀的相对路径 + 元数据).
-// 与 s3api.ObjectInfo 不同, 此处的 Key 已剥离源前缀, 便于源/目标按相对路径归并.
+// 与 s3iface.ObjectInfo 不同, 此处的 Key 已剥离源前缀, 便于源/目标按相对路径归并.
 type ObjectInfo struct {
 	Key          string
 	Size         int64
@@ -32,7 +32,7 @@ type ObjectInfo struct {
 func streamObjects(c *S3Client, bucket, prefix string, out chan<- ObjectInfo, errCh chan<- error) {
 	defer close(out)
 
-	paginator := c.S3.NewListObjectsV2Paginator(bucket, &s3api.ListObjectsV2Options{Prefix: prefix})
+	paginator := c.S3.NewListObjectsV2Paginator(bucket, &s3iface.ListObjectsV2Options{Prefix: prefix})
 
 	for paginator.HasMorePages() {
 		page, err := paginator.NextPage(c.Ctx)

@@ -1,3 +1,5 @@
+//go:build aws
+
 // aws-convert.go 提供 AWS SDK 类型 ↔ s3iface DTO 类型的双向转换, 以及 SDK 错误适配.
 //
 // sdkErr 将 SDK 的 smithy/awshttp 错误统一包装为 *s3iface.ErrorResponse,

@@ -11,7 +11,7 @@ import (
 	"strings"
 
 	myprint "s3cli/pkg/fmtutil"
-	s3 "s3cli/pkg/s3api"
+	s3 "s3cli/pkg/s3iface"
 )
 
 // LifecycleOptions 控制 SetLifecycle 的参数.

@@ -8,7 +8,7 @@ import (
 	"strings"
 
 	myprint "s3cli/pkg/fmtutil"
-	"s3cli/pkg/s3api"
+	"s3cli/pkg/s3iface"
 )
 
 // ListObjects 列出桶 / 对象. bucket 为空时列出当前凭证下所有桶;
@@ -29,7 +29,7 @@ func (c *S3Client) ListObjects(bucket, prefix string, listAll bool) error {
 }
 
 func (c *S3Client) listObjectsV2(bucket, prefix string, listAll bool) error {
-	opts := &s3api.ListObjectsV2Options{
+	opts := &s3iface.ListObjectsV2Options{
 		Prefix: prefix,
 	}
 	if !listAll {

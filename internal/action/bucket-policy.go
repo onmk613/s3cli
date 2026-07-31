@@ -10,7 +10,7 @@ import (
 	"errors"
 	"fmt"
 	myprint "s3cli/pkg/fmtutil"
-	"s3cli/pkg/s3api"
+	"s3cli/pkg/s3iface"
 )
 
 // PolicyOptions 控制 SetPolicy 的参数.
@@ -133,7 +133,7 @@ func (c *S3Client) applyCannedPolicy(name, bucket, prefix string) error {
 	if name == "private" {
 		if err := c.S3.DeleteBucketPolicy(c.Ctx, bucket); err != nil {
 			// 无策略 (已私有) 视为成功, 保持幂等。
-			var apiErr *s3api.ErrorResponse
+			var apiErr *s3iface.ErrorResponse
 			if !(errors.As(err, &apiErr) && (apiErr.Code == "NoSuchBucketPolicy" || apiErr.Code == "NoSuchBucket" || apiErr.Code == "404")) {
 				return FormatAPIError(err)
 			}

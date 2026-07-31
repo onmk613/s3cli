@@ -7,7 +7,7 @@ import (
 	"fmt"
 
 	myprint "s3cli/pkg/fmtutil"
-	s3 "s3cli/pkg/s3api"
+	s3 "s3cli/pkg/s3iface"
 )
 
 // SetCors 给桶设置 CORS 规则 (XML 或 JSON 自动识别)

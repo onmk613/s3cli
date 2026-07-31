@@ -8,7 +8,7 @@ import (
 	"time"
 
 	myprint "s3cli/pkg/fmtutil"
-	"s3cli/pkg/s3api"
+	"s3cli/pkg/s3iface"
 )
 
 // ShareOptions Share 参数
@@ -52,7 +52,7 @@ func (c *S3Client) Share(opt ShareOptions, bucket, key string) error {
 	if opt.SignV2 {
 		signed, err = c.S3.PresignV2(c.Ctx, bucket, key, method, int64(opt.ExpireSeconds))
 	} else {
-		signed, err = c.S3.PresignedURL(c.Ctx, bucket, key, &s3api.PresignOptions{
+		signed, err = c.S3.PresignedURL(c.Ctx, bucket, key, &s3iface.PresignOptions{
 			Method:  method,
 			Expires: time.Duration(opt.ExpireSeconds) * time.Second,
 		})

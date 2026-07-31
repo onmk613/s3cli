@@ -13,7 +13,7 @@ import (
 	"strings"
 
 	myprint "s3cli/pkg/fmtutil"
-	"s3cli/pkg/s3api"
+	"s3cli/pkg/s3iface"
 )
 
 // GetOptions get 命令参数
@@ -58,7 +58,7 @@ func (c *S3Client) downloadDirectory(opt GetOptions, bucket, key, localPath stri
 			return c.countS3Prefix(ctx, bucket, key, true, add)
 		},
 		Scan: func(ctx context.Context, jobs chan<- StreamJob) error {
-			return c.forEachObject(ctx, bucket, key, func(obj s3api.ObjectInfo) error {
+			return c.forEachObject(ctx, bucket, key, func(obj s3iface.ObjectInfo) error {
 				objKey := obj.Key
 				if strings.HasSuffix(objKey, "/") && obj.Size == 0 {
 					return nil
@@ -124,7 +124,7 @@ func (c *S3Client) rangeGetObject(bucket, key, localFilePath, rng string) error 
 	if err := os.MkdirAll(filepath.Dir(localFilePath), 0o755); err != nil {
 		return fmt.Errorf("mkdir: %w", err)
 	}
-	out, err := c.S3.GetObject(c.Ctx, bucket, key, &s3api.GetObjectOptions{
+	out, err := c.S3.GetObject(c.Ctx, bucket, key, &s3iface.GetObjectOptions{
 		Range: rng,
 	})
 	if err != nil {
