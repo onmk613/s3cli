@@ -1,4 +1,4 @@
-// common.go 定义 action 包的核心: S3Client 类型、S3 路径格式化与存在性/目录探测
+// common.go 定义 action 包的核心: Action 类型、S3 路径格式化与存在性/目录探测
 // (S3Path / IsS3File / DestStateOf), 以及对象遍历器 forEachObject.
 // 凭证/错误/MIME 等通用工具在 utils.go.
 
@@ -17,24 +17,24 @@ import (
 // 与 config.DefaultConcurrency 保持一致；action 不依赖 config 以维持与配置层解耦。
 const defaultConcurrency = 10
 
-// S3Client 封装 S3 操作后端, 持有 alias 和 ctx.
+// Action 封装 S3 操作后端, 持有 alias 和 ctx.
 // S3 字段为 s3iface.S3Operations 接口, 底层实现由 build tag 编译期选定:
 // 默认自建请求 (s3api.Client), -tags aws 时为官方 SDK (awss3.AWS).
-type S3Client struct {
+type Action struct {
 	S3    s3iface.S3Operations
 	Alias string
 	Ctx   context.Context
 }
 
 // S3Path 格式化路径为 "alias:bucket/key", 和命令行格式一样
-func (c *S3Client) S3Path(bucket, key string) string {
+func (c *Action) S3Path(bucket, key string) string {
 	if key == "" {
 		return c.Alias + ":" + bucket
 	}
 	return c.Alias + ":" + bucket + "/" + key
 }
 
-// S3PathStatic 静态版本, 无需 S3Client 实例, 用于无客户端上下文的格式化场景.
+// S3PathStatic 静态版本, 无需 Action 实例, 用于无客户端上下文的格式化场景.
 func S3PathStatic(alias, bucket, key string) string {
 	if key == "" {
 		return alias + ":" + bucket
@@ -43,7 +43,7 @@ func S3PathStatic(alias, bucket, key string) string {
 }
 
 // IsS3File 检查路径是文件 (true) 还是目录 / 不存在 (false)
-func (c *S3Client) IsS3File(bucket, key string) (bool, error) {
+func (c *Action) IsS3File(bucket, key string) (bool, error) {
 	// 空 key 表示目标是 bucket 本身，不可能是文件
 	if key == "" {
 		return false, nil
@@ -72,7 +72,7 @@ func (c *S3Client) IsS3File(bucket, key string) (bool, error) {
 // 用于上传前的存在性检查: 目标要么是文件对象, 要么不存在。
 // 与 IsS3File 不同, 404 直接判 false, 不再探测是否为目录前缀;
 // 403 等权限错误以 error 返回 (无法确认存在性时宁可报错, 不静默上传)。
-func (c *S3Client) objectExists(ctx context.Context, bucket, key string) (bool, error) {
+func (c *Action) objectExists(ctx context.Context, bucket, key string) (bool, error) {
 	_, err := c.S3.HeadObject(ctx, bucket, key, "")
 	if err == nil {
 		return true, nil
@@ -89,7 +89,7 @@ func (c *S3Client) objectExists(ctx context.Context, bucket, key string) (bool, 
 
 // checkIfDirectory 在 HeadObject 返回 404 后判断 key 是否为目录前缀。
 // 返回 (false, nil) 表示是目录前缀（非文件），(false, err) 表示路径不存在。
-func (c *S3Client) checkIfDirectory(bucket, key string) (bool, error) {
+func (c *Action) checkIfDirectory(bucket, key string) (bool, error) {
 	// 1) 先按标准目录探测：prefix = key + "/"。
 	listResp, err := c.S3.ListObjectsV2(c.Ctx, bucket, &s3iface.ListObjectsV2Options{
 		Prefix:    key + "/",
@@ -120,7 +120,7 @@ func (c *S3Client) checkIfDirectory(bucket, key string) (bool, error) {
 
 // DestStateOf 判断目标 key 当前的状态：文件 / 目录 / 不存在。
 // 用于 cp/mv/mirror 计算目标对象 key。探测失败时返回 (DestNone, err)。
-func (c *S3Client) DestStateOf(bucket, key string) (s3path.DestState, error) {
+func (c *Action) DestStateOf(bucket, key string) (s3path.DestState, error) {
 	// 空 key 表示 bucket 本身，视为目录
 	if strings.TrimSuffix(key, "/") == "" {
 		return s3path.DestDir, nil
@@ -174,7 +174,7 @@ type Cred struct {
 }
 
 // GetS3Credentials 返回底层 S3 后端持有的凭证与 endpoint (经 S3Operations 访问器).
-func (c *S3Client) GetS3Credentials() (Cred, error) {
+func (c *Action) GetS3Credentials() (Cred, error) {
 	if c.S3 == nil {
 		return Cred{}, fmt.Errorf("s3 client is nil")
 	}
@@ -193,7 +193,7 @@ var errStopIteration = errors.New("stop iteration")
 // forEachObject 遍历 bucket 下指定 prefix 的所有对象 (自动翻页), 对每个对象调用 fn。
 // 封装了各处重复的 ListObjectsV2 Paginator 循环样板。fn 返回错误会中断遍历;
 // fn 返回 errStopIteration 时提前正常结束 (返回 nil)。
-func (c *S3Client) forEachObject(ctx context.Context, bucket, prefix string, fn func(obj s3iface.ObjectInfo) error) error {
+func (c *Action) forEachObject(ctx context.Context, bucket, prefix string, fn func(obj s3iface.ObjectInfo) error) error {
 	paginator := c.S3.NewListObjectsV2Paginator(bucket, &s3iface.ListObjectsV2Options{
 		Prefix: prefix,
 	})

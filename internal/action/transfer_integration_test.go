@@ -49,7 +49,7 @@ func TestDownloadFileAtomicallyReplacesOnlyAfterSuccess(t *testing.T) {
 	if err := os.WriteFile(path, []byte("old-content"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	client := &S3Client{S3: actionTestClient(t, server.URL, nil), Ctx: context.Background()}
+	client := &Action{S3: actionTestClient(t, server.URL, nil), Ctx: context.Background()}
 	if _, err := client.downloadFile("key", path, "bucket", nil); err != nil {
 		t.Fatal(err)
 	}
@@ -58,7 +58,7 @@ func TestDownloadFileAtomicallyReplacesOnlyAfterSuccess(t *testing.T) {
 		t.Fatalf("target = %q", data)
 	}
 
-	failing := &S3Client{S3: actionTestClient(t, "http://example.test", roundTripperFunc(func(r *http.Request) (*http.Response, error) {
+	failing := &Action{S3: actionTestClient(t, "http://example.test", roundTripperFunc(func(r *http.Request) (*http.Response, error) {
 		return &http.Response{StatusCode: http.StatusOK, Header: make(http.Header), Body: &failingBody{}, Request: r}, nil
 	})), Ctx: context.Background()}
 	if err := os.WriteFile(path, []byte("preserved"), 0o600); err != nil {
@@ -84,8 +84,8 @@ func TestMirrorCopyFailureSkipsRemove(t *testing.T) {
 	}))
 	defer server.Close()
 	api := actionTestClient(t, server.URL, nil)
-	src := &S3Client{S3: api, Alias: "src", Ctx: context.Background()}
-	tgt := &S3Client{S3: api, Alias: "tgt", Ctx: context.Background()}
+	src := &Action{S3: api, Alias: "src", Ctx: context.Background()}
+	tgt := &Action{S3: api, Alias: "tgt", Ctx: context.Background()}
 	plan := &mirrorPlan{cfg: MirrorOptions{Remove: true, NoProgress: true, Concurrency: 1}, srcClient: src, tgtClient: tgt, srcBucket: "source", tgtBucket: "target", sameEP: true}
 	actions := make(chan diffAction, 2)
 	actions <- diffAction{rel: "copy", size: 1}
@@ -117,7 +117,7 @@ func TestRecursiveDeleteAndCancelledMirrorDoNotDeleteUnexpectedly(t *testing.T) 
 	}))
 	defer server.Close()
 	api := actionTestClient(t, server.URL, nil)
-	client := &S3Client{S3: api, Alias: "test", Ctx: context.Background()}
+	client := &Action{S3: api, Alias: "test", Ctx: context.Background()}
 	if err := client.DeleteObjects("bucket", "prefix/", DelOptions{Recursive: true}); err != nil {
 		t.Fatal(err)
 	}
@@ -127,7 +127,7 @@ func TestRecursiveDeleteAndCancelledMirrorDoNotDeleteUnexpectedly(t *testing.T) 
 
 	cancelled, cancel := context.WithCancel(context.Background())
 	cancel()
-	plan := &mirrorPlan{cfg: MirrorOptions{Remove: true, NoProgress: true, Concurrency: 1}, srcClient: &S3Client{S3: api, Ctx: cancelled}, tgtClient: &S3Client{S3: api, Ctx: cancelled}, srcBucket: "source", tgtBucket: "target"}
+	plan := &mirrorPlan{cfg: MirrorOptions{Remove: true, NoProgress: true, Concurrency: 1}, srcClient: &Action{S3: api, Ctx: cancelled}, tgtClient: &Action{S3: api, Ctx: cancelled}, srcBucket: "source", tgtBucket: "target"}
 	actions := make(chan diffAction, 1)
 	actions <- diffAction{rel: "extra", delete: true}
 	close(actions)
@@ -159,7 +159,7 @@ func TestDeleteObjectRemovesEmptyParentDirectoryMarkers(t *testing.T) {
 	}))
 	defer server.Close()
 	api := actionTestClient(t, server.URL, nil)
-	client := &S3Client{S3: api, Alias: "test", Ctx: context.Background()}
+	client := &Action{S3: api, Alias: "test", Ctx: context.Background()}
 	if err := client.DeleteObjects("bucket", "parent/child/object", DelOptions{}); err != nil {
 		t.Fatal(err)
 	}
@@ -178,7 +178,7 @@ func TestDeleteBatchReportsObjectErrors(t *testing.T) {
 		w.WriteHeader(http.StatusInternalServerError)
 	}))
 	defer server.Close()
-	client := &S3Client{S3: actionTestClient(t, server.URL, nil), Ctx: context.Background()}
+	client := &Action{S3: actionTestClient(t, server.URL, nil), Ctx: context.Background()}
 	err := client.deleteBatch("bucket", []s3api.ObjectIdentifier{{Key: "protected"}})
 	if err == nil || !strings.Contains(err.Error(), `"protected": AccessDenied: denied`) {
 		t.Fatalf("delete batch error = %v", err)
@@ -195,7 +195,7 @@ func TestMirrorMaxDeleteBlocksBeforeDelete(t *testing.T) {
 	}))
 	defer server.Close()
 	api := actionTestClient(t, server.URL, nil)
-	client := &S3Client{S3: api, Ctx: context.Background()}
+	client := &Action{S3: api, Ctx: context.Background()}
 	plan := &mirrorPlan{cfg: MirrorOptions{Remove: true, MaxDelete: 1, NoProgress: true, Concurrency: 1}, srcClient: client, tgtClient: client, srcBucket: "source", tgtBucket: "target"}
 	actions := make(chan diffAction, 2)
 	actions <- diffAction{rel: "a", delete: true}
@@ -227,7 +227,7 @@ func TestPutSkipsExistingObjectByDefault(t *testing.T) {
 	if err := os.WriteFile(local, []byte("data"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	client := &S3Client{S3: actionTestClient(t, server.URL, nil), Alias: "test", Ctx: context.Background()}
+	client := &Action{S3: actionTestClient(t, server.URL, nil), Alias: "test", Ctx: context.Background()}
 
 	// 默认 (Overwrite=false): 目标已存在 -> 跳过, 不应发起 PUT
 	if err := client.PutObject(PutOptions{}, "bucket", "", local, false); err != nil {
@@ -263,7 +263,7 @@ func TestGetSkipsExistingLocalFileByDefault(t *testing.T) {
 	if err := os.WriteFile(local, []byte("existing"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	client := &S3Client{S3: actionTestClient(t, server.URL, nil), Alias: "test", Ctx: context.Background()}
+	client := &Action{S3: actionTestClient(t, server.URL, nil), Alias: "test", Ctx: context.Background()}
 
 	// 默认 (Overwrite=false): 本地已存在 -> 跳过, 不应发起 GET, 内容保持不变
 	if err := client.downloadSingleFile(GetOptions{}, "bucket", "file.txt", local); err != nil {
@@ -297,8 +297,8 @@ func TestMirrorPlanRejectsOverlappingPrefixes(t *testing.T) {
 	}))
 	defer server.Close()
 
-	newClient := func() *S3Client {
-		return &S3Client{S3: actionTestClient(t, server.URL, nil), Ctx: context.Background()}
+	newClient := func() *Action {
+		return &Action{S3: actionTestClient(t, server.URL, nil), Ctx: context.Background()}
 	}
 	cases := []struct {
 		name      string
@@ -338,9 +338,9 @@ func TestMirrorPlanNormalizesPrefixes(t *testing.T) {
 	}))
 	defer server.Close()
 	cfg := MirrorOptions{
-		Src: &S3PathOptions{Client: &S3Client{S3: actionTestClient(t, server.URL, nil), Ctx: context.Background()}, Bucket: "bkt", ObjectKey: "dir"},
+		Src: &S3PathOptions{Client: &Action{S3: actionTestClient(t, server.URL, nil), Ctx: context.Background()}, Bucket: "bkt", ObjectKey: "dir"},
 		// 同 endpoint 不同 bucket: 不触发 overlap 守卫, 且 DestStateOf 快速返回
-		Tgt: &S3PathOptions{Client: &S3Client{S3: actionTestClient(t, server.URL, nil), Ctx: context.Background()}, Bucket: "bkt2", ObjectKey: "out"},
+		Tgt: &S3PathOptions{Client: &Action{S3: actionTestClient(t, server.URL, nil), Ctx: context.Background()}, Bucket: "bkt2", ObjectKey: "out"},
 	}
 	plan, err := resolveMirrorPlan(cfg)
 	if err != nil {

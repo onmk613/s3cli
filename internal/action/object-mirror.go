@@ -25,10 +25,10 @@ import (
 
 // S3PathOptions 描述一个 S3 端点 + bucket + key 前缀.
 //
-// 这里持有的是 *S3Client (而非裸 *s3.Client), 与单端 action (copy/mv/...)
+// 这里持有的是 *Action (而非裸 *s3.Client), 与单端 action (copy/mv/...)
 // 完全一致: 天然携带 Ctx / Alias / GetCreds() 等上下文, 便于双端统一处理.
 type S3PathOptions struct {
-	Client        *S3Client
+	Client        *Action
 	Bucket        string
 	ObjectKey     string // 作为前缀; 可为空表示整个 bucket
 	TrailingSlash bool   // 输入是否以 "/" 结尾 (语义上是 "目录")
@@ -58,8 +58,8 @@ type MirrorOptions struct {
 // mirrorPlan 是校验并解析后的 mirror 执行计划, 供各阶段函数共用, 避免长参数列表.
 type mirrorPlan struct {
 	cfg       MirrorOptions
-	srcClient *S3Client
-	tgtClient *S3Client
+	srcClient *Action
+	tgtClient *Action
 	srcBucket string
 	tgtBucket string
 	srcPrefix string

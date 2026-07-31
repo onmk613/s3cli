@@ -21,7 +21,7 @@ type EncryptionOptions struct {
 }
 
 // SetEncryption 设置 bucket 默认加密
-func (c *S3Client) SetEncryption(opt EncryptionOptions, bucket string) error {
+func (c *Action) SetEncryption(opt EncryptionOptions, bucket string) error {
 	var cfg s3iface.ServerSideEncryptionConfiguration
 
 	if opt.ConfigFile != "" {
@@ -66,7 +66,7 @@ func (c *S3Client) SetEncryption(opt EncryptionOptions, bucket string) error {
 }
 
 // GetEncryption 打印 bucket 默认加密 (JSON)
-func (c *S3Client) GetEncryption(bucket string) error {
+func (c *Action) GetEncryption(bucket string) error {
 	cfg, err := c.S3.GetBucketEncryption(c.Ctx, bucket)
 	if err != nil {
 		return fmt.Errorf("get encryption %s: %s", bucket, FormatAPIError(err))
@@ -75,7 +75,7 @@ func (c *S3Client) GetEncryption(bucket string) error {
 }
 
 // DelEncryption 删除 bucket 默认加密配置
-func (c *S3Client) DelEncryption(bucket string) error {
+func (c *Action) DelEncryption(bucket string) error {
 	return c.deleteBucketConfig(bucket, "encryption", "Encryption deleted for %s %s\n",
 		func() error { return c.S3.DeleteBucketEncryption(c.Ctx, bucket) })
 }

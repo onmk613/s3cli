@@ -18,7 +18,7 @@ type DelOptions struct {
 }
 
 // DeleteObjects 删除对象 / 目录
-func (c *S3Client) DeleteObjects(bucket, prefix string, opt DelOptions) error {
+func (c *Action) DeleteObjects(bucket, prefix string, opt DelOptions) error {
 	// 指定 versionId 时只删除该对象的特定版本，忽略 recursive / 目录语义。
 	if opt.VersionID != "" {
 		if opt.Recursive {
@@ -58,7 +58,7 @@ func (c *S3Client) DeleteObjects(bucket, prefix string, opt DelOptions) error {
 	return nil
 }
 
-func (c *S3Client) deleteSingleObject(bucket, key string) error {
+func (c *Action) deleteSingleObject(bucket, key string) error {
 	_, err := c.S3.DeleteObject(c.Ctx, bucket, key, "")
 	if err != nil {
 		return fmt.Errorf("delete %s: %s", c.S3Path(bucket, key), FormatAPIError(err))
@@ -71,7 +71,7 @@ func (c *S3Client) deleteSingleObject(bucket, key string) error {
 	return nil
 }
 
-func (c *S3Client) deleteObjectVersion(bucket, key, versionID string) error {
+func (c *Action) deleteObjectVersion(bucket, key, versionID string) error {
 	_, err := c.S3.DeleteObject(c.Ctx, bucket, key, versionID)
 	if err != nil {
 		return fmt.Errorf("delete %s (version %s): %s", c.S3Path(bucket, key), versionID, FormatAPIError(err))
@@ -81,7 +81,7 @@ func (c *S3Client) deleteObjectVersion(bucket, key, versionID string) error {
 	return nil
 }
 
-func (c *S3Client) deleteObjectsWithPrefix(bucket, prefix string) error {
+func (c *Action) deleteObjectsWithPrefix(bucket, prefix string) error {
 	// 规范化目录前缀：若 prefix 非空且不以 "/" 结尾，且 prefix+"/" 是一个真实目录，
 	// 则改用 prefix+"/" 作为删除前缀。否则 "s3cli/.git" 会把同级的 "s3cli/.gitignore"
 	// 一并误删（前缀匹配把 ".gitignore" 也命中了）。
@@ -163,7 +163,7 @@ func parentDirectory(key string) string {
 }
 
 // deleteEmptyParentDirectories removes explicit directory marker objects left empty by a deletion.
-func (c *S3Client) deleteEmptyParentDirectories(bucket, directory string) error {
+func (c *Action) deleteEmptyParentDirectories(bucket, directory string) error {
 	for directory != "" {
 		listResp, err := c.S3.ListObjectsV2(c.Ctx, bucket, &s3iface.ListObjectsV2Options{
 			Prefix:  directory,
@@ -185,7 +185,7 @@ func (c *S3Client) deleteEmptyParentDirectories(bucket, directory string) error 
 	return nil
 }
 
-func (c *S3Client) deleteBatch(bucket string, objects []s3iface.ObjectIdentifier) error {
+func (c *Action) deleteBatch(bucket string, objects []s3iface.ObjectIdentifier) error {
 	result, err := c.S3.DeleteObjects(c.Ctx, bucket, objects, true)
 	if err != nil {
 		return fmt.Errorf("delete batch of %d: %s", len(objects), FormatAPIError(err))

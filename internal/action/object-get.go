@@ -27,7 +27,7 @@ type GetOptions struct {
 }
 
 // GetObject 下载对象
-func (c *S3Client) GetObject(opt GetOptions, bucket, prefix, localPath string) error {
+func (c *Action) GetObject(opt GetOptions, bucket, prefix, localPath string) error {
 	ok, err := c.IsS3File(bucket, prefix)
 	if err != nil {
 		return fmt.Errorf("check s3 path: %s", FormatAPIError(err))
@@ -44,7 +44,7 @@ func (c *S3Client) GetObject(opt GetOptions, bucket, prefix, localPath string) e
 	return c.downloadSingleFile(opt, bucket, prefix, localPath)
 }
 
-func (c *S3Client) downloadDirectory(opt GetOptions, bucket, key, localPath string) error {
+func (c *Action) downloadDirectory(opt GetOptions, bucket, key, localPath string) error {
 	localBasePath, err := determineLocalBasePath(localPath, bucket, key)
 	if err != nil {
 		return err
@@ -91,7 +91,7 @@ func (c *S3Client) downloadDirectory(opt GetOptions, bucket, key, localPath stri
 	})
 }
 
-func (c *S3Client) downloadSingleFile(opt GetOptions, bucket, key, localPath string) error {
+func (c *Action) downloadSingleFile(opt GetOptions, bucket, key, localPath string) error {
 	localFilePath, err := determineLocalFilePath(localPath, key)
 	if err != nil {
 		return err
@@ -120,7 +120,7 @@ func (c *S3Client) downloadSingleFile(opt GetOptions, bucket, key, localPath str
 	return nil
 }
 
-func (c *S3Client) rangeGetObject(bucket, key, localFilePath, rng string) error {
+func (c *Action) rangeGetObject(bucket, key, localFilePath, rng string) error {
 	if err := os.MkdirAll(filepath.Dir(localFilePath), 0o755); err != nil {
 		return fmt.Errorf("mkdir: %w", err)
 	}
@@ -159,7 +159,7 @@ func (c *S3Client) rangeGetObject(bucket, key, localFilePath, rng string) error 
 	return nil
 }
 
-func (c *S3Client) downloadFile(key, localPath, bucket string, report func(n int64)) (int64, error) {
+func (c *Action) downloadFile(key, localPath, bucket string, report func(n int64)) (int64, error) {
 	if err := os.MkdirAll(filepath.Dir(localPath), 0o755); err != nil {
 		return 0, fmt.Errorf("mkdir: %w", err)
 	}

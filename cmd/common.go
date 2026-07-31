@@ -37,15 +37,15 @@ func displayError(err error) {
 }
 
 // parseClient 封装 client 解析 + cancel + 错误展示，返回构造好的 S3Client。
-func parseClient(ctx context.Context, arg string) (action.S3Client, *s3path.Path, error) {
+func parseClient(ctx context.Context, arg string) (action.Action, *s3path.Path, error) {
 	s3client, sp, err := client.ParsePathAndNewClient(ctx, arg)
 	if err != nil {
 		if errors.Is(err, s3path.ErrAliasOnly) && s3client != nil {
-			return action.S3Client{S3: s3client, Alias: sp.Alias, Ctx: ctx}, sp, err
+			return action.Action{S3: s3client, Alias: sp.Alias, Ctx: ctx}, sp, err
 		}
-		return action.S3Client{}, sp, err
+		return action.Action{}, sp, err
 	}
-	return action.S3Client{S3: s3client, Alias: sp.Alias, Ctx: ctx}, sp, nil
+	return action.Action{S3: s3client, Alias: sp.Alias, Ctx: ctx}, sp, nil
 }
 
 // handleErr 统一处理：cancel 返回 (nil, true) 表示应静默退出；否则展示错误。
@@ -54,7 +54,7 @@ func wrapDisplayed(err error) error {
 	return fmt.Errorf("%w: %w", errAlreadyDisplayed, err)
 }
 
-type ActionFunc func(S3 action.S3Client, opts *Context, s3path *s3path.Path) error
+type ActionFunc func(S3 action.Action, opts *Context, s3path *s3path.Path) error
 
 // ArgParseMode 定义 args 参数的格式
 type ArgParseMode int
@@ -159,7 +159,7 @@ func NewRunE(fn ActionFunc, opts *Context) func(cmd *cobra.Command, args []strin
 }
 
 // TwoS3ActionFunc 用于需要两个 S3 路径的操作（cp/mv/diff/mirror）。
-type TwoS3ActionFunc func(src, dst action.S3Client, srcPath, dstPath *s3path.Path, opts *Context) error
+type TwoS3ActionFunc func(src, dst action.Action, srcPath, dstPath *s3path.Path, opts *Context) error
 
 // NewRunETwoPaths 为双 S3 路径命令构造 RunE。
 func NewRunETwoPaths(fn TwoS3ActionFunc, opts *Context) func(cmd *cobra.Command, args []string) error {

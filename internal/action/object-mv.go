@@ -16,7 +16,7 @@ import (
 
 // Mv 移动对象 = copy + delete
 // 处理同对象存储之内的移动
-func (c *S3Client) Mv(srcBucket, srcKey, destBucket, destKey string, recursive, noProgress bool) error {
+func (c *Action) Mv(srcBucket, srcKey, destBucket, destKey string, recursive, noProgress bool) error {
 	srcTrailing := strings.HasSuffix(srcKey, "/")
 	destTrailing := strings.HasSuffix(destKey, "/")
 
@@ -48,7 +48,7 @@ func (c *S3Client) Mv(srcBucket, srcKey, destBucket, destKey string, recursive, 
 	return c.mvDirStreaming(srcBucket, srcKey, destBucket, destPrefix, appendRel, noProgress)
 }
 
-func (c *S3Client) mvObject(srcBucket, srcKey, destBucket, destKey string) error {
+func (c *Action) mvObject(srcBucket, srcKey, destBucket, destKey string) error {
 	if err := c.copyObject(srcBucket, srcKey, destBucket, destKey); err != nil {
 		return err
 	}
@@ -61,7 +61,7 @@ func (c *S3Client) mvObject(srcBucket, srcKey, destBucket, destKey string) error
 }
 
 // mvDirStreaming 流式列出并并发移动，带进度条。
-func (c *S3Client) mvDirStreaming(srcBucket, srcKey, destBucket, destPrefix string, appendRel, noProgress bool) error {
+func (c *Action) mvDirStreaming(srcBucket, srcKey, destBucket, destPrefix string, appendRel, noProgress bool) error {
 	return RunStream(c.Ctx, StreamConfig{
 		Concurrency: defaultConcurrency,
 		Label:       "mv",

@@ -216,7 +216,7 @@ func runParityScenarios(t *testing.T, name string, backend s3iface.S3Operations)
 
 		_ = server // 后端由调用方构造; mock 服务器仅保证场景类型一致
 
-		c := &S3Client{S3: backend, Alias: "test", Ctx: context.Background()}
+		c := &Action{S3: backend, Alias: "test", Ctx: context.Background()}
 
 		// 1. ListBuckets
 		buckets, err := c.S3.ListBuckets(c.Ctx)

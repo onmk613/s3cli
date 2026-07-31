@@ -15,7 +15,7 @@ import (
 )
 
 // CopyObjects 处理同对象存储之内的复制
-func (c *S3Client) CopyObjects(srcBucket, srcKey, destBucket, destKey string, recursive, noProgress bool) error {
+func (c *Action) CopyObjects(srcBucket, srcKey, destBucket, destKey string, recursive, noProgress bool) error {
 	srcTrailing := strings.HasSuffix(srcKey, "/")
 	destTrailing := strings.HasSuffix(destKey, "/")
 
@@ -49,7 +49,7 @@ func (c *S3Client) CopyObjects(srcBucket, srcKey, destBucket, destKey string, re
 	return c.copyDirStreaming(srcBucket, srcKey, destBucket, destPrefix, appendRel, noProgress)
 }
 
-func (c *S3Client) copyObject(srcBucket, srcKey, destBucket, destKey string) error {
+func (c *Action) copyObject(srcBucket, srcKey, destBucket, destKey string) error {
 	_, err := c.S3.CopyObject(c.Ctx, srcBucket, srcKey, destBucket, destKey, nil)
 	if err != nil {
 		return fmt.Errorf("copy: %s", FormatAPIError(err))
@@ -60,7 +60,7 @@ func (c *S3Client) copyObject(srcBucket, srcKey, destBucket, destKey string) err
 // copyDirStreaming 流式列出并并发复制，带进度条。
 // destPrefix 为目标前缀；appendRel=true 时把每个源对象相对源前缀的路径拼到 destPrefix 之下，
 // 否则所有源对象都写到 destPrefix（与规则 1/3 的 trailing-none/file 语义一致）。
-func (c *S3Client) copyDirStreaming(srcBucket, srcKey, destBucket, destPrefix string, appendRel, noProgress bool) error {
+func (c *Action) copyDirStreaming(srcBucket, srcKey, destBucket, destPrefix string, appendRel, noProgress bool) error {
 	return RunStream(c.Ctx, StreamConfig{
 		Concurrency: defaultConcurrency,
 		Label:       "cp",

@@ -24,7 +24,7 @@ func NewGetCmd() *cobra.Command {
 		Short:             "Download object(s) from S3",
 		Args:              cobra.MatchAll(cobra.MinimumNArgs(1), cobra.MaximumNArgs(2)),
 		ValidArgsFunction: CompleteLocalLast(AutoCompletePath, 1),
-		RunE: NewRunE(func(S3 action.S3Client, opts *Context, s3path *s3path.Path) error {
+		RunE: NewRunE(func(S3 action.Action, opts *Context, s3path *s3path.Path) error {
 			g := getOpt
 			g.Recursive = opts.Global.Recursive
 			g.NoProgress = config.G.F.Quiet
@@ -49,7 +49,7 @@ func NewPutCmd() *cobra.Command {
 		Short:             "Upload file(s) to S3",
 		Args:              cobra.ExactArgs(2),
 		ValidArgsFunction: CompleteLocalFirst(AutoCompletePath),
-		RunE: NewRunE(func(S3 action.S3Client, opts *Context, s3path *s3path.Path) error {
+		RunE: NewRunE(func(S3 action.Action, opts *Context, s3path *s3path.Path) error {
 			p := putOpt
 			p.Recursive = opts.Global.Recursive
 			p.NoProgress = config.G.F.Quiet
@@ -83,7 +83,7 @@ func NewRmCmd() *cobra.Command {
 		Short:             "Delete object(s) from S3",
 		Args:              cobra.MinimumNArgs(1),
 		ValidArgsFunction: AutoCompletePath,
-		RunE: NewRunE(func(S3 action.S3Client, opts *Context, s3path *s3path.Path) error {
+		RunE: NewRunE(func(S3 action.Action, opts *Context, s3path *s3path.Path) error {
 			return S3.DeleteObjects(s3path.Bucket, s3path.Key, delOpt)
 		}, nil),
 	}
@@ -99,7 +99,7 @@ func NewCatCmd() *cobra.Command {
 		Short:             "Print object contents to stdout",
 		Args:              cobra.MinimumNArgs(1),
 		ValidArgsFunction: AutoCompletePath,
-		RunE: NewRunE(func(S3 action.S3Client, _ *Context, s3path *s3path.Path) error {
+		RunE: NewRunE(func(S3 action.Action, _ *Context, s3path *s3path.Path) error {
 			return S3.CatObject(catOpt, s3path.Bucket, s3path.Key)
 		}, nil),
 	}
@@ -116,7 +116,7 @@ func NewPipeCmd() *cobra.Command {
 		Short:             "Upload data from stdin to an S3 object",
 		Args:              cobra.ExactArgs(1),
 		ValidArgsFunction: AutoCompletePath,
-		RunE: NewRunE(func(S3 action.S3Client, _ *Context, s3path *s3path.Path) error {
+		RunE: NewRunE(func(S3 action.Action, _ *Context, s3path *s3path.Path) error {
 			p := pipeOpt
 			if cfg, ok := config.G.S[S3.Alias]; ok {
 				if cfg.DefaultMimeType != "" {

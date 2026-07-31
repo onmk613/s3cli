@@ -9,7 +9,7 @@ import (
 )
 
 // RemoveBuckets 删除桶; force=true 时先清空桶内全部对象与版本 (不可恢复) 再删桶.
-func (c *S3Client) RemoveBuckets(bucket string, force bool) error {
+func (c *Action) RemoveBuckets(bucket string, force bool) error {
 	if force {
 		myprint.PrintfBoldYellow("!!! WARNING: --force will permanently delete all objects/versions in %v %s!!!", c.Alias, bucket)
 		if err := c.deleteAllObjects(bucket); err != nil {
@@ -25,7 +25,7 @@ func (c *S3Client) RemoveBuckets(bucket string, force bool) error {
 	return nil
 }
 
-func (c *S3Client) deleteAllObjects(bucket string) error {
+func (c *Action) deleteAllObjects(bucket string) error {
 	paginator := c.S3.NewListObjectVersionsPaginator(bucket, &s3iface.ListObjectVersionsOptions{})
 
 	for paginator.HasMorePages() {

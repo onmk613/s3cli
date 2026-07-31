@@ -44,7 +44,7 @@ func multipartPartSize(requestedMB int, totalSize int64) int64 {
 
 // uploadMultipart streams fixed-size parts, bounds memory to one part, and
 // aborts the server-side upload whenever a part or completion fails.
-func (c *S3Client) uploadMultipart(ctx context.Context, bucket, key string, r io.Reader, totalSize int64, partSizeMB int, opts *s3iface.PutObjectOptions, report func(int64)) (err error) {
+func (c *Action) uploadMultipart(ctx context.Context, bucket, key string, r io.Reader, totalSize int64, partSizeMB int, opts *s3iface.PutObjectOptions, report func(int64)) (err error) {
 	partSize := multipartPartSize(partSizeMB, totalSize)
 	create, err := c.S3.CreateMultipartUpload(ctx, bucket, key, opts)
 	if err != nil {
@@ -93,7 +93,7 @@ func (c *S3Client) uploadMultipart(ctx context.Context, bucket, key string, r io
 
 // uploadUnknownSize avoids retaining an unbounded stdin stream. Small input
 // remains a single PUT; once the first complete part is seen it switches to MPU.
-func (c *S3Client) uploadUnknownSize(ctx context.Context, bucket, key string, r io.Reader, partSizeMB int, opts *s3iface.PutObjectOptions) error {
+func (c *Action) uploadUnknownSize(ctx context.Context, bucket, key string, r io.Reader, partSizeMB int, opts *s3iface.PutObjectOptions) error {
 	partSize := multipartPartSize(partSizeMB, 0)
 	first := make([]byte, partSize)
 	n, err := io.ReadFull(r, first)
@@ -110,7 +110,7 @@ func (c *S3Client) uploadUnknownSize(ctx context.Context, bucket, key string, r 
 // uploadMultipartFile resumes a matching local-file upload when possible. The
 // server's ListParts response is authoritative, so a stale or edited local
 // state file can never cause unverified parts to be completed.
-func (c *S3Client) uploadMultipartFile(ctx context.Context, bucket, key, localPath string, file *os.File, info os.FileInfo, partSizeMB int, opts *s3iface.PutObjectOptions, report func(int64)) error {
+func (c *Action) uploadMultipartFile(ctx context.Context, bucket, key, localPath string, file *os.File, info os.FileInfo, partSizeMB int, opts *s3iface.PutObjectOptions, report func(int64)) error {
 	partSize := multipartPartSize(partSizeMB, info.Size())
 	state, statePath, err := loadMultipartState(localPath, bucket, key, info.Size(), info.ModTime())
 	if err != nil {
