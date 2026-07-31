@@ -1,10 +1,11 @@
-// Package action 实现 s3cli 的业务操作层: 它封装自建的 s3api.Client, 在其上
+// Package action 实现 s3cli 的业务操作层: 它在 s3iface.S3Operations 接口之上
 // 组织面向命令的原子操作 (ls/put/get/cp/mv/rm/mirror/diff/info/tag/...).
 //
 // 设计要点:
-//   - 通过 interface.go 中的接口 (S3Operations 及子接口) 解耦命令层与具体实现,
-//     便于单元测试 mock 与未来扩展其他存储后端;
-//   - S3Client 是核心实现, 持有 *s3api.Client、Alias 与 Ctx;
+//   - S3Client.S3 字段是 s3iface.S3Operations 接口 (见 common.go), 底层既可以是
+//     自建请求的 s3api.Client, 也可以是官方 SDK 的 awss3.AWS. 两种后端由
+//     internal/client 按 alias 的 backend 配置 (或 --backend 开关) 构造,
+//     业务操作层不感知具体实现, 可无缝切换;
 //   - 流式传输 (put/get/cp/mv) 统一走 stream.go 的 RunStream, 提供并发、进度条与
 //     预统计; 大文件自动走分片上传 (multipart-transfer.go) 并支持断点续传;
 //   - mirror (object-mirror.go) 做双端流式归并同步, diff (diff.go) 做内容比对.

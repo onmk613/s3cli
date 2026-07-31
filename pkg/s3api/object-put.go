@@ -10,31 +10,7 @@ import (
 	"net/http"
 )
 
-// PutObjectOutput 是 PutObject 的返回结构.
-type PutObjectOutput struct {
-	ETag                 string
-	VersionID            string
-	ServerSideEncryption string
-	SSEKMSKeyID          string
-}
-
-// PutObjectOptions 控制 PutObject 的可选参数.
-type PutObjectOptions struct {
-	ContentType        string
-	ContentEncoding    string
-	ContentDisposition string
-	ContentLanguage    string
-	CacheControl       string
-	StorageClass       string            // e.g. STANDARD, STANDARD_IA, GLACIER
-	Metadata           map[string]string // x-amz-meta-*
-	// 服务端加密
-	ServerSideEncryption string // AES256 / aws:kms
-	SSEKMSKeyID          string
-	// 对象锁
-	ObjectLockMode            string // GOVERNANCE / COMPLIANCE
-	ObjectLockRetainUntilDate string // RFC3339
-	ObjectLockLegalHold       string // ON / OFF
-}
+// PutObjectOutput / PutObjectOptions 类型别名定义在 s3iface_types.go.
 
 // buildPutHeader 根据 PutObjectOptions 构建请求头. 供 PutObject / PutObjectStream 共用.
 func buildPutHeader(opts *PutObjectOptions) http.Header {

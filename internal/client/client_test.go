@@ -9,7 +9,7 @@ import (
 	"s3cli/internal/config"
 	"s3cli/internal/s3path"
 	"s3cli/pkg/kvcache"
-	"s3cli/pkg/s3api"
+	"s3cli/pkg/s3iface"
 )
 
 func TestNewS3Client(t *testing.T) {
@@ -160,7 +160,7 @@ func TestParsePathAndNewClient(t *testing.T) {
 	defer func() { config.G, config.ConfPath, S3Clients = oldG, oldPath, oldCache }()
 	config.G = &config.Config{}
 	config.ConfPath = ""
-	S3Clients = &kvcache.Cache[string, *s3api.Client]{}
+	S3Clients = &kvcache.Cache[string, s3iface.S3Operations]{}
 
 	t.Run("unknown alias", func(t *testing.T) {
 		config.G.S = nil

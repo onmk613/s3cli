@@ -37,7 +37,7 @@ func (c *S3Client) listObjectsV2(bucket, prefix string, listAll bool) error {
 	}
 
 	var hasOutput bool
-	paginator := s3api.NewListObjectsV2Paginator(c.S3, bucket, opts)
+	paginator := c.S3.NewListObjectsV2Paginator(bucket, opts)
 	for paginator.HasMorePages() {
 		page, err := paginator.NextPage(c.Ctx)
 		if err != nil {

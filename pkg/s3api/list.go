@@ -10,7 +10,8 @@ import (
 	"net/http"
 	"net/url"
 	"strconv"
-	"time"
+
+	"s3cli/pkg/s3iface"
 )
 
 // listObjectsV2Result 对应 S3 ListObjectsV2 响应体.
@@ -52,43 +53,6 @@ type listObjectsV2Result struct {
 // commonPrefix 对应 ListObjectsV2 响应中的 CommonPrefixes 节点.
 type commonPrefix struct {
 	Prefix string
-}
-
-// ObjectInfo 对应 ListObjectsV2 / ListObjectVersions 响应中单个对象的元数据.
-//
-// Owner 字段仅在请求显式设置 FetchOwner=true 时由服务端返回.
-type ObjectInfo struct {
-	Key          string
-	LastModified time.Time
-	ETag         string
-	Size         int64
-	StorageClass string
-	Owner        *owner
-}
-
-// ListObjectsV2Options 控制 ListObjectsV2 的可选参数.
-type ListObjectsV2Options struct {
-	Prefix            string
-	Delimiter         string
-	MaxKeys           int
-	ContinuationToken string
-	StartAfter        string
-	FetchOwner        bool
-}
-
-// ListObjectsV2Output 是 ListObjectsV2 的返回结构.
-type ListObjectsV2Output struct {
-	Name                  string
-	Prefix                string
-	Delimiter             string
-	MaxKeys               int
-	KeyCount              int
-	IsTruncated           bool
-	ContinuationToken     string
-	NextContinuationToken string
-	StartAfter            string
-	Contents              []ObjectInfo
-	CommonPrefixes        []string
 }
 
 // ListObjectsV2 列出指定 bucket 下的对象.
@@ -227,51 +191,9 @@ type listObjectVersionsResult struct {
 	CommonPrefixes      []commonPrefix
 }
 
-// objectVersion 对应 Version 节点.
-type objectVersion struct {
-	IsLatest     bool
-	VersionID    string `xml:"VersionId"`
-	Key          string
-	LastModified time.Time
-	ETag         string
-	Size         int64
-	StorageClass string
-	Owner        *owner
-}
+// objectVersion / deleteMarker 类型别名定义在 s3iface_types.go.
 
-// deleteMarker 对应 DeleteMarker 节点.
-type deleteMarker struct {
-	IsLatest     bool
-	VersionID    string `xml:"VersionId"`
-	Key          string
-	LastModified time.Time
-	Owner        *owner
-}
-
-// ListObjectVersionsOptions 控制 ListObjectVersions 的可选参数.
-type ListObjectVersionsOptions struct {
-	Prefix          string
-	Delimiter       string
-	MaxKeys         int
-	KeyMarker       string
-	VersionIDMarker string
-}
-
-// ListObjectVersionsOutput 是 ListObjectVersions 的返回结构.
-type ListObjectVersionsOutput struct {
-	Name                string
-	Prefix              string
-	Delimiter           string
-	MaxKeys             int
-	IsTruncated         bool
-	KeyMarker           string
-	VersionIDMarker     string
-	NextKeyMarker       string
-	NextVersionIDMarker string
-	Versions            []objectVersion
-	DeleteMarkers       []deleteMarker
-	CommonPrefixes      []string
-}
+// ListObjectVersionsOptions / ListObjectVersionsOutput 类型别名定义在 s3iface_types.go.
 
 // ListObjectVersions 列出 bucket 下对象的所有版本 (含 delete marker).
 func (c *Client) ListObjectVersions(ctx context.Context, bucket string, opts *ListObjectVersionsOptions) (*ListObjectVersionsOutput, error) {
@@ -387,4 +309,15 @@ func (p *ListObjectVersionsPaginator) NextPage(ctx context.Context) (*ListObject
 		p.hasMore = false
 	}
 	return out, nil
+}
+
+// NewListObjectsV2Paginator 是 Client 的方法, 满足 s3iface.S3Operations 接口.
+// 委托给包级构造函数.
+func (c *Client) NewListObjectsV2Paginator(bucket string, opts *ListObjectsV2Options) s3iface.ListObjectsV2Paginator {
+	return NewListObjectsV2Paginator(c, bucket, opts)
+}
+
+// NewListObjectVersionsPaginator 是 Client 的方法, 满足 s3iface.S3Operations 接口.
+func (c *Client) NewListObjectVersionsPaginator(bucket string, opts *ListObjectVersionsOptions) s3iface.ListObjectVersionsPaginator {
+	return NewListObjectVersionsPaginator(c, bucket, opts)
 }

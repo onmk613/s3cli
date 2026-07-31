@@ -5,54 +5,12 @@ package s3api
 
 import (
 	"context"
-	"io"
 	"net/http"
 	"net/url"
 	"time"
 )
 
-// GetObjectOutput 是 GetObject 的返回结构.
-type GetObjectOutput struct {
-	Body                      io.ReadCloser
-	ContentLength             int64
-	ContentType               string
-	ContentEncoding           string
-	ContentDisposition        string
-	ContentLanguage           string
-	CacheControl              string
-	Expires                   string
-	ETag                      string
-	LastModified              time.Time
-	StorageClass              string
-	VersionID                 string
-	DeleteMarker              bool
-	ServerSideEncryption      string
-	SSEKMSKeyID               string
-	SSECustomerAlgorithm      string
-	SSECustomerKeyMD5         string
-	PartsCount                int32
-	ReplicationStatus         string
-	ObjectLockMode            string
-	ObjectLockRetainUntilDate time.Time
-	ObjectLockLegalHold       string
-	AcceptRanges              string
-	Metadata                  map[string]string // x-amz-meta-*
-}
-
-// GetObjectOptions 控制 GetObject 的可选参数.
-type GetObjectOptions struct {
-	VersionID                  string
-	Range                      string // HTTP Range header, e.g. "bytes=0-1023"
-	IfMatch                    string
-	IfNoneMatch                string
-	IfModifiedSince            *time.Time
-	IfUnmodifiedSince          *time.Time
-	ResponseContentType        string
-	ResponseContentEncoding    string
-	ResponseContentDisposition string
-	ResponseCacheControl       string
-	ResponseExpires            string
-}
+// GetObjectOutput / GetObjectOptions 类型别名定义在 s3iface_types.go.
 
 // GetObject 下载对象, 返回 body 流 (调用方负责关闭).
 func (c *Client) GetObject(ctx context.Context, bucket, key string, opts *GetObjectOptions) (*GetObjectOutput, error) {

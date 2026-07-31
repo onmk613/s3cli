@@ -9,18 +9,20 @@ import (
 	"errors"
 	"fmt"
 	"s3cli/internal/s3path"
-	"strings"
-
 	"s3cli/pkg/s3api"
+	"s3cli/pkg/s3iface"
+	"strings"
 )
 
 // defaultConcurrency 是流式传输（get/put/cp/mv）与 mirror/diff 的默认并发数。
 // 与 config.DefaultConcurrency 保持一致；action 不依赖 config 以维持与配置层解耦。
 const defaultConcurrency = 10
 
-// S3Client 封装自建的 s3api.Client, 持有 alias 和 ctx.
+// S3Client 封装 S3 操作后端, 持有 alias 和 ctx.
+// S3 字段为 s3iface.S3Operations 接口, 可在自建请求 (s3api.Client) 与
+// 官方 SDK (awss3.AWS) 之间无缝切换.
 type S3Client struct {
-	S3    *s3api.Client
+	S3    s3iface.S3Operations
 	Alias string
 	Ctx   context.Context
 }
@@ -172,7 +174,7 @@ type Cred struct {
 	BaseEndpoint    string
 }
 
-// GetS3Credentials 返回底层 s3api.Client 持有的凭证与 endpoint.
+// GetS3Credentials 返回底层 S3 后端持有的凭证与 endpoint (经 S3Operations 访问器).
 func (c *S3Client) GetS3Credentials() (Cred, error) {
 	if c.S3 == nil {
 		return Cred{}, fmt.Errorf("s3 client is nil")
@@ -192,8 +194,8 @@ var errStopIteration = errors.New("stop iteration")
 // forEachObject 遍历 bucket 下指定 prefix 的所有对象 (自动翻页), 对每个对象调用 fn。
 // 封装了各处重复的 ListObjectsV2 Paginator 循环样板。fn 返回错误会中断遍历;
 // fn 返回 errStopIteration 时提前正常结束 (返回 nil)。
-func (c *S3Client) forEachObject(ctx context.Context, bucket, prefix string, fn func(obj s3api.ObjectInfo) error) error {
-	paginator := s3api.NewListObjectsV2Paginator(c.S3, bucket, &s3api.ListObjectsV2Options{
+func (c *S3Client) forEachObject(ctx context.Context, bucket, prefix string, fn func(obj s3iface.ObjectInfo) error) error {
+	paginator := c.S3.NewListObjectsV2Paginator(bucket, &s3iface.ListObjectsV2Options{
 		Prefix: prefix,
 	})
 	for paginator.HasMorePages() {

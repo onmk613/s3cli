@@ -26,7 +26,7 @@ func (c *S3Client) RemoveBuckets(bucket string, force bool) error {
 }
 
 func (c *S3Client) deleteAllObjects(bucket string) error {
-	paginator := s3api.NewListObjectVersionsPaginator(c.S3, bucket, &s3api.ListObjectVersionsOptions{})
+	paginator := c.S3.NewListObjectVersionsPaginator(bucket, &s3api.ListObjectVersionsOptions{})
 
 	for paginator.HasMorePages() {
 		page, err := paginator.NextPage(c.Ctx)

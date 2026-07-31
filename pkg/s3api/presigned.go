@@ -19,19 +19,7 @@ import (
 	"time"
 )
 
-// PresignOptions 控制预签名 URL 的生成.
-type PresignOptions struct {
-	// Method HTTP 方法: GET / PUT / DELETE / HEAD.
-	Method string
-	// Expires 过期时间.
-	Expires time.Duration
-	// VersionID 指定对象版本 (仅 GET / HEAD 有效).
-	VersionID string
-	// ResponseContentType 等 response-* 覆盖参数 (仅 GET 有效).
-	ResponseContentType        string
-	ResponseContentDisposition string
-	ResponseCacheControl       string
-}
+// PresignOptions 类型别名定义在 s3iface_types.go.
 
 // PresignedURL 生成一个 SigV4 预签名 URL.
 //

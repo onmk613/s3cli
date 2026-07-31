@@ -13,15 +13,10 @@ import (
 	"net/http"
 	"net/url"
 	"strconv"
-	"time"
 )
 
-// CreateMultipartUploadOutput 是 CreateMultipartUpload 的返回结构.
-type CreateMultipartUploadOutput struct {
-	UploadID             string
-	ServerSideEncryption string
-	SSEKMSKeyID          string
-}
+// CreateMultipartUploadOutput / UploadPartOutput / CompletedPart / CompleteMultipartUploadOutput /
+// ListMultipartUploadsOptions / ListMultipartUploadsOutput / ListPartsOutput 类型别名定义在 s3iface_types.go.
 
 // CreateMultipartUpload 初始化一个分片上传.
 //
@@ -102,13 +97,6 @@ func (c *Client) CreateMultipartUpload(ctx context.Context, bucket, key string, 
 	}, nil
 }
 
-// UploadPartOutput 是 UploadPart 的返回结构.
-type UploadPartOutput struct {
-	ETag                 string
-	SSEKMSKeyID          string
-	ServerSideEncryption string
-}
-
 // UploadPart 上传一个分片.
 //
 // partNumber 从 1 开始, 最大 10000. body 需可 Seek.
@@ -142,12 +130,7 @@ func (c *Client) UploadPart(ctx context.Context, bucket, key, uploadID string, p
 	}, nil
 }
 
-// CompletedPart 已上传完成的分片信息.
-type CompletedPart struct {
-	XMLName    xml.Name `xml:"Part"`
-	PartNumber int      `xml:"PartNumber"`
-	ETag       string   `xml:"ETag"`
-}
+// CompletedPart 类型别名定义在 s3iface_types.go.
 
 // completedMultipartUpload 对应 CompleteMultipartUpload 请求体.
 type completedMultipartUpload struct {
@@ -155,16 +138,7 @@ type completedMultipartUpload struct {
 	Parts   []CompletedPart `xml:"Part"`
 }
 
-// CompleteMultipartUploadOutput 是 CompleteMultipartUpload 的返回结构.
-type CompleteMultipartUploadOutput struct {
-	Location             string
-	Bucket               string
-	Key                  string
-	ETag                 string
-	VersionID            string
-	ServerSideEncryption string
-	SSEKMSKeyID          string
-}
+// CompleteMultipartUploadOutput 类型别名定义在 s3iface_types.go.
 
 // completeMultipartUploadResult 对应 CompleteMultipartUpload 响应体.
 type completeMultipartUploadResult struct {
@@ -264,35 +238,11 @@ type listMultipartUploadsResult struct {
 	Uploads            []uploadInfo `xml:"Upload"`
 }
 
-// uploadInfo 单个进行中的分片上传.
-type uploadInfo struct {
-	XMLName      xml.Name `xml:"Upload"`
-	Key          string
-	UploadID     string `xml:"UploadId"`
-	Initiated    time.Time
-	StorageClass string
-}
+// uploadInfo 类型别名定义在 s3iface_types.go.
 
-// ListMultipartUploadsOptions 控制 ListMultipartUploads 的可选参数.
-type ListMultipartUploadsOptions struct {
-	Prefix         string
-	Delimiter      string
-	KeyMarker      string
-	UploadIDMarker string
-	MaxUploads     int
-}
+// ListMultipartUploadsOptions 类型别名定义在 s3iface_types.go.
 
-// ListMultipartUploadsOutput 是 ListMultipartUploads 的返回结构.
-type ListMultipartUploadsOutput struct {
-	Bucket             string
-	KeyMarker          string
-	UploadIDMarker     string
-	NextKeyMarker      string
-	NextUploadIDMarker string
-	MaxUploads         int
-	IsTruncated        bool
-	Uploads            []uploadInfo
-}
+// ListMultipartUploadsOutput 类型别名定义在 s3iface_types.go.
 
 // ListMultipartUploads 列出 bucket 中进行中的分片上传.
 func (c *Client) ListMultipartUploads(ctx context.Context, bucket string, opts *ListMultipartUploadsOptions) (*ListMultipartUploadsOutput, error) {
@@ -361,26 +311,9 @@ type listPartsResult struct {
 	Parts                []partInfo `xml:"Part"`
 }
 
-// partInfo 单个分片信息.
-type partInfo struct {
-	XMLName      xml.Name `xml:"Part"`
-	PartNumber   int
-	LastModified time.Time
-	ETag         string
-	Size         int64
-}
+// partInfo 类型别名定义在 s3iface_types.go.
 
-// ListPartsOutput 是 ListParts 的返回结构.
-type ListPartsOutput struct {
-	Bucket               string
-	Key                  string
-	UploadID             string
-	PartNumberMarker     int
-	NextPartNumberMarker int
-	MaxParts             int
-	IsTruncated          bool
-	Parts                []partInfo
-}
+// ListPartsOutput 类型别名定义在 s3iface_types.go.
 
 // ListParts 列出已上传的分片.
 func (c *Client) ListParts(ctx context.Context, bucket, key, uploadID string, partNumberMarker, maxParts int) (*ListPartsOutput, error) {
