@@ -153,7 +153,7 @@ func TestParseBucketCorsConfig(t *testing.T) {
 
 func TestCorsConfigToXML(t *testing.T) {
 	c := &CorsConfig{CORSRules: []CorsRule{{AllowedOrigin: []string{"*"}}}}
-	data, err := c.toXML()
+	data, err := c.ToXML()
 	if err != nil {
 		t.Fatal(err)
 	}

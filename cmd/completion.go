@@ -149,22 +149,17 @@ func completeAliases(toComplete string) ([]string, cobra.ShellCompDirective) {
 	return candidates, cobra.ShellCompDirectiveNoFileComp | cobra.ShellCompDirectiveNoSpace
 }
 
-// getClientByAlias 按 alias 名获取 S3 客户端，封装为 action.S3Client
+// getClientByAlias 按 alias 名获取 S3 客户端 (遵循 alias 的 backend 配置与 --backend 开关), 封装为 action.S3Client
 func getClientByAlias(ctx context.Context, alias string) *action.S3Client {
 	static, ok := config.G.S[alias]
 	if !ok {
 		return nil
 	}
 
-	if cachedClient, ok := client2.S3Clients.Get(alias); ok {
-		return &action.S3Client{S3: cachedClient, Alias: alias, Ctx: ctx}
-	}
-
-	s3Client, err := client2.NewS3Client(ctx, static, config.G.F)
+	s3Client, err := client2.NewClient(ctx, alias, static)
 	if err != nil {
 		return nil
 	}
-	client2.S3Clients.Set(alias, s3Client)
 	return &action.S3Client{S3: s3Client, Alias: alias, Ctx: ctx}
 }
 

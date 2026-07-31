@@ -10,7 +10,6 @@ import (
 	"io"
 	"net/http"
 	"net/url"
-	"time"
 )
 
 // ListBuckets 列出当前凭证下所有可访问的 bucket.
@@ -33,12 +32,6 @@ func (c *Client) ListBuckets(ctx context.Context) ([]BucketInfo, error) {
 	return result.Buckets.Bucket, nil
 }
 
-// owner 对应 ListBuckets 响应中的 Owner 节点 (桶所有者).
-type owner struct {
-	ID          string
-	DisplayName string
-}
-
 // listAllMyBucketsResult 对应 ListBuckets 响应体根节点.
 //
 //	<ListAllMyBucketsResult>
@@ -50,19 +43,6 @@ type listAllMyBucketsResult struct {
 	Buckets struct {
 		Bucket []BucketInfo
 	}
-}
-
-// BucketInfo 描述单个 bucket 的基本信息.
-type BucketInfo struct {
-	Name         string
-	CreationDate time.Time
-	BucketRegion string
-}
-
-// MakeBucketOptions 控制 CreateBucket 的可选参数.
-type MakeBucketOptions struct {
-	Region        string
-	ObjectLocking bool
 }
 
 // CreateBucket 创建一个新的 bucket.

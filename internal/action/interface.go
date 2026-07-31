@@ -1,35 +1,7 @@
-// interface.go 定义 S3 操作的接口抽象, 解耦命令层与具体实现.
-// 命令层应依赖 S3Operations (或更小的子接口) 而非具体的 *S3Client,
-// 便于单元测试 mock 与未来扩展其他存储后端.
-
 package action
 
-// ============================================================================
-// 组合接口 — 供命令层消费
-// ============================================================================
-
-// S3Operations 是所有 S3 操作的完整接口。
-// 命令层应依赖此接口（或更小的子接口），而非具体的 *S3Client。
-type S3Operations interface {
-	ObjectReader
-	ObjectWriter
-	BucketManager
-	MultipartManager
-	TagManager
-	Signer
-
-	// S3Path Path helpers
-	S3Path(bucket, key string) string
-	IsS3File(bucket, key string) (bool, error)
-	GetS3Credentials() (Cred, error)
-}
-
-// ============================================================================
-// 子接口 — 按职责拆分，允许命令仅声明自己需要的能力
-// ============================================================================
-
-// ObjectReader 对象读取操作。
-type ObjectReader interface {
+// CmdOperations 是所有 cmd 操作抽象
+type CmdOperations interface {
 	ListObjects(bucket, prefix string, listAll bool) error
 	GetObject(opt GetOptions, bucket, prefix, localPath string) error
 	CatObject(opt CatOptions, bucket, key string) error
@@ -38,25 +10,16 @@ type ObjectReader interface {
 	FindObjects(opt FindOptions, bucket, prefix string) error
 	TreeObjects(opt TreeOptions, bucket, prefix string) error
 	ListObjectVersions(bucket, prefix string) error
-}
 
-// ObjectWriter 对象写入 / 删除 / 移动操作。
-type ObjectWriter interface {
 	PutObject(opt PutOptions, bucket, prefix, localPath string, isS3Dir bool) error
 	PipeUpload(opt PipeOptions, bucket, key string) error
 	DeleteObjects(bucket, prefix string, opt DelOptions) error
 	CopyObjects(srcBucket, srcKey, destBucket, destKey string, recursive, noProgress bool) error
 	Mv(srcBucket, srcKey, destBucket, destKey string, recursive, noProgress bool) error
-}
 
-// BucketManager 桶的创建与删除。
-type BucketManager interface {
 	MakeBuckets(opt MakeBucketOptions, bucket string) error
 	RemoveBuckets(bucket string, force bool) error
-}
 
-// BucketConfigurator 桶级配置（CORS / 生命周期 / Policy / 加密 / 版本 / 通知）。
-type BucketConfigurator interface {
 	SetCors(corsFile string, bucket string) error
 	GetCors(bucket string) error
 	DelCors(bucket string) error
@@ -74,36 +37,18 @@ type BucketConfigurator interface {
 	SetNotification(configFile, bucket string) error
 	GetNotification(bucket string) error
 	DelNotification(bucket string) error
-}
 
-// MultipartManager 分片上传管理。
-type MultipartManager interface {
 	MpuList(bucket, prefix string) error
 	MpuAbort(bucket, prefix, uploadID string) error
-}
 
-// TagManager 对象/桶标签管理。
-type TagManager interface {
 	SetTag(bucket, prefix string, tagStr map[string]string) error
 	GetTag(bucket, prefix string) error
 	DelTag(bucket, prefix string) error
-}
 
-// Signer 预签名 URL 生成。
-type Signer interface {
 	Share(opt ShareOptions, bucket, key string) error
+
+	// S3Path Path helpers
+	S3Path(bucket, key string) string
+	IsS3File(bucket, key string) (bool, error)
+	GetS3Credentials() (Cred, error)
 }
-
-// ============================================================================
-// 编译时检查：确保 *S3Client 实现了所有子接口
-// ============================================================================
-
-var (
-	_ ObjectReader       = (*S3Client)(nil)
-	_ ObjectWriter       = (*S3Client)(nil)
-	_ BucketManager      = (*S3Client)(nil)
-	_ BucketConfigurator = (*S3Client)(nil)
-	_ MultipartManager   = (*S3Client)(nil)
-	_ TagManager         = (*S3Client)(nil)
-	_ Signer             = (*S3Client)(nil)
-)

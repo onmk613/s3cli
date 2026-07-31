@@ -12,11 +12,8 @@ import (
 	"net/url"
 )
 
-// DeleteObjectOutput 是 DeleteObject 的返回结构.
-type DeleteObjectOutput struct {
-	VersionID    string
-	DeleteMarker bool
-}
+// DeleteObjectOutput / ObjectIdentifier / DeleteObjectsOutput / DeletedObject / DeleteObjectError
+// 类型别名定义在 s3iface_types.go.
 
 // DeleteObject 删除单个对象.
 //
@@ -48,12 +45,6 @@ func (c *Client) DeleteObject(ctx context.Context, bucket, key, versionID string
 	}, nil
 }
 
-// ObjectIdentifier 标识要删除的对象 (key + 可选 versionID).
-type ObjectIdentifier struct {
-	Key       string `xml:"Key"`
-	VersionID string `xml:"VersionId,omitempty"`
-}
-
 // deleteRequest 对应 DeleteObjects 请求体.
 type deleteRequest struct {
 	XMLName xml.Name           `xml:"Delete"`
@@ -80,26 +71,6 @@ type deleteResult struct {
 	XMLName xml.Name        `xml:"DeleteResult"`
 	Deleted []deletedObject `xml:"Deleted"`
 	Errors  []deleteError   `xml:"Error"`
-}
-
-// DeleteObjectsOutput 是 DeleteObjects 的返回结构.
-type DeleteObjectsOutput struct {
-	Deleted []DeletedObject
-	Errors  []DeleteObjectError
-}
-
-// DeletedObject 描述已成功删除的对象.
-type DeletedObject struct {
-	Key          string
-	VersionID    string
-	DeleteMarker bool
-}
-
-// DeleteObjectError 描述批量删除中单个对象的失败.
-type DeleteObjectError struct {
-	Key     string
-	Code    string
-	Message string
 }
 
 // DeleteObjects 批量删除对象 (最多 1000 个).

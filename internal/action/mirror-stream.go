@@ -32,7 +32,7 @@ type ObjectInfo struct {
 func streamObjects(c *S3Client, bucket, prefix string, out chan<- ObjectInfo, errCh chan<- error) {
 	defer close(out)
 
-	paginator := s3api.NewListObjectsV2Paginator(c.S3, bucket, &s3api.ListObjectsV2Options{Prefix: prefix})
+	paginator := c.S3.NewListObjectsV2Paginator(bucket, &s3api.ListObjectsV2Options{Prefix: prefix})
 
 	for paginator.HasMorePages() {
 		page, err := paginator.NextPage(c.Ctx)

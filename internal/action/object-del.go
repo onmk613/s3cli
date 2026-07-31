@@ -102,7 +102,7 @@ func (c *S3Client) deleteObjectsWithPrefix(bucket, prefix string) error {
 			prefix = dirPrefix
 		}
 	}
-	paginator := s3api.NewListObjectsV2Paginator(c.S3, bucket, &s3api.ListObjectsV2Options{
+	paginator := c.S3.NewListObjectsV2Paginator(bucket, &s3api.ListObjectsV2Options{
 		Prefix: prefix,
 	})
 

@@ -143,6 +143,7 @@ func NewRootCmd() {
 	pf.StringArrayVarP(&config.G.F.Headers, "header", "H", nil, "Add a custom HTTP header (key:value), can repeat")
 	pf.BoolVarP(&config.G.F.Quiet, "quiet", "q", false, "Disable progress bar; stream plain text output instead")
 	pf.BoolVar(&config.G.F.OutputJson, "json", false, "Output format: text or json (supported commands emit structured results)")
+	pf.StringVar(&config.G.F.Backend, "backend", "", "S3 backend: \"s3api\" (built-in HTTP, default) or \"aws\" (official SDK)")
 
 	// 从注册表添加所有子命令（带分组显示）。
 	// 同时校验顶层命令名/别名不得重叠：cobra 在命令名与别名冲突时的命中顺序

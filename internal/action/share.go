@@ -45,7 +45,7 @@ func (c *S3Client) Share(opt ShareOptions, bucket, key string) error {
 		}
 	}
 
-	// s3api.Client 内部已持有凭证, 无需在此显式取凭证。
+	// S3 后端内部已持有凭证, 无需在此显式取凭证。
 
 	var signed string
 	var err error

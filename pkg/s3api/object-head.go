@@ -11,33 +11,7 @@ import (
 	"time"
 )
 
-// HeadObjectOutput 是 HeadObject 的返回结构.
-//
-// HeadObject 无响应体, 所有元数据来自 HTTP 响应头.
-type HeadObjectOutput struct {
-	ContentLength             int64
-	ContentType               string
-	ContentEncoding           string
-	ContentDisposition        string
-	ContentLanguage           string
-	CacheControl              string
-	Expires                   string
-	ETag                      string
-	LastModified              time.Time
-	StorageClass              string
-	VersionID                 string
-	DeleteMarker              bool
-	ServerSideEncryption      string
-	SSEKMSKeyID               string
-	SSECustomerAlgorithm      string
-	SSECustomerKeyMD5         string
-	PartsCount                int32
-	ReplicationStatus         string
-	ObjectLockMode            string
-	ObjectLockRetainUntilDate time.Time
-	ObjectLockLegalHold       string
-	Metadata                  map[string]string // x-amz-meta-*
-}
+// HeadObjectOutput 类型别名定义在 s3iface_types.go.
 
 // HeadObject 获取对象元数据 (不下载 body).
 //

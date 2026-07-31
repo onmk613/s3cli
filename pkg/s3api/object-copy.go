@@ -28,40 +28,7 @@ type copyObjectError struct {
 	Message string `xml:"Message"`
 }
 
-// CopyObjectOutput 是 CopyObject 的返回结构.
-type CopyObjectOutput struct {
-	ETag                 string
-	LastModified         string
-	VersionID            string
-	ServerSideEncryption string
-	SSEKMSKeyID          string
-}
-
-// CopyObjectOptions 控制 CopyObject 的可选参数.
-type CopyObjectOptions struct {
-	// 源对象版本
-	SourceVersionID string
-	// 元数据指令: COPY (默认, 复制源元数据) / REPLACE (使用新元数据)
-	MetadataDirective string // COPY / REPLACE
-	// 标签指令: COPY (默认) / REPLACE
-	TaggingDirective string
-	// 新元数据 (仅 MetadataDirective=REPLACE 时生效)
-	Metadata map[string]string
-	// 新标签 (仅 TaggingDirective=REPLACE 时生效), 格式 "k1=v1&k2=v2"
-	Tagging string
-	// 新存储类型
-	StorageClass string
-	// 新 ContentType (仅 MetadataDirective=REPLACE)
-	ContentType string
-	// 新加密设置
-	ServerSideEncryption string
-	SSEKMSKeyID          string
-	// 条件复制
-	IfMatch           string
-	IfNoneMatch       string
-	IfModifiedSince   string
-	IfUnmodifiedSince string
-}
+// CopyObjectOutput / CopyObjectOptions 类型别名定义在 s3iface_types.go.
 
 // CopyObject 在服务端复制对象 (同 endpoint).
 //

@@ -11,7 +11,7 @@ import (
 
 // ListObjectVersions 列出对象版本 + delete-marker
 func (c *S3Client) ListObjectVersions(bucket, prefix string) error {
-	paginator := s3api.NewListObjectVersionsPaginator(c.S3, bucket,
+	paginator := c.S3.NewListObjectVersionsPaginator(bucket,
 		&s3api.ListObjectVersionsOptions{Prefix: prefix})
 
 	for paginator.HasMorePages() {

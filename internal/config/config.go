@@ -44,6 +44,7 @@ type Flags struct {
 	UserAgentSuffix string   // --user-agent-suffix 追加到 User-Agent 末尾
 	Headers         []string // --header 自定义 HTTP header, 可重复, 格式 key:value
 	OutputJson      bool     // --json json格式输出, 针对部分操作有效
+	Backend         string   // --backend 覆盖 S3 后端: "s3api" (自建) 或 "aws" (官方 SDK)
 }
 
 // Static 描述单个别名（一个 S3 端点）的静态配置。
@@ -62,6 +63,9 @@ type Static struct {
 	DefaultMimeType      string `toml:"default_mime_type"`
 	MultipartChunkSizeMb int    `toml:"multipart_chunk_size_mb"`
 	MaxRetries           int    `toml:"max_retries"`
+
+	// Backend 选择 S3 操作后端: "s3api" (默认, 自建 HTTP) 或 "aws" (官方 SDK).
+	Backend string `toml:"backend"`
 }
 
 // ResolveBucketLookup 解析 bucket_lookup 配置，返回模式和模板。

@@ -8,7 +8,7 @@ import (
 
 	"s3cli/internal/action"
 	"s3cli/internal/config"
-	"s3cli/pkg/s3api"
+	"s3cli/pkg/s3iface"
 
 	"github.com/spf13/cobra"
 )
@@ -46,7 +46,7 @@ func NewDiffCmd() *cobra.Command {
 				_, ok := config.G.S[name]
 				return ok
 			}
-			makeClient := func(sp *s3path.Path) (*s3api.Client, error) {
+			makeClient := func(sp *s3path.Path) (s3iface.S3Operations, error) {
 				cli, _, err := client.ParsePathAndNewClient(cmd.Context(), formatPath(sp))
 				return cli, err
 			}

@@ -85,6 +85,36 @@ s3cli alias help
 
 > 路径格式统一为 `别名:桶/路径`，例如 `my-s3:my-bucket/dir/file.txt`。
 
+## S3 后端切换
+
+s3cli 支持两种 S3 请求后端，底层操作统一抽象为 `pkg/s3iface.S3Operations` 接口，所有命令可在两者间无缝切换：
+
+- **s3api**（默认）：自建 HTTP 客户端 + SigV4 签名，零 SDK 依赖，兼容任何 S3 服务
+- **aws**：官方 `aws-sdk-go-v2`，适合需要官方 SDK 行为（重试、端点解析等）的场景
+
+按 alias 配置（配置文件里加 `backend = "aws"`），或运行时用全局 flag 覆盖：
+
+```bash
+s3cli --backend aws ls my-s3:my-bucket
+s3cli --backend s3api cp my-s3:my-bucket/a local.txt
+```
+
+配置示例（`~/.s3cli`，TOML）：
+
+```toml
+[my-s3]
+host_base = "https://s3.example.com"
+access_key = "AKIA..."
+secret_key = "secret"
+backend = "aws"  # 官方 SDK; 缺省或 "s3api" 为自建请求
+
+# bucket 寻址: "path" (默认) / "dns" / 自定义模板 (含 %(bucket)、可选 %(region))
+# 两种后端语义一致; aws 后端下 %(region) 同样会探测 bucket 实际区域
+bucket_lookup = "path"
+# bucket_lookup = "dns"
+# bucket_lookup = "https://www.%(bucket).example.com"
+```
+
 ## 许可证
 
 MIT License，详见 [LICENSE](LICENSE)。

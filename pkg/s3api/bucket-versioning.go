@@ -1,21 +1,11 @@
-// bucket-versioning.go 实现桶版本控制状态管理: Set/GetBucketVersioning,
-// 支持启用 (Enabled) 与暂停 (Suspended) 两种状态.
+// bucket-versioning.go 实现桶版本控制状态管理: Set/GetBucketVersioning.
+// BucketVersioningStatus 类型定义在中立包 s3iface.
 
 package s3api
 
 import (
 	"context"
 	"encoding/xml"
-)
-
-// BucketVersioningStatus 版本控制状态.
-type BucketVersioningStatus string
-
-const (
-	// VersioningEnabled 启用版本控制.
-	VersioningEnabled BucketVersioningStatus = "Enabled"
-	// VersioningSuspended 暂停版本控制 (已存在的对象仍保留版本).
-	VersioningSuspended BucketVersioningStatus = "Suspended"
 )
 
 // versioningConfiguration 对应 PutBucketVersioning 请求体.

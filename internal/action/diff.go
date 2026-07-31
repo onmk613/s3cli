@@ -21,11 +21,12 @@ import (
 
 	myprint "s3cli/pkg/fmtutil"
 	"s3cli/pkg/s3api"
+	"s3cli/pkg/s3iface"
 )
 
 type DiffEndpoint struct {
 	IsS3          bool
-	S3            *s3api.Client
+	S3            s3iface.S3Operations
 	Ctx           context.Context
 	Alias         string
 	Bucket        string
@@ -78,7 +79,7 @@ type fileEntry struct {
 //   - 否则视为本地路径（不要求文件存在；后续会单独检查）
 //
 // 调用方需提供一个判断 alias 是否存在的回调（保持 action 包不依赖 config）。
-func ParseDiffArg(ctx context.Context, arg string, aliasExists func(string) bool, makeClient func(*s3path.Path) (*s3api.Client, error)) (*DiffEndpoint, error) {
+func ParseDiffArg(ctx context.Context, arg string, aliasExists func(string) bool, makeClient func(*s3path.Path) (s3iface.S3Operations, error)) (*DiffEndpoint, error) {
 	// 先尝试 ParseS3Path
 	if colon := strings.Index(arg, ":"); colon > 0 {
 		alias := arg[:colon]
@@ -430,12 +431,12 @@ func listLocalDir(root string) ([]fileEntry, error) {
 	return out, nil
 }
 
-func listS3Dir(cli *s3api.Client, ctx context.Context, alias, bucket, prefix string) ([]fileEntry, error) {
+func listS3Dir(cli s3iface.S3Operations, ctx context.Context, alias, bucket, prefix string) ([]fileEntry, error) {
 	// 规范化 prefix，确保 "目录" 风格
 	if prefix != "" && !strings.HasSuffix(prefix, "/") {
 		prefix += "/"
 	}
-	paginator := s3api.NewListObjectsV2Paginator(cli, bucket, &s3api.ListObjectsV2Options{
+	paginator := cli.NewListObjectsV2Paginator(bucket, &s3api.ListObjectsV2Options{
 		Prefix: prefix,
 	})
 	var out []fileEntry
