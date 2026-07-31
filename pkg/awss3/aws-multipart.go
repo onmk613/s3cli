@@ -1,3 +1,5 @@
+//go:build aws
+
 // aws-multipart.go 实现 AWS 上的分片上传: CreateMultipartUpload / UploadPart /
 // CompleteMultipartUpload / AbortMultipartUpload / ListMultipartUploads / ListParts.
 

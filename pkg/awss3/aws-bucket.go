@@ -1,3 +1,5 @@
+//go:build aws
+
 // aws-bucket.go 实现 AWS 上的桶基础操作: ListBuckets / CreateBucket / DeleteBucket / GetBucketLocation.
 
 package awss3

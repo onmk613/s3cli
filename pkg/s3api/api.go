@@ -1,3 +1,5 @@
+//go:build !aws
+
 // api.go 定义 S3 客户端核心: Client / Options / 构造函数 New, 以及一次完整
 // 请求的生命周期 (requestMetadata -> newRequest 签名 -> Do 发送+重试).
 // 签名细节见 signer.go, 错误解析见 error.go.

@@ -7,7 +7,7 @@ import (
 	"io"
 	"os"
 
-	"s3cli/pkg/s3api"
+	"s3cli/pkg/s3iface"
 )
 
 // CatOptions cat 命令参数
@@ -20,7 +20,7 @@ func (c *S3Client) CatObject(opt CatOptions, bucket, key string) error {
 		return fmt.Errorf("cat requires an object key, not a bucket")
 	}
 
-	opts := &s3api.GetObjectOptions{}
+	opts := &s3iface.GetObjectOptions{}
 	if opt.Range != "" {
 		opts.Range = opt.Range
 	}

@@ -11,7 +11,7 @@ import (
 	"strings"
 
 	myprint "s3cli/pkg/fmtutil"
-	"s3cli/pkg/s3api"
+	"s3cli/pkg/s3iface"
 )
 
 // Mv 移动对象 = copy + delete
@@ -70,7 +70,7 @@ func (c *S3Client) mvDirStreaming(srcBucket, srcKey, destBucket, destPrefix stri
 			return c.countS3Prefix(ctx, srcBucket, srcKey, false, add)
 		},
 		Scan: func(ctx context.Context, jobs chan<- StreamJob) error {
-			return c.forEachObject(ctx, srcBucket, srcKey, func(obj s3api.ObjectInfo) error {
+			return c.forEachObject(ctx, srcBucket, srcKey, func(obj s3iface.ObjectInfo) error {
 				dst := buildDestKey(obj.Key, srcKey, destPrefix, appendRel)
 				jobs <- StreamJob{
 					Src:  obj.Key,

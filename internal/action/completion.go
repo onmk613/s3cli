@@ -6,7 +6,7 @@ package action
 import (
 	"strings"
 
-	"s3cli/pkg/s3api"
+	"s3cli/pkg/s3iface"
 )
 
 // CompleteBucket 返回当前 alias 下所有 bucket 名（已按 prefix 过滤，最多 max 个）。
@@ -29,7 +29,7 @@ func (c *S3Client) CompleteBucket(prefix string) ([]string, error) {
 // 使用 Delimiter="/" 让 S3 返回 CommonPrefixes（目录），最多返回 max 个。
 // 供 shell 补全使用，不做任何打印。
 func (c *S3Client) CompleteKey(bucket, keyPrefix string, max int) ([]string, error) {
-	out, err := c.S3.ListObjectsV2(c.Ctx, bucket, &s3api.ListObjectsV2Options{
+	out, err := c.S3.ListObjectsV2(c.Ctx, bucket, &s3iface.ListObjectsV2Options{
 		Prefix:    keyPrefix,
 		Delimiter: "/",
 		MaxKeys:   max,

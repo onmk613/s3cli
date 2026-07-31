@@ -1,6 +1,9 @@
-// awsclient.go 构建官方 AWS SDK 后端 (awss3.AWS), 作为自建 s3api.Client 的可切换替代.
+//go:build aws
+
+// awsclient.go 构建官方 AWS SDK 后端 (awss3.AWS), 作为自建 s3api.Client 的编译期替代.
 //
-// 当 alias 配置 backend = "aws" 时, ParsePathAndNewClient 使用本文件构造 awss3.AWS.
+// 本文件由 build tag "aws" 控制: 加 -tags aws 构建时, 唯一编译进二进制的后端为 awss3.AWS
+// (见 backend-aws.go).
 
 package client
 

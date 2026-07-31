@@ -1,3 +1,5 @@
+//go:build !aws
+
 // bucket-tagging.go 实现桶标签集合管理: Set/Get/DeleteBucketTagging.
 // Tagging 类型定义在中立包 s3iface (同时被 object-tagging 复用).
 

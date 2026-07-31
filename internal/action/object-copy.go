@@ -11,7 +11,7 @@ import (
 	"strings"
 
 	myprint "s3cli/pkg/fmtutil"
-	"s3cli/pkg/s3api"
+	"s3cli/pkg/s3iface"
 )
 
 // CopyObjects 处理同对象存储之内的复制
@@ -69,7 +69,7 @@ func (c *S3Client) copyDirStreaming(srcBucket, srcKey, destBucket, destPrefix st
 			return c.countS3Prefix(ctx, srcBucket, srcKey, false, add)
 		},
 		Scan: func(ctx context.Context, jobs chan<- StreamJob) error {
-			return c.forEachObject(ctx, srcBucket, srcKey, func(obj s3api.ObjectInfo) error {
+			return c.forEachObject(ctx, srcBucket, srcKey, func(obj s3iface.ObjectInfo) error {
 				dst := buildDestKey(obj.Key, srcKey, destPrefix, appendRel)
 				jobs <- StreamJob{
 					Src:  obj.Key,

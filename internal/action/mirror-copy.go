@@ -9,7 +9,7 @@ import (
 	"io"
 	"strings"
 
-	"s3cli/pkg/s3api"
+	"s3cli/pkg/s3iface"
 )
 
 // sameEndpoint 判断源/目标是否同一 endpoint, 是的话可用服务端 CopyObject.
@@ -26,7 +26,7 @@ func sameEndpoint(src, tgt *S3PathOptions) bool {
 
 // copyObjectSameEndpoint 同 endpoint 服务端复制.
 func copyObjectSameEndpoint(c *S3Client, srcBucket, srcKey, tgtBucket, tgtKey string) error {
-	_, err := c.S3.CopyObject(c.Ctx, srcBucket, srcKey, tgtBucket, tgtKey, &s3api.CopyObjectOptions{MetadataDirective: "COPY"})
+	_, err := c.S3.CopyObject(c.Ctx, srcBucket, srcKey, tgtBucket, tgtKey, &s3iface.CopyObjectOptions{MetadataDirective: "COPY"})
 	if err != nil {
 		return fmt.Errorf("copy: %s", FormatAPIError(err))
 	}
@@ -72,7 +72,7 @@ func copySingleCrossEndpoint(src, tgt *S3Client, srcBucket, srcKey, tgtBucket, t
 		return fmt.Errorf("read s3://%s/%s: %v", srcBucket, srcKey, err)
 	}
 
-	if _, err := tgt.S3.PutObject(tgt.Ctx, tgtBucket, tgtKey, data, &s3api.PutObjectOptions{
+	if _, err := tgt.S3.PutObject(tgt.Ctx, tgtBucket, tgtKey, data, &s3iface.PutObjectOptions{
 		ContentType:        getResp.ContentType,
 		CacheControl:       getResp.CacheControl,
 		ContentDisposition: getResp.ContentDisposition,
@@ -91,7 +91,7 @@ func copyMultipartCrossEndpoint(
 	src, tgt *S3Client,
 	srcBucket, srcKey, tgtBucket, tgtKey string,
 	totalSize, partSize int64,
-	head *s3api.HeadObjectOutput,
+	head *s3iface.HeadObjectOutput,
 	report func(n int64),
 ) (err error) {
 	// 开工前先校验分片数上限, 避免传完所有 part 后 Complete 才失败 (白传)。
@@ -100,7 +100,7 @@ func copyMultipartCrossEndpoint(
 		return fmt.Errorf("object too large for part size %s: %d parts exceeds %d",
 			FormatBytes(partSize), (totalSize+partSize-1)/partSize, maxMultipartParts)
 	}
-	createResp, err := tgt.S3.CreateMultipartUpload(tgt.Ctx, tgtBucket, tgtKey, &s3api.PutObjectOptions{
+	createResp, err := tgt.S3.CreateMultipartUpload(tgt.Ctx, tgtBucket, tgtKey, &s3iface.PutObjectOptions{
 		ContentType:        head.ContentType,
 		CacheControl:       head.CacheControl,
 		ContentDisposition: head.ContentDisposition,
@@ -119,7 +119,7 @@ func copyMultipartCrossEndpoint(
 		}
 	}()
 
-	var completed []s3api.CompletedPart
+	var completed []s3iface.CompletedPart
 	partNum := int32(1)
 	for offset := int64(0); offset < totalSize; offset += partSize {
 		end := offset + partSize - 1
@@ -128,7 +128,7 @@ func copyMultipartCrossEndpoint(
 		}
 		rangeStr := fmt.Sprintf("bytes=%d-%d", offset, end)
 
-		getResp, getErr := src.S3.GetObject(src.Ctx, srcBucket, srcKey, &s3api.GetObjectOptions{Range: rangeStr})
+		getResp, getErr := src.S3.GetObject(src.Ctx, srcBucket, srcKey, &s3iface.GetObjectOptions{Range: rangeStr})
 		if getErr != nil {
 			err = fmt.Errorf("get part %d: %s", partNum, FormatAPIError(getErr))
 			return err
@@ -148,7 +148,7 @@ func copyMultipartCrossEndpoint(
 			return err
 		}
 
-		completed = append(completed, s3api.CompletedPart{
+		completed = append(completed, s3iface.CompletedPart{
 			PartNumber: int(partNum),
 			ETag:       uploadResp.ETag,
 		})
@@ -176,9 +176,9 @@ func deleteObjectsBatch(c *S3Client, bucket string, keys []string) error {
 			end = len(keys)
 		}
 		batch := keys[i:end]
-		objs := make([]s3api.ObjectIdentifier, len(batch))
+		objs := make([]s3iface.ObjectIdentifier, len(batch))
 		for j, k := range batch {
-			objs[j] = s3api.ObjectIdentifier{Key: k}
+			objs[j] = s3iface.ObjectIdentifier{Key: k}
 		}
 		_, err := c.S3.DeleteObjects(c.Ctx, bucket, objs, true)
 		if err != nil {

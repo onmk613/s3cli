@@ -1,3 +1,5 @@
+//go:build !aws
+
 // list.go 实现对象列举: ListObjectsV2 与 ListObjectVersions, 以及对应的自动分页器.
 // 分页器封装了 continuation-token / key-marker 的传递逻辑, 简化全量遍历场景.
 

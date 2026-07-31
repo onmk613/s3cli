@@ -11,7 +11,8 @@
 //   - s3api.Client: 自建 HTTP + SigV4 签名 (默认)
 //   - awss3.AWS:    官方 aws-sdk-go-v2
 //
-// 上层 (internal/action) 只依赖 s3iface.S3Operations, 可在两后端间无缝切换.
+// 上层 (internal/action) 只依赖 s3iface.S3Operations; 具体后端由 build tag
+// 编译期选定 (默认 s3api, -tags aws 时为 awss3).
 package s3iface
 
 import (

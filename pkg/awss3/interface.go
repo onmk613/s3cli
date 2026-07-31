@@ -1,7 +1,10 @@
+//go:build aws
+
 // interface.go 定义 awss3.AWS: 基于官方 aws-sdk-go-v2 的 s3iface.S3Operations 实现.
 //
 // AWS 将所有 S3 操作适配到中立接口 s3iface.S3Operations, 与自建 HTTP 客户端
-// s3api.Client 可互换. 内部完成 SDK 类型 ↔ s3iface DTO 类型的双向转换.
+// s3api.Client 的语义对齐 (同一接口, 编译期二选一, 见 build tag "aws").
+// 内部完成 SDK 类型 ↔ s3iface DTO 类型的双向转换.
 
 package awss3
 

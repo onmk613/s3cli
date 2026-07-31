@@ -13,7 +13,7 @@ import (
 	"sync"
 	"sync/atomic"
 
-	"s3cli/pkg/s3api"
+	"s3cli/pkg/s3iface"
 )
 
 // StreamJob 流式操作中的一个任务。
@@ -192,7 +192,7 @@ func RunStream(ctx context.Context, cfg StreamConfig) error {
 // 用作 StreamConfig.Count 的 S3 端实现（get/cp/mv 的预统计）。
 // skipDirMarker=true 时跳过 0 字节的目录占位对象（与 get 的扫描逻辑保持一致）。
 func (c *S3Client) countS3Prefix(ctx context.Context, bucket, prefix string, skipDirMarker bool, add func(n, size int64)) error {
-	return c.forEachObject(ctx, bucket, prefix, func(obj s3api.ObjectInfo) error {
+	return c.forEachObject(ctx, bucket, prefix, func(obj s3iface.ObjectInfo) error {
 		size := obj.Size
 		if skipDirMarker && size == 0 {
 			key := obj.Key

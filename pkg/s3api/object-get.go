@@ -1,3 +1,5 @@
+//go:build !aws
+
 // object-get.go 实现对象下载 GetObject, 返回流式 body 及从响应头解析的全部元数据.
 // 支持 Range / 条件请求 / response-* 覆盖参数 / 版本指定.
 

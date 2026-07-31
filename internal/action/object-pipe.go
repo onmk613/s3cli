@@ -8,7 +8,7 @@ import (
 	"os"
 
 	myprint "s3cli/pkg/fmtutil"
-	"s3cli/pkg/s3api"
+	"s3cli/pkg/s3iface"
 )
 
 // PipeOptions pipe 命令参数
@@ -35,7 +35,7 @@ func (c *S3Client) PipeUpload(opt PipeOptions, bucket, key string) error {
 		}
 	}
 
-	putOpts := &s3api.PutObjectOptions{
+	putOpts := &s3iface.PutObjectOptions{
 		ContentType:  opt.ContentType,
 		StorageClass: opt.StorageClass,
 		Metadata:     opt.Metadata,

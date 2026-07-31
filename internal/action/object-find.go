@@ -10,7 +10,7 @@ import (
 	"time"
 
 	myprint "s3cli/pkg/fmtutil"
-	"s3cli/pkg/s3api"
+	"s3cli/pkg/s3iface"
 )
 
 // FindOptions find 命令参数
@@ -61,7 +61,7 @@ func (c *S3Client) FindObjects(opt FindOptions, bucket, prefix string) error {
 	var matched int
 	var totalSize int64
 	var limitReached bool
-	err = c.forEachObject(c.Ctx, bucket, prefix, func(obj s3api.ObjectInfo) error {
+	err = c.forEachObject(c.Ctx, bucket, prefix, func(obj s3iface.ObjectInfo) error {
 		key := obj.Key
 		size := obj.Size
 

@@ -1,3 +1,5 @@
+//go:build !aws
+
 // Package s3api 提供一个不依赖 AWS SDK 的轻量级 S3 兼容客户端.
 //
 // 它基于 net/http 直接实现 S3 REST API. 常规请求统一使用 AWS Signature Version 4

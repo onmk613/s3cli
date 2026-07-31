@@ -2,10 +2,9 @@
 // 组织面向命令的原子操作 (ls/put/get/cp/mv/rm/mirror/diff/info/tag/...).
 //
 // 设计要点:
-//   - S3Client.S3 字段是 s3iface.S3Operations 接口 (见 common.go), 底层既可以是
-//     自建请求的 s3api.Client, 也可以是官方 SDK 的 awss3.AWS. 两种后端由
-//     internal/client 按 alias 的 backend 配置 (或 --backend 开关) 构造,
-//     业务操作层不感知具体实现, 可无缝切换;
+//   - S3Client.S3 字段是 s3iface.S3Operations 接口 (见 common.go), 底层实现由
+//     build tag 编译期选定: 默认自建请求的 s3api.Client, 加 -tags aws 时为官方
+//     SDK 的 awss3.AWS (见 internal/client/backend-*.go). 业务操作层不感知具体实现;
 //   - 流式传输 (put/get/cp/mv) 统一走 stream.go 的 RunStream, 提供并发、进度条与
 //     预统计; 大文件自动走分片上传 (multipart-transfer.go) 并支持断点续传;
 //   - mirror (object-mirror.go) 做双端流式归并同步, diff (diff.go) 做内容比对.

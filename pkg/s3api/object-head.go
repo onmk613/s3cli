@@ -1,3 +1,5 @@
+//go:build !aws
+
 // object-head.go 实现 HeadObject (获取对象元数据, 不下载 body) 与 HeadBucket (探活桶),
 // 对象元数据全部来自 HTTP 响应头.
 

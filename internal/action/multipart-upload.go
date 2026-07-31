@@ -7,12 +7,12 @@ import (
 	"fmt"
 
 	myprint "s3cli/pkg/fmtutil"
-	"s3cli/pkg/s3api"
+	"s3cli/pkg/s3iface"
 )
 
 // MpuList 列出未完成的 multipart upload
 func (c *S3Client) MpuList(bucket, prefix string) error {
-	out, err := c.S3.ListMultipartUploads(c.Ctx, bucket, &s3api.ListMultipartUploadsOptions{
+	out, err := c.S3.ListMultipartUploads(c.Ctx, bucket, &s3iface.ListMultipartUploadsOptions{
 		Prefix: prefix,
 	})
 	if err != nil {
@@ -64,7 +64,7 @@ func (c *S3Client) MpuAbort(bucket, prefix, uploadID string) error {
 	}
 
 	// 批量: 找到 prefix 下所有 in-progress, 全部 abort
-	out, err := c.S3.ListMultipartUploads(c.Ctx, bucket, &s3api.ListMultipartUploadsOptions{Prefix: prefix})
+	out, err := c.S3.ListMultipartUploads(c.Ctx, bucket, &s3iface.ListMultipartUploadsOptions{Prefix: prefix})
 	if err != nil {
 		return fmt.Errorf("list mpu: %s", FormatAPIError(err))
 	}
@@ -82,7 +82,7 @@ func (c *S3Client) MpuAbort(bucket, prefix, uploadID string) error {
 
 // findUploadKey 在 prefix 下列举 in-progress multipart uploads，
 func (c *S3Client) findUploadKey(bucket, prefix, uploadID string) (string, error) {
-	out, err := c.S3.ListMultipartUploads(c.Ctx, bucket, &s3api.ListMultipartUploadsOptions{
+	out, err := c.S3.ListMultipartUploads(c.Ctx, bucket, &s3iface.ListMultipartUploadsOptions{
 		Prefix: prefix,
 	})
 	if err != nil {

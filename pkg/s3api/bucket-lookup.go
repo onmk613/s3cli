@@ -1,3 +1,5 @@
+//go:build !aws
+
 // bucket-lookup.go 处理 bucket 寻址方式 (path-style / virtual-host-style / 自定义模板),
 // 将 (bucket, object, query) 解析为最终请求 URL. 当自定义模板引用 %(region) 占位符时,
 // 会通过 GetBucketLocation 探测 bucket 的实际 region (带进程内缓存).

@@ -12,7 +12,7 @@ import (
 	"sync"
 
 	myprint "s3cli/pkg/fmtutil"
-	"s3cli/pkg/s3api"
+	"s3cli/pkg/s3iface"
 )
 
 // IsCanceled 判断 err 是否由用户主动取消（Ctrl+C / SIGTERM）或超时引起。
@@ -32,7 +32,7 @@ func FormatAPIError(err error) error {
 	if err == nil {
 		return nil
 	}
-	var apiErr *s3api.ErrorResponse
+	var apiErr *s3iface.ErrorResponse
 	if errors.As(err, &apiErr) {
 		return fmt.Errorf("%s: %s", apiErr.Code, apiErr.Message)
 	}
