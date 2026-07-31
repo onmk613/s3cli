@@ -11,7 +11,7 @@ import (
 )
 
 // Info 打印桶或对象的元信息
-func (c *S3Client) Info(bucket, prefix string) error {
+func (c *Action) Info(bucket, prefix string) error {
 	if prefix == "" {
 		return c.infoBucket(bucket)
 	}
@@ -27,7 +27,7 @@ func (c *S3Client) Info(bucket, prefix string) error {
 	return c.infoObject(bucket, prefix)
 }
 
-func (c *S3Client) infoObject(bucket, key string) error {
+func (c *Action) infoObject(bucket, key string) error {
 	head, err := c.S3.HeadObject(c.Ctx, bucket, key, "")
 	if err != nil {
 		return fmt.Errorf("head object: %s", FormatAPIError(err))
@@ -74,7 +74,7 @@ func (c *S3Client) infoObject(bucket, key string) error {
 	return nil
 }
 
-func (c *S3Client) infoBucket(bucket string) error {
+func (c *Action) infoBucket(bucket string) error {
 	info := map[string]any{"Bucket": bucket}
 
 	// Location 同时充当 bucket 存在性检查:

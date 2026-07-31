@@ -19,7 +19,7 @@ func NewFindCmd() *cobra.Command {
 		Short:             "Search objects by name pattern, size and modification time",
 		Args:              cobra.MinimumNArgs(1),
 		ValidArgsFunction: AutoCompletePath,
-		RunE: NewRunE(func(S3 action.S3Client, _ *Context, s3path *s3path.Path) error {
+		RunE: NewRunE(func(S3 action.Action, _ *Context, s3path *s3path.Path) error {
 			return S3.FindObjects(findOpt, s3path.Bucket, s3path.Key)
 		}, nil),
 	}
@@ -42,7 +42,7 @@ func NewTreeCmd() *cobra.Command {
 		Short:             "Display objects as a tree of directories",
 		Args:              cobra.MinimumNArgs(1),
 		ValidArgsFunction: AutoCompletePath,
-		RunE: NewRunE(func(S3 action.S3Client, _ *Context, s3path *s3path.Path) error {
+		RunE: NewRunE(func(S3 action.Action, _ *Context, s3path *s3path.Path) error {
 			return S3.TreeObjects(treeOpt, s3path.Bucket, s3path.Key)
 		}, nil),
 	}

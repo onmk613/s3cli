@@ -357,7 +357,7 @@ func TestParseTagPairs(t *testing.T) {
 }
 
 func TestS3PathFormatting(t *testing.T) {
-	c := &S3Client{Alias: "prod"}
+	c := &Action{Alias: "prod"}
 	if got := c.S3Path("bucket", ""); got != "prod:bucket" {
 		t.Errorf("got %q", got)
 	}

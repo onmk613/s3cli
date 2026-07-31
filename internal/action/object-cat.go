@@ -15,7 +15,7 @@ type CatOptions struct {
 	Range string // HTTP Range header (e.g. "bytes=0-1023")
 }
 
-func (c *S3Client) CatObject(opt CatOptions, bucket, key string) error {
+func (c *Action) CatObject(opt CatOptions, bucket, key string) error {
 	if key == "" {
 		return fmt.Errorf("cat requires an object key, not a bucket")
 	}

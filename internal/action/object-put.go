@@ -30,7 +30,7 @@ type PutOptions struct {
 }
 
 // PutObject 上传本地文件或目录到 S3
-func (c *S3Client) PutObject(opt PutOptions, bucket, prefix, localPath string, isS3Dir bool) error {
+func (c *Action) PutObject(opt PutOptions, bucket, prefix, localPath string, isS3Dir bool) error {
 	AddMime()
 	if opt.Concurrency <= 0 {
 		opt.Concurrency = defaultConcurrency
@@ -85,7 +85,7 @@ func (c *S3Client) PutObject(opt PutOptions, bucket, prefix, localPath string, i
 }
 
 // uploadDirStreaming 流式扫描本地目录并上传，带进度条。
-func (c *S3Client) uploadDirStreaming(opt PutOptions, bucket, key, localPath string) error {
+func (c *Action) uploadDirStreaming(opt PutOptions, bucket, key, localPath string) error {
 	return RunStream(c.Ctx, StreamConfig{
 		Concurrency: opt.Concurrency,
 		Label:       "put",
@@ -137,7 +137,7 @@ func (c *S3Client) uploadDirStreaming(opt PutOptions, bucket, key, localPath str
 	})
 }
 
-func (c *S3Client) uploadFile(ctx context.Context, opt PutOptions, mimeType, bucket, fileKey, filePath string, report func(n int64)) error {
+func (c *Action) uploadFile(ctx context.Context, opt PutOptions, mimeType, bucket, fileKey, filePath string, report func(n int64)) error {
 	// 流式上传: 打开文件句柄直接传给 s3api, 避免整个文件读入内存 (大文件不再 OOM).
 	f, err := os.Open(filePath)
 	if err != nil {

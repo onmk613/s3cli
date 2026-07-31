@@ -11,7 +11,7 @@ import (
 )
 
 // SetVersioning 设置桶版本控制状态 (Enabled / Suspended).
-func (c *S3Client) SetVersioning(bucket string, status string) error {
+func (c *Action) SetVersioning(bucket string, status string) error {
 	if status == "" {
 		return errors.New("status cannot be empty")
 	}
@@ -25,7 +25,7 @@ func (c *S3Client) SetVersioning(bucket string, status string) error {
 }
 
 // GetVersioning 查询并打印桶的版本控制状态; 从未启用时显示 (disabled).
-func (c *S3Client) GetVersioning(bucket string) error {
+func (c *Action) GetVersioning(bucket string) error {
 	status, err := c.S3.GetBucketVersioning(c.Ctx, bucket)
 	if err != nil {
 		return fmt.Errorf("get versioning %s: %s", bucket, FormatAPIError(err))

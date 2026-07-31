@@ -21,7 +21,7 @@ func roundUpToBlock(size, block int64) int64 {
 }
 
 // DuObject 显示磁盘占用, 只支持bucket及以下级别
-func (c *S3Client) DuObject(opt DuOptions, bucket, prefix string) error {
+func (c *Action) DuObject(opt DuOptions, bucket, prefix string) error {
 	var totalSize, diskSize, count int64
 	err := c.forEachObject(c.Ctx, bucket, prefix, func(o s3iface.ObjectInfo) error {
 		sz := o.Size

@@ -10,7 +10,7 @@ import (
 )
 
 // SetTag 设置桶或对象标签; prefix 为空时操作桶标签, 否则操作对象标签.
-func (c *S3Client) SetTag(bucket, prefix string, tagStr map[string]string) error {
+func (c *Action) SetTag(bucket, prefix string, tagStr map[string]string) error {
 	tags := parseTagPairs(tagStr)
 	if prefix == "" {
 		if err := c.S3.SetBucketTagging(c.Ctx, bucket, tags); err != nil {
@@ -29,7 +29,7 @@ func (c *S3Client) SetTag(bucket, prefix string, tagStr map[string]string) error
 }
 
 // GetTag 查询并打印桶或对象的标签集合.
-func (c *S3Client) GetTag(bucket, prefix string) error {
+func (c *Action) GetTag(bucket, prefix string) error {
 	var tags []s3iface.Tagging
 	if prefix == "" {
 		result, err := c.S3.GetBucketTagging(c.Ctx, bucket)
@@ -57,7 +57,7 @@ func (c *S3Client) GetTag(bucket, prefix string) error {
 }
 
 // DelTag 删除桶或对象的标签集合.
-func (c *S3Client) DelTag(bucket, prefix string) error {
+func (c *Action) DelTag(bucket, prefix string) error {
 	if prefix == "" {
 		if err := c.S3.DeleteBucketTagging(c.Ctx, bucket); err != nil {
 			return fmt.Errorf("delete bucket tag: %s", FormatAPIError(err))

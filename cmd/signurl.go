@@ -16,7 +16,7 @@ func NewShareCmd() *cobra.Command {
 		Short:             "Print pre-signed S3 URLs",
 		Args:              cobra.MinimumNArgs(1),
 		ValidArgsFunction: AutoCompletePath,
-		RunE: NewRunE(func(S3 action.S3Client, _ *Context, s3path *s3path.Path) error {
+		RunE: NewRunE(func(S3 action.Action, _ *Context, s3path *s3path.Path) error {
 			return S3.Share(signOpt, s3path.Bucket, s3path.Key)
 		}, nil),
 	}

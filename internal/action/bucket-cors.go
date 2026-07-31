@@ -11,7 +11,7 @@ import (
 )
 
 // SetCors 给桶设置 CORS 规则 (XML 或 JSON 自动识别)
-func (c *S3Client) SetCors(corsFile string, bucket string) error {
+func (c *Action) SetCors(corsFile string, bucket string) error {
 	data, format, err := loadAWSConfigFile(corsFile)
 	if err != nil {
 		return err
@@ -35,7 +35,7 @@ func (c *S3Client) SetCors(corsFile string, bucket string) error {
 }
 
 // GetCors 打印桶的 CORS 规则 (JSON)
-func (c *S3Client) GetCors(bucket string) error {
+func (c *Action) GetCors(bucket string) error {
 	cfg, err := c.S3.GetBucketCors(c.Ctx, bucket)
 	if err != nil {
 		return fmt.Errorf("get cors %s: %s", bucket, FormatAPIError(err))
@@ -44,7 +44,7 @@ func (c *S3Client) GetCors(bucket string) error {
 }
 
 // DelCors 删除桶 CORS
-func (c *S3Client) DelCors(bucket string) error {
+func (c *Action) DelCors(bucket string) error {
 	return c.deleteBucketConfig(bucket, "cors", "CORS configuration deleted for %s %s\n",
 		func() error { return c.S3.DeleteBucketCors(c.Ctx, bucket) })
 }

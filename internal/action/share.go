@@ -19,7 +19,7 @@ type ShareOptions struct {
 }
 
 // Share 生成预签名 URL
-func (c *S3Client) Share(opt ShareOptions, bucket, key string) error {
+func (c *Action) Share(opt ShareOptions, bucket, key string) error {
 	method := strings.ToUpper(strings.TrimSpace(opt.Method))
 	if method == "" {
 		method = "GET"

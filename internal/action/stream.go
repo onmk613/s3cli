@@ -191,7 +191,7 @@ func RunStream(ctx context.Context, cfg StreamConfig) error {
 // countS3Prefix 遍历 bucket 下 prefix 的所有对象，通过 add 增量上报对象数与字节数，
 // 用作 StreamConfig.Count 的 S3 端实现（get/cp/mv 的预统计）。
 // skipDirMarker=true 时跳过 0 字节的目录占位对象（与 get 的扫描逻辑保持一致）。
-func (c *S3Client) countS3Prefix(ctx context.Context, bucket, prefix string, skipDirMarker bool, add func(n, size int64)) error {
+func (c *Action) countS3Prefix(ctx context.Context, bucket, prefix string, skipDirMarker bool, add func(n, size int64)) error {
 	return c.forEachObject(ctx, bucket, prefix, func(obj s3iface.ObjectInfo) error {
 		size := obj.Size
 		if skipDirMarker && size == 0 {

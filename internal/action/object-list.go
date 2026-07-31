@@ -13,7 +13,7 @@ import (
 
 // ListObjects 列出桶 / 对象. bucket 为空时列出当前凭证下所有桶;
 // 否则按 prefix 列出对象, listAll=true 递归列出全部层级.
-func (c *S3Client) ListObjects(bucket, prefix string, listAll bool) error {
+func (c *Action) ListObjects(bucket, prefix string, listAll bool) error {
 	if bucket == "" {
 		buckets, err := c.S3.ListBuckets(c.Ctx)
 		if err != nil {
@@ -28,7 +28,7 @@ func (c *S3Client) ListObjects(bucket, prefix string, listAll bool) error {
 	return c.listObjectsV2(bucket, prefix, listAll)
 }
 
-func (c *S3Client) listObjectsV2(bucket, prefix string, listAll bool) error {
+func (c *Action) listObjectsV2(bucket, prefix string, listAll bool) error {
 	opts := &s3iface.ListObjectsV2Options{
 		Prefix: prefix,
 	}

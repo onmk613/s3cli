@@ -25,7 +25,7 @@ type FindOptions struct {
 }
 
 // FindObjects 按条件搜索 s3://bucket/prefix 下的对象
-func (c *S3Client) FindObjects(opt FindOptions, bucket, prefix string) error {
+func (c *Action) FindObjects(opt FindOptions, bucket, prefix string) error {
 	if bucket == "" {
 		return fmt.Errorf("find requires a bucket")
 	}

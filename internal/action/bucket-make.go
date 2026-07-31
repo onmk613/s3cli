@@ -22,7 +22,7 @@ type MakeBucketOptions struct {
 //
 // 桶创建成功后的各配置子步骤 (cors/policy/lifecycle/versioning/quota) 任一失败
 // 都会聚合为错误返回 (桶本身仍在), 避免脚本依据退出码误判全部成功。
-func (c *S3Client) MakeBuckets(opt MakeBucketOptions, bucket string) error {
+func (c *Action) MakeBuckets(opt MakeBucketOptions, bucket string) error {
 	if err := c.S3.CreateBucket(c.Ctx, bucket, nil); err != nil {
 		return err
 	}

@@ -10,7 +10,7 @@ import (
 )
 
 // ListObjectVersions 列出对象版本 + delete-marker
-func (c *S3Client) ListObjectVersions(bucket, prefix string) error {
+func (c *Action) ListObjectVersions(bucket, prefix string) error {
 	paginator := c.S3.NewListObjectVersionsPaginator(bucket,
 		&s3iface.ListObjectVersionsOptions{Prefix: prefix})
 

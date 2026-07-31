@@ -26,7 +26,7 @@ type LifecycleOptions struct {
 
 // SetLifecycle 设置生命周期: ConfigFile 非空时从本地文件 (JSON/XML) 加载,
 // 否则按 Prefix + TTL 生成一条过期规则. 两种模式必须给出其一.
-func (c *S3Client) SetLifecycle(opt LifecycleOptions, bucket string) error {
+func (c *Action) SetLifecycle(opt LifecycleOptions, bucket string) error {
 	var cfg *s3.LifecycleConfig
 	if opt.ConfigFile != "" {
 		loaded, err := loadLifecycleFile(opt.ConfigFile)
@@ -81,7 +81,6 @@ func loadLifecycleFile(file string) (*s3.LifecycleConfig, error) {
 // buildTTLLifecycle 按前缀 + 过期天数构造一条 Enabled 过期规则.
 // XMLNS 留空: SetBucketLifecycle -> LifecycleConfig.ToXML 会自动补齐.
 func buildTTLLifecycle(prefix string, days int) *s3.LifecycleConfig {
-	d := days
 	return &s3.LifecycleConfig{
 		Rules: []s3.LifecycleRule{
 			{
@@ -89,7 +88,7 @@ func buildTTLLifecycle(prefix string, days int) *s3.LifecycleConfig {
 				Status: "Enabled",
 				Filter: &s3.Filter{Prefix: prefix},
 				Expiration: &s3.Expiration{
-					Days: &d,
+					Days: new(days),
 				},
 			},
 		},
@@ -145,7 +144,7 @@ func parseTTLDays(s string) (int, error) {
 }
 
 // GetLifecycle 打印生命周期.
-func (c *S3Client) GetLifecycle(bucket string) error {
+func (c *Action) GetLifecycle(bucket string) error {
 	cfg, err := c.S3.GetBucketLifecycle(c.Ctx, bucket)
 	if err != nil {
 		return fmt.Errorf("get lifecycle %s: %s", bucket, FormatAPIError(err))
@@ -154,7 +153,7 @@ func (c *S3Client) GetLifecycle(bucket string) error {
 }
 
 // DelLifecycle 删除生命周期.
-func (c *S3Client) DelLifecycle(bucket string) error {
+func (c *Action) DelLifecycle(bucket string) error {
 	return c.deleteBucketConfig(bucket, "lifecycle", "Lifecycle deleted for %s %s\n",
 		func() error { return c.S3.DeleteBucketLifecycle(c.Ctx, bucket) })
 }

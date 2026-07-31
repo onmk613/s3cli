@@ -26,7 +26,7 @@ func NewSetTagCmd() *cobra.Command {
 		Short:             "Set tag(s) on a bucket or object(s)",
 		Args:              cobra.MinimumNArgs(1),
 		ValidArgsFunction: AutoCompletePath,
-		RunE: NewRunE(func(S3 action.S3Client, _ *Context, s3path *s3path.Path) error {
+		RunE: NewRunE(func(S3 action.Action, _ *Context, s3path *s3path.Path) error {
 			return S3.SetTag(s3path.Bucket, s3path.Key, tagString)
 		}, nil),
 	}
@@ -42,7 +42,7 @@ func NewGetTagCmd() *cobra.Command {
 		Short:             "Get tag(s) of bucket(s) or object(s)",
 		Args:              cobra.MinimumNArgs(1),
 		ValidArgsFunction: AutoCompletePath,
-		RunE: NewRunE(func(S3 action.S3Client, _ *Context, s3path *s3path.Path) error {
+		RunE: NewRunE(func(S3 action.Action, _ *Context, s3path *s3path.Path) error {
 			return S3.GetTag(s3path.Bucket, s3path.Key)
 		}, nil),
 	}
@@ -55,7 +55,7 @@ func NewDelTagCmd() *cobra.Command {
 		Short:             "Delete tag(s) from bucket(s) or object(s)",
 		Args:              cobra.MinimumNArgs(1),
 		ValidArgsFunction: AutoCompletePath,
-		RunE: NewRunE(func(S3 action.S3Client, _ *Context, s3path *s3path.Path) error {
+		RunE: NewRunE(func(S3 action.Action, _ *Context, s3path *s3path.Path) error {
 			return S3.DelTag(s3path.Bucket, s3path.Key)
 		}, nil),
 	}

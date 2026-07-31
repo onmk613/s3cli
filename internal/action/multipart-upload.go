@@ -11,7 +11,7 @@ import (
 )
 
 // MpuList 列出未完成的 multipart upload
-func (c *S3Client) MpuList(bucket, prefix string) error {
+func (c *Action) MpuList(bucket, prefix string) error {
 	out, err := c.S3.ListMultipartUploads(c.Ctx, bucket, &s3iface.ListMultipartUploadsOptions{
 		Prefix: prefix,
 	})
@@ -35,7 +35,7 @@ func (c *S3Client) MpuList(bucket, prefix string) error {
 }
 
 // MpuAbort 中止指定 uploadId，或一次性清空 prefix 下所有
-func (c *S3Client) MpuAbort(bucket, prefix, uploadID string) error {
+func (c *Action) MpuAbort(bucket, prefix, uploadID string) error {
 	// 单条指定 uploadId
 	if uploadID != "" {
 		// AbortMultipartUpload 需要 (Bucket, Key, UploadId) 三元组。
@@ -81,7 +81,7 @@ func (c *S3Client) MpuAbort(bucket, prefix, uploadID string) error {
 }
 
 // findUploadKey 在 prefix 下列举 in-progress multipart uploads，
-func (c *S3Client) findUploadKey(bucket, prefix, uploadID string) (string, error) {
+func (c *Action) findUploadKey(bucket, prefix, uploadID string) (string, error) {
 	out, err := c.S3.ListMultipartUploads(c.Ctx, bucket, &s3iface.ListMultipartUploadsOptions{
 		Prefix: prefix,
 	})

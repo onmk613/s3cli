@@ -26,7 +26,7 @@ func NewLsCmd() *cobra.Command {
 		Short:             "List objects or bucket",
 		ValidArgsFunction: AutoCompletePath,
 		Args:              cobra.MinimumNArgs(1),
-		RunE: NewRunE(func(S3 action.S3Client, opts *Context, s3path *s3path.Path) error {
+		RunE: NewRunE(func(S3 action.Action, opts *Context, s3path *s3path.Path) error {
 			return S3.ListObjects(s3path.Bucket, s3path.Key, opts.Global.ListAll)
 		}, &opts),
 	}
@@ -51,7 +51,7 @@ func NewDuCmd() *cobra.Command {
 				}
 				duOpt.BlockSize = bs
 			}
-			run := NewRunE(func(S3 action.S3Client, opts *Context, s3path *s3path.Path) error {
+			run := NewRunE(func(S3 action.Action, opts *Context, s3path *s3path.Path) error {
 				return S3.DuObject(duOpt, s3path.Bucket, s3path.Key)
 			}, &opts)
 			return run(cmd, args)
@@ -67,7 +67,7 @@ func NewInfoCmd() *cobra.Command {
 		Short:             "Show information about bucket or object",
 		ValidArgsFunction: AutoCompletePath,
 		Args:              cobra.MinimumNArgs(1),
-		RunE: NewRunE(func(S3 action.S3Client, opts *Context, s3path *s3path.Path) error {
+		RunE: NewRunE(func(S3 action.Action, opts *Context, s3path *s3path.Path) error {
 			return S3.Info(s3path.Bucket, s3path.Key)
 		}, nil),
 	}
@@ -81,7 +81,7 @@ func NewLsVersionsCmd() *cobra.Command {
 		Short:             "List object versions (including delete markers)",
 		ValidArgsFunction: AutoCompletePath,
 		Args:              cobra.MinimumNArgs(1),
-		RunE: NewRunE(func(S3 action.S3Client, _ *Context, s3path *s3path.Path) error {
+		RunE: NewRunE(func(S3 action.Action, _ *Context, s3path *s3path.Path) error {
 			return S3.ListObjectVersions(s3path.Bucket, s3path.Key)
 		}, nil),
 	}

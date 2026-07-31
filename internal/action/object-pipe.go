@@ -22,7 +22,7 @@ type PipeOptions struct {
 }
 
 // PipeUpload 从 stdin 读取数据并上传到 s3://bucket/key
-func (c *S3Client) PipeUpload(opt PipeOptions, bucket, key string) error {
+func (c *Action) PipeUpload(opt PipeOptions, bucket, key string) error {
 	if key == "" {
 		return fmt.Errorf("pipe requires an object key")
 	}

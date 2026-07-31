@@ -5,5 +5,5 @@ bin/
 .idea/
 .github/
 vendor/
-*test/
 docs/
+*test/

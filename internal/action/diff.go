@@ -180,7 +180,7 @@ func endpointIsDir(e *DiffEndpoint) (bool, error) {
 	if ctx == nil {
 		ctx = context.Background()
 	}
-	s3client := &S3Client{S3: e.S3, Ctx: ctx}
+	s3client := &Action{S3: e.S3, Ctx: ctx}
 	isFile, err := s3client.IsS3File(e.Bucket, e.Key)
 	if err == nil {
 		return !isFile, nil

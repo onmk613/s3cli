@@ -29,7 +29,7 @@ type ObjectInfo struct {
 //
 // 该函数不在内存里缓存全集 —— 列举与下游消费同时进行, 内存恒定.
 // 出错时把错误写入 errCh 并提前关闭 out.
-func streamObjects(c *S3Client, bucket, prefix string, out chan<- ObjectInfo, errCh chan<- error) {
+func streamObjects(c *Action, bucket, prefix string, out chan<- ObjectInfo, errCh chan<- error) {
 	defer close(out)
 
 	paginator := c.S3.NewListObjectsV2Paginator(bucket, &s3iface.ListObjectsV2Options{Prefix: prefix})

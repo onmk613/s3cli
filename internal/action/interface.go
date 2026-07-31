@@ -52,3 +52,6 @@ type CmdOperations interface {
 	IsS3File(bucket, key string) (bool, error)
 	GetS3Credentials() (Cred, error)
 }
+
+// 确保
+var _ CmdOperations = (*Action)(nil)

@@ -38,7 +38,7 @@ func CreateBucketCmd() *cobra.Command {
 		Use:   "create [alias:bucket] ...",
 		Short: "Create bucket",
 		Args:  cobra.MinimumNArgs(1),
-		RunE: NewRunE(func(S3 action.S3Client, _ *Context, s3path *s3path.Path) error {
+		RunE: NewRunE(func(S3 action.Action, _ *Context, s3path *s3path.Path) error {
 			return S3.MakeBuckets(mkOpt, s3path.Bucket)
 		}, new(newCmdContext())),
 	}
@@ -57,7 +57,7 @@ func RemoveBucketCmd() *cobra.Command {
 		Use:   "remove [alias:bucket] ...",
 		Short: "Remove bucket",
 		Args:  cobra.MinimumNArgs(1),
-		RunE: NewRunE(func(S3 action.S3Client, opts *Context, s3path *s3path.Path) error {
+		RunE: NewRunE(func(S3 action.Action, opts *Context, s3path *s3path.Path) error {
 			return S3.RemoveBuckets(s3path.Bucket, opts.Global.Force)
 		}, &opts),
 	}
@@ -82,7 +82,7 @@ func CorsSetCmd() *cobra.Command {
 		Short:             "Set CORS rules for bucket (xml or json, AWS CLI compatible)",
 		ValidArgsFunction: CompleteLocalFirst(AutoCompleteBucket),
 		Args:              cobra.MinimumNArgs(2),
-		RunE: NewRunE(func(S3 action.S3Client, opts *Context, s3path *s3path.Path) error {
+		RunE: NewRunE(func(S3 action.Action, opts *Context, s3path *s3path.Path) error {
 			return S3.SetCors(opts.Global.Args, s3path.Bucket)
 		}, &Context{ArgParseMode: ParseArgsAndS3Path}),
 	}
@@ -94,7 +94,7 @@ func CorsGetCmd() *cobra.Command {
 		Short:             "Print CORS rules of bucket(s) as JSON",
 		ValidArgsFunction: AutoCompleteBucket,
 		Args:              cobra.MinimumNArgs(1),
-		RunE: NewRunE(func(S3 action.S3Client, _ *Context, s3path *s3path.Path) error {
+		RunE: NewRunE(func(S3 action.Action, _ *Context, s3path *s3path.Path) error {
 			return S3.GetCors(s3path.Bucket)
 		}, nil),
 	}
@@ -106,7 +106,7 @@ func CorsDelCmd() *cobra.Command {
 		Short:             "Delete CORS rules for bucket(s)",
 		ValidArgsFunction: AutoCompleteBucket,
 		Args:              cobra.MinimumNArgs(1),
-		RunE: NewRunE(func(S3 action.S3Client, _ *Context, s3path *s3path.Path) error {
+		RunE: NewRunE(func(S3 action.Action, _ *Context, s3path *s3path.Path) error {
 			return S3.DelCors(s3path.Bucket)
 		}, nil),
 	}
@@ -129,7 +129,7 @@ func SetLifecycleSetCmd() *cobra.Command {
 		Short:             "Set lifecycle rules (by --prefix/--ttl flags or JSON/XML file)",
 		ValidArgsFunction: AutoCompleteBucket,
 		Args:              cobra.MinimumNArgs(1),
-		RunE: NewRunE(func(S3 action.S3Client, _ *Context, s3path *s3path.Path) error {
+		RunE: NewRunE(func(S3 action.Action, _ *Context, s3path *s3path.Path) error {
 			return S3.SetLifecycle(opt, s3path.Bucket)
 		}, nil),
 	}
@@ -145,7 +145,7 @@ func LifecycleGetCmd() *cobra.Command {
 		Short:             "Print current lifecycle rules (JSON)",
 		ValidArgsFunction: AutoCompleteBucket,
 		Args:              cobra.MinimumNArgs(1),
-		RunE: NewRunE(func(S3 action.S3Client, _ *Context, s3path *s3path.Path) error {
+		RunE: NewRunE(func(S3 action.Action, _ *Context, s3path *s3path.Path) error {
 			return S3.GetLifecycle(s3path.Bucket)
 		}, nil),
 	}
@@ -157,7 +157,7 @@ func LifecycleDelCmd() *cobra.Command {
 		Short:             "Delete all lifecycle rules",
 		ValidArgsFunction: AutoCompleteBucket,
 		Args:              cobra.MinimumNArgs(1),
-		RunE: NewRunE(func(S3 action.S3Client, _ *Context, s3path *s3path.Path) error {
+		RunE: NewRunE(func(S3 action.Action, _ *Context, s3path *s3path.Path) error {
 			return S3.DelLifecycle(s3path.Bucket)
 		}, nil),
 	}
@@ -187,7 +187,7 @@ func PolicySetCmd() *cobra.Command {
 		Short:             "Set bucket policy (canned type or custom JSON file)",
 		ValidArgsFunction: AutoCompleteBucket,
 		Args:              cobra.MinimumNArgs(1),
-		RunE: NewRunE(func(S3 action.S3Client, _ *Context, s3path *s3path.Path) error {
+		RunE: NewRunE(func(S3 action.Action, _ *Context, s3path *s3path.Path) error {
 			return S3.SetPolicy(opt, s3path.Bucket)
 		}, nil),
 	}
@@ -203,7 +203,7 @@ func PolicyGetCmd() *cobra.Command {
 		Short:             "Print current bucket policy (pretty JSON)",
 		ValidArgsFunction: AutoCompleteBucket,
 		Args:              cobra.MinimumNArgs(1),
-		RunE: NewRunE(func(S3 action.S3Client, _ *Context, s3path *s3path.Path) error {
+		RunE: NewRunE(func(S3 action.Action, _ *Context, s3path *s3path.Path) error {
 			return S3.GetPolicy(s3path.Bucket)
 		}, nil),
 	}
@@ -215,7 +215,7 @@ func PolicyDelCmd() *cobra.Command {
 		Short:             "Delete bucket policy",
 		ValidArgsFunction: AutoCompleteBucket,
 		Args:              cobra.MinimumNArgs(1),
-		RunE: NewRunE(func(S3 action.S3Client, _ *Context, s3path *s3path.Path) error {
+		RunE: NewRunE(func(S3 action.Action, _ *Context, s3path *s3path.Path) error {
 			return S3.DelPolicy(s3path.Bucket)
 		}, nil),
 	}
@@ -237,7 +237,7 @@ func EventSetCmd() *cobra.Command {
 		Short:             "Set bucket event notifications (SQS/SNS/Lambda, JSON, AWS CLI compatible)",
 		ValidArgsFunction: CompleteLocalFirst(AutoCompleteBucket),
 		Args:              cobra.MinimumNArgs(2),
-		RunE: NewRunE(func(S3 action.S3Client, opts *Context, s3path *s3path.Path) error {
+		RunE: NewRunE(func(S3 action.Action, opts *Context, s3path *s3path.Path) error {
 			return S3.SetNotification(opts.Global.Args, s3path.Bucket)
 		}, &Context{ArgParseMode: ParseArgsAndS3Path}),
 	}
@@ -249,7 +249,7 @@ func EventGetCmd() *cobra.Command {
 		Short:             "Print bucket(s) event notification configuration (JSON)",
 		ValidArgsFunction: AutoCompleteBucket,
 		Args:              cobra.MinimumNArgs(1),
-		RunE: NewRunE(func(S3 action.S3Client, _ *Context, s3path *s3path.Path) error {
+		RunE: NewRunE(func(S3 action.Action, _ *Context, s3path *s3path.Path) error {
 			return S3.GetNotification(s3path.Bucket)
 		}, nil),
 	}
@@ -261,7 +261,7 @@ func EventDelCmd() *cobra.Command {
 		Short:             "Remove all bucket event notification configurations",
 		ValidArgsFunction: AutoCompleteBucket,
 		Args:              cobra.MinimumNArgs(1),
-		RunE: NewRunE(func(S3 action.S3Client, _ *Context, s3path *s3path.Path) error {
+		RunE: NewRunE(func(S3 action.Action, _ *Context, s3path *s3path.Path) error {
 			return S3.DelNotification(s3path.Bucket)
 		}, nil),
 	}
@@ -284,7 +284,7 @@ func EncryptionSetCmd() *cobra.Command {
 		Short:             "Set bucket default encryption (SSE-S3 / SSE-KMS)",
 		ValidArgsFunction: AutoCompleteBucket,
 		Args:              cobra.MinimumNArgs(1),
-		RunE: NewRunE(func(S3 action.S3Client, _ *Context, s3path *s3path.Path) error {
+		RunE: NewRunE(func(S3 action.Action, _ *Context, s3path *s3path.Path) error {
 			return S3.SetEncryption(encOpt, s3path.Bucket)
 		}, nil),
 	}
@@ -302,7 +302,7 @@ func EncryptionGetCmd() *cobra.Command {
 		Short:             "Print bucket(s) default encryption configuration (JSON)",
 		ValidArgsFunction: AutoCompleteBucket,
 		Args:              cobra.MinimumNArgs(1),
-		RunE: NewRunE(func(S3 action.S3Client, _ *Context, s3path *s3path.Path) error {
+		RunE: NewRunE(func(S3 action.Action, _ *Context, s3path *s3path.Path) error {
 			return S3.GetEncryption(s3path.Bucket)
 		}, nil),
 	}
@@ -314,7 +314,7 @@ func EncryptionDelCmd() *cobra.Command {
 		Short:             "Delete bucket(s) default encryption configuration",
 		ValidArgsFunction: AutoCompleteBucket,
 		Args:              cobra.MinimumNArgs(1),
-		RunE: NewRunE(func(S3 action.S3Client, _ *Context, s3path *s3path.Path) error {
+		RunE: NewRunE(func(S3 action.Action, _ *Context, s3path *s3path.Path) error {
 			return S3.DelEncryption(s3path.Bucket)
 		}, nil),
 	}
@@ -338,7 +338,7 @@ func VersioningSetCmd() *cobra.Command {
 		Short:             "Set bucket versioning status",
 		ValidArgsFunction: AutoCompleteBucket,
 		Args:              cobra.MinimumNArgs(1),
-		RunE: NewRunE(func(S3 action.S3Client, _ *Context, s3path *s3path.Path) error {
+		RunE: NewRunE(func(S3 action.Action, _ *Context, s3path *s3path.Path) error {
 			return S3.SetVersioning(s3path.Bucket, set)
 		}, nil),
 	}
@@ -357,7 +357,7 @@ func VersioningInfoCmd() *cobra.Command {
 		Short:             "Print current versioning status",
 		ValidArgsFunction: AutoCompleteBucket,
 		Args:              cobra.MinimumNArgs(1),
-		RunE: NewRunE(func(S3 action.S3Client, _ *Context, s3path *s3path.Path) error {
+		RunE: NewRunE(func(S3 action.Action, _ *Context, s3path *s3path.Path) error {
 			return S3.GetVersioning(s3path.Bucket)
 		}, nil),
 	}

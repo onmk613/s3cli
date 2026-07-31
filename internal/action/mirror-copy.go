@@ -25,7 +25,7 @@ func sameEndpoint(src, tgt *S3PathOptions) bool {
 }
 
 // copyObjectSameEndpoint 同 endpoint 服务端复制.
-func copyObjectSameEndpoint(c *S3Client, srcBucket, srcKey, tgtBucket, tgtKey string) error {
+func copyObjectSameEndpoint(c *Action, srcBucket, srcKey, tgtBucket, tgtKey string) error {
 	_, err := c.S3.CopyObject(c.Ctx, srcBucket, srcKey, tgtBucket, tgtKey, &s3iface.CopyObjectOptions{MetadataDirective: "COPY"})
 	if err != nil {
 		return fmt.Errorf("copy: %s", FormatAPIError(err))
@@ -37,7 +37,7 @@ func copyObjectSameEndpoint(c *S3Client, srcBucket, srcKey, tgtBucket, tgtKey st
 // 自动处理小文件直传和大文件分片.
 // report 用于在传输过程中实时上报新增字节 (增量), 可为 nil.
 func copyObjectCrossEndpoint(
-	src, tgt *S3Client,
+	src, tgt *Action,
 	srcBucket, srcKey, tgtBucket, tgtKey string,
 	partSize int64,
 	report func(n int64),
@@ -56,7 +56,7 @@ func copyObjectCrossEndpoint(
 
 // copySingleCrossEndpoint 跨端复制单个 (小) 对象: 整体下载到内存再 PutObject.
 // HTTP 响应流不可 seek, 而签名需要可 seek 的 body 计算 payload hash, 故先读入内存.
-func copySingleCrossEndpoint(src, tgt *S3Client, srcBucket, srcKey, tgtBucket, tgtKey string) error {
+func copySingleCrossEndpoint(src, tgt *Action, srcBucket, srcKey, tgtBucket, tgtKey string) error {
 	getResp, err := src.S3.GetObject(src.Ctx, srcBucket, srcKey, nil)
 	if err != nil {
 		return fmt.Errorf("get s3://%s/%s: %s", srcBucket, srcKey, FormatAPIError(err))
@@ -88,7 +88,7 @@ func copySingleCrossEndpoint(src, tgt *S3Client, srcBucket, srcKey, tgtBucket, t
 // copyMultipartCrossEndpoint 跨端分片复制大对象: 用 Range 逐片下载再 UploadPart,
 // 内存占用上限为一个分片. 失败时通过 defer 中止已创建的分片上传.
 func copyMultipartCrossEndpoint(
-	src, tgt *S3Client,
+	src, tgt *Action,
 	srcBucket, srcKey, tgtBucket, tgtKey string,
 	totalSize, partSize int64,
 	head *s3iface.HeadObjectOutput,
@@ -168,7 +168,7 @@ func copyMultipartCrossEndpoint(
 // =============== 批量删除 ===============
 
 // deleteObjectsBatch 按 S3 单次最多 1000 个对象的上限分批删除 (quiet 模式).
-func deleteObjectsBatch(c *S3Client, bucket string, keys []string) error {
+func deleteObjectsBatch(c *Action, bucket string, keys []string) error {
 	const batchSize = 1000
 	for i := 0; i < len(keys); i += batchSize {
 		end := i + batchSize

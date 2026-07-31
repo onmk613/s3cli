@@ -149,8 +149,8 @@ func completeAliases(toComplete string) ([]string, cobra.ShellCompDirective) {
 	return candidates, cobra.ShellCompDirectiveNoFileComp | cobra.ShellCompDirectiveNoSpace
 }
 
-// getClientByAlias 按 alias 名获取 S3 客户端 (编译期选定的后端), 封装为 action.S3Client
-func getClientByAlias(ctx context.Context, alias string) *action.S3Client {
+// getClientByAlias 按 alias 名获取 S3 客户端 (编译期选定的后端), 封装为 action.Action
+func getClientByAlias(ctx context.Context, alias string) *action.Action {
 	static, ok := config.G.S[alias]
 	if !ok {
 		return nil
@@ -160,7 +160,7 @@ func getClientByAlias(ctx context.Context, alias string) *action.S3Client {
 	if err != nil {
 		return nil
 	}
-	return &action.S3Client{S3: s3Client, Alias: alias, Ctx: ctx}
+	return &action.Action{S3: s3Client, Alias: alias, Ctx: ctx}
 }
 
 // CompleteLocalFirst 用于 args[0] 为本地路径、args[1:] 为 S3 路径的命令

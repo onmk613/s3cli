@@ -11,7 +11,7 @@ import (
 )
 
 // SetNotification 设置桶事件通知 (JSON, AWS CLI 兼容)
-func (c *S3Client) SetNotification(configure, bucket string) error {
+func (c *Action) SetNotification(configure, bucket string) error {
 	loaded, err := loadJSONConfig[s3iface.NotificationConfiguration](configure, "notification")
 	if err != nil {
 		return err
@@ -31,7 +31,7 @@ func (c *S3Client) SetNotification(configure, bucket string) error {
 }
 
 // GetNotification 打印桶事件通知 (JSON)
-func (c *S3Client) GetNotification(bucket string) error {
+func (c *Action) GetNotification(bucket string) error {
 	cfg, err := c.S3.GetBucketNotification(c.Ctx, bucket)
 	if err != nil {
 		return fmt.Errorf("get notification %s: %s", bucket, FormatAPIError(err))
@@ -40,7 +40,7 @@ func (c *S3Client) GetNotification(bucket string) error {
 }
 
 // DelNotification 清空桶事件通知 (写入一个空配置)
-func (c *S3Client) DelNotification(bucket string) error {
+func (c *Action) DelNotification(bucket string) error {
 	return c.deleteBucketConfig(bucket, "notification", "Notification configuration cleared for %s %s\n",
 		func() error { return c.S3.DeleteBucketNotification(c.Ctx, bucket) })
 }

@@ -18,7 +18,7 @@ type TreeOptions struct {
 	ShowSize bool // 是否在叶子上显示文件大小
 }
 
-func (c *S3Client) TreeObjects(opt TreeOptions, bucket, prefix string) error {
+func (c *Action) TreeObjects(opt TreeOptions, bucket, prefix string) error {
 	if bucket == "" {
 		return fmt.Errorf("tree requires a bucket")
 	}
