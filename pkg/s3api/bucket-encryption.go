@@ -1,5 +1,3 @@
-//go:build !aws
-
 // bucket-encryption.go 实现桶的默认服务端加密配置管理.
 // ServerSideEncryptionConfiguration 等类型定义在中立包 s3iface.
 

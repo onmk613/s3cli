@@ -1,5 +1,3 @@
-//go:build !aws
-
 // error.go 实现从 HTTP 错误响应中解析错误码/消息的 parseErrorResponse.
 // ErrorResponse 类型定义在中立包 s3iface (实现 error 接口).
 

@@ -7,12 +7,9 @@
 //   - 桶子资源配置类型 (CORS / 加密 / 生命周期 / 通知 / 标签 / 版本)
 //   - 分页器接口 (ListObjectsV2Paginator / ListObjectVersionsPaginator)
 //
-// 两个后端各自实现 S3Operations:
-//   - s3api.Client: 自建 HTTP + SigV4 签名 (默认)
-//   - awss3.AWS:    官方 aws-sdk-go-v2
+// s3api.Client (自建 HTTP + SigV4 签名) 是 S3Operations 的唯一实现.
 //
-// 上层 (internal/action) 只依赖 s3iface.S3Operations; 具体后端由 build tag
-// 编译期选定 (默认 s3api, -tags aws 时为 awss3).
+// 上层 (internal/action) 只依赖 s3iface.S3Operations, 不感知具体后端.
 package s3iface
 
 import (
@@ -212,6 +209,7 @@ type PutObjectOptions struct {
 	CacheControl              string
 	StorageClass              string
 	Metadata                  map[string]string
+	Tagging                   string // 'k1=v1&k2=v2'
 	ServerSideEncryption      string
 	SSEKMSKeyID               string
 	ObjectLockMode            string

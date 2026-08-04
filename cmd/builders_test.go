@@ -47,7 +47,8 @@ func TestCommandsHaveExpectedShape(t *testing.T) {
 		{"bucket", NewBucketCmd(), want{use: "bucket"}},
 		{"find", NewFindCmd(), want{use: "find", flags: []string{"name", "regex"}}},
 		{"tree", NewTreeCmd(), want{use: "tree", flags: []string{"size"}}},
-		{"share", NewShareCmd(), want{use: "signurl", flags: []string{"expire"}}},
+		{"share", NewShareCmd(), want{use: "share"}},
+		{"share-download", NewShareDownloadCmd(), want{use: "download", flags: []string{"expire"}}},
 		{"alias", NewAliasCmd(), want{use: "alias"}},
 	}
 	for _, tc := range cases {

@@ -82,7 +82,7 @@ func ListAliasConf(alias []string) error {
 			if val == "" {
 				continue
 			}
-			if f.key == "secret_key" && !G.F.Quiet {
+			if f.key == "secret_key" && !G.F.ShowSecret {
 				val = maskSecret(val)
 			}
 			myprint.Printf("  ")

@@ -1,7 +1,5 @@
-//go:build !aws
-
 // backend_switch_test.go 用自建请求后端 (s3api.Client) 跑双后端一致性断言.
-// 本文件仅在默认构建 (无 -tags aws) 下编译; 官方 SDK 后端见 backend_switch_aws_test.go.
+// 本文件基于内存 mock 服务端验证 s3api 后端的核心操作语义.
 
 package action
 

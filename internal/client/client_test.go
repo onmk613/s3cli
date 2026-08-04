@@ -108,9 +108,12 @@ func TestParsePathAndNewClient(t *testing.T) {
 
 	t.Run("unknown alias", func(t *testing.T) {
 		config.G.S = nil
-		_, _, err := ParsePathAndNewClient(context.Background(), "ghost:bucket")
+		_, p, err := ParsePathAndNewClient(context.Background(), "ghost:bucket")
 		if err == nil {
 			t.Error("expected error for unknown alias")
+		}
+		if p != nil {
+			t.Errorf("expected nil Path on error, got %+v", p)
 		}
 	})
 
@@ -132,9 +135,12 @@ func TestParsePathAndNewClient(t *testing.T) {
 
 	t.Run("malformed arg", func(t *testing.T) {
 		config.G.S = map[string]config.Static{}
-		_, _, err := ParsePathAndNewClient(context.Background(), ":bucket")
+		_, p, err := ParsePathAndNewClient(context.Background(), ":bucket")
 		if err == nil {
 			t.Error("expected error for malformed arg")
+		}
+		if p != nil {
+			t.Errorf("expected nil Path on error, got %+v", p)
 		}
 	})
 

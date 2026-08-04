@@ -130,7 +130,8 @@ func (pt *Tracker) Stop() {
 	if pt.stopped.Swap(true) {
 		return
 	}
-	// 在锁内：强制刷新最后一帧（显示真实终态），并快照后续打印所需字段
+	// 在锁内：强制刷新最后一帧（显示真实终态），并快照后续打印所需字段。
+	// failed 计数与 failedStrings 明细必须同锁快照，避免两者不一致。
 	pt.mu.Lock()
 	if !pt.quiet.Load() {
 		pt.render(true)
@@ -139,6 +140,7 @@ func (pt *Tracker) Stop() {
 	label := pt.label
 	doneColor := pt.color
 	failedStrings := append([]string(nil), pt.failedStrings...)
+	f := pt.failed.Load()
 	pt.mu.Unlock()
 
 	// 计算统计信息
@@ -147,7 +149,6 @@ func (pt *Tracker) Stop() {
 	t := pt.total.Load()
 	dsz := pt.doneSz.Load()
 	tsz := pt.totalSz.Load()
-	f := pt.failed.Load()
 
 	// 计算速率
 	rate := "0 B/s"

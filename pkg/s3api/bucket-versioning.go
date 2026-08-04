@@ -1,5 +1,3 @@
-//go:build !aws
-
 // bucket-versioning.go 实现桶版本控制状态管理: Set/GetBucketVersioning.
 // BucketVersioningStatus 类型定义在中立包 s3iface.
 

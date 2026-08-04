@@ -70,13 +70,25 @@ Flags:
       --debug                      Print summarized S3 requests
   -H, --header stringArray         Add a custom HTTP header (key:value), can repeat
   -h, --help                       help for s3cli
-      --json                       Output format: text or json (supported commands emit structured results)
       --no-color                   Disable color output
-  -q, --quiet                      Disable progress bar; stream plain text output instead
       --user-agent string          Override the HTTP User-Agent header
       --user-agent-suffix string   Append extra content to the HTTP User-Agent header
   -v, --version                    version for s3cli
 ```
+
+> `--json` 与 `--quiet` 是隐藏的全局参数：`--json` 仅在 ls/lsv、du、stat、info、find、
+> tree、diff、`bucket lifecycle list`、`tag list`、`mpu list`、`mpu local-list` 的 help 中显示；
+> `--quiet` 仅在 get/put/cp/mv/mirror（有进度条的命令）的 help 中显示。
+> 二者在其它子命令中仍可正常使用（行为不变），只是不在 help 中出现。
+> `--show-secret` 仅 `alias list` 子命令可用。
+
+## JSON 输出
+
+`--json` 为支持的命令输出结构化结果（JSON lines 或单文档），完整 schema 见
+[doc/OUTPUT_SCHEMA.md](doc/OUTPUT_SCHEMA.md)。支持的命令：`ls` / `lsv`、
+`du`、`stat`、`info`、`find`、`tree`、`bucket lifecycle list`、`tag list`、
+`mpu list`、`mpu local-list`、`diff`。其余命令在 `--help` 中标注
+`(text output only)`。
 
 ## 配置
 ```bash
@@ -85,18 +97,14 @@ s3cli alias help
 
 > 路径格式统一为 `别名:桶/路径`，例如 `my-s3:my-bucket/dir/file.txt`。
 
-## S3 后端选择（编译期）
+## S3 后端
 
-s3cli 支持两种 S3 请求后端，底层操作统一抽象为 `pkg/s3iface.S3Operations` 接口，
-**在编译期通过 build tag 二选一**，单个二进制只包含一种实现，无运行时切换参数：
-
-- **s3api**（默认）：自建 HTTP 客户端 + SigV4 签名，零 SDK 依赖，兼容任何 S3 服务
-- **aws**：官方 `aws-sdk-go-v2`，适合需要官方 SDK 行为（重试、端点解析等）的场景
+底层操作统一抽象为 `pkg/s3iface.S3Operations` 接口，由自建请求客户端 `s3api.Client`
+（HTTP + SigV4 签名，零 SDK 依赖，兼容任何 S3 服务）实现。
 
 ```bash
-./build.sh          # 默认 s3api 后端
-./build.sh aws      # 官方 SDK 后端
-./build.sh aws all  # 全平台交叉编译 (后端参数同样适用)
+./build.sh          # 编译当前平台
+./build.sh all      # 全平台交叉编译
 ```
 
 配置示例（`~/.s3cli`，TOML）：
@@ -108,7 +116,7 @@ access_key = "AKIA..."
 secret_key = "secret"
 
 # bucket 寻址: "path" (默认) / "dns" / 自定义模板 (含 %(bucket)、可选 %(region))
-# 两种后端语义一致; aws 后端下 %(region) 同样会探测 bucket 实际区域
+# %(region) 会探测 bucket 实际区域
 bucket_lookup = "path"
 # bucket_lookup = "dns"
 # bucket_lookup = "https://www.%(bucket).example.com"

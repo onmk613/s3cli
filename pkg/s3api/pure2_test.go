@@ -1,5 +1,3 @@
-//go:build !aws
-
 package s3api
 
 import (
@@ -179,6 +177,45 @@ func TestParseBucketLifecycleConfig(t *testing.T) {
 	}
 	if _, err := ParseBucketLifecycleConfig(strings.NewReader("<bad")); err == nil {
 		t.Error("expected error for malformed")
+	}
+}
+
+// TestParseBucketLifecycleConfigRootVariants 新版 MinIO 返回 <BucketLifecycleConfiguration>
+// 根元素, 必须同样能解析 (回归测试).
+func TestParseBucketLifecycleConfigRootVariants(t *testing.T) {
+	for _, root := range []string{"LifecycleConfiguration", "BucketLifecycleConfiguration"} {
+		body := `<` + root + `><Rule><ID>r1</ID><Status>Enabled</Status><Expiration><Days>30</Days></Expiration></Rule></` + root + `>`
+		c, err := ParseBucketLifecycleConfig(strings.NewReader(body))
+		if err != nil {
+			t.Fatalf("parse root %s: %v", root, err)
+		}
+		if len(c.Rules) != 1 || c.Rules[0].ID != "r1" || c.Rules[0].Expiration == nil || *c.Rules[0].Expiration.Days != 30 {
+			t.Fatalf("root %s: bad rules %+v", root, c.Rules)
+		}
+	}
+}
+
+// TestLifecycleConfigToXMLRoot ToXML 必须输出 <LifecycleConfiguration> 根元素 (PUT 标准).
+func TestLifecycleConfigToXMLRoot(t *testing.T) {
+	cfg := &LifecycleConfig{Rules: []LifecycleRule{{ID: "r1", Status: "Enabled"}}}
+	data, err := cfg.ToXML()
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := string(data)
+	if !strings.HasPrefix(s, xml.Header) {
+		t.Fatal("missing xml header")
+	}
+	body := strings.TrimPrefix(s, xml.Header)
+	if !strings.HasPrefix(body, "<LifecycleConfiguration") {
+		t.Errorf("wrong root element: %s", body)
+	}
+	if !strings.Contains(body, "<Rule>") || !strings.Contains(body, "<ID>r1</ID>") {
+		t.Errorf("missing rule content: %s", body)
+	}
+	// 序列化结果必须能再解析 (round-trip)
+	if _, err := ParseBucketLifecycleConfig(strings.NewReader(s)); err != nil {
+		t.Errorf("round-trip parse: %v", err)
 	}
 }
 

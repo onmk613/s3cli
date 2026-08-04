@@ -19,6 +19,7 @@ type PipeOptions struct {
 	PartSizeMB      int
 	StorageClass    string
 	Metadata        map[string]string
+	Tags            string // 对象标签 'k1=v1&k2=v2' (--tags)
 }
 
 // PipeUpload 从 stdin 读取数据并上传到 s3://bucket/key
@@ -39,6 +40,7 @@ func (c *Action) PipeUpload(opt PipeOptions, bucket, key string) error {
 		ContentType:  opt.ContentType,
 		StorageClass: opt.StorageClass,
 		Metadata:     opt.Metadata,
+		Tagging:      opt.Tags,
 	}
 
 	if err := c.uploadUnknownSize(c.Ctx, bucket, key, os.Stdin, opt.PartSizeMB, putOpts); err != nil {

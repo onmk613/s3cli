@@ -1,7 +1,6 @@
 package cmd
 
 import (
-	"context"
 	"testing"
 
 	"github.com/spf13/cobra"
@@ -13,10 +12,10 @@ func TestTransferCommandsExposeExpectedFlags(t *testing.T) {
 		flags []string
 		check func() []string
 	}{
-		{"get", []string{"recursive", "concurrency", "part-size", "range"}, func() []string {
+		{"get", []string{"recursive", "concurrency", "range"}, func() []string {
 			c := NewGetCmd()
 			var got []string
-			for _, f := range []string{"recursive", "concurrency", "part-size", "range"} {
+			for _, f := range []string{"recursive", "concurrency", "range"} {
 				if c.Flags().Lookup(f) != nil {
 					got = append(got, f)
 				}
@@ -52,15 +51,37 @@ func TestTransferCommandsExposeExpectedFlags(t *testing.T) {
 	}
 }
 
-func TestCommandContextsAndCancellation(t *testing.T) {
-	ctx := newCmdContext(ParseS3PathAndArgs)
-	if ctx.Global == nil || ctx.ArgParseMode != ParseS3PathAndArgs {
-		t.Fatalf("context = %#v", ctx)
+func TestTransferCommandsUseArgParseAnnotations(t *testing.T) {
+	if got := NewGetCmd().Annotations[AnnoArgParseMode]; got != ModeS3PathAndArgs {
+		t.Errorf("get annotation = %q, want %q", got, ModeS3PathAndArgs)
 	}
-	cancelled, cancel := context.WithCancel(context.Background())
-	cancel()
-	if !isCanceled(cancelled) {
-		t.Fatal("cancelled context should be recognized")
+	if got := NewPutCmd().Annotations[AnnoArgParseMode]; got != ModeArgsAndS3Path {
+		t.Errorf("put annotation = %q, want %q", got, ModeArgsAndS3Path)
+	}
+	if got := EventSetCmd().Annotations[AnnoArgParseMode]; got != ModeArgsAndS3Path {
+		t.Errorf("bucket event set annotation = %q, want %q", got, ModeArgsAndS3Path)
+	}
+}
+
+func TestSplitArgsModes(t *testing.T) {
+	cmd := &cobra.Command{}
+
+	cmd.Annotations = ParseArgsAndS3Path
+	s3Args, opts, err := splitArgs(cmd, []string{"local-file", "a:b", "c:d"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if opts[AddedArgs] != "local-file" || len(s3Args) != 2 || s3Args[0] != "a:b" || s3Args[1] != "c:d" {
+		t.Fatalf("ParseArgsAndS3Path: s3Args=%v opts=%v", s3Args, opts)
+	}
+
+	cmd.Annotations = ParseS3PathAndArgs
+	s3Args, opts, err = splitArgs(cmd, []string{"a:b", "local-file"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if opts[AddedArgs] != "local-file" || len(s3Args) != 1 || s3Args[0] != "a:b" {
+		t.Fatalf("ParseS3PathAndArgs: s3Args=%v opts=%v", s3Args, opts)
 	}
 }
 

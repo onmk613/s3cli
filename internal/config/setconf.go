@@ -196,3 +196,40 @@ func SetAliasConf(ctx context.Context, section string) error {
 	myprint.PrintfGreen("S3 configuration saved to %s\n", ConfPath)
 	return nil
 }
+
+// SetAliasStatic 非交互式写入/更新一个别名 (mc alias set ALIAS URL ACCESSKEY SECRETKEY 形态).
+// 仅更新给定字段, 其余已有配置保持不变.
+func SetAliasStatic(section, hostBase, accessKey, secretKey, sessionToken string) error {
+	if section == "" {
+		return fmt.Errorf("alias name cannot be empty")
+	}
+	if hostBase == "" || accessKey == "" || secretKey == "" {
+		return fmt.Errorf("alias set requires URL, ACCESSKEY and SECRETKEY")
+	}
+
+	ensureConfPath()
+
+	aliases := map[string]Static{}
+	if _, err := os.Stat(ConfPath); err == nil {
+		loaded, _, lerr := loadRaw()
+		if lerr != nil {
+			return fmt.Errorf("load existing config: %w", lerr)
+		}
+		aliases = loaded
+	}
+
+	conf := aliases[section]
+	conf.HostBase = hostBase
+	conf.AccessKey = accessKey
+	conf.SecretKey = secretKey
+	if sessionToken != "" {
+		conf.SessionToken = sessionToken
+	}
+	aliases[section] = conf
+
+	if err := saveConfig(aliases, ConfPath); err != nil {
+		return fmt.Errorf("save config: %w", err)
+	}
+	myprint.PrintfGreen("S3 configuration saved to %s\n", ConfPath)
+	return nil
+}

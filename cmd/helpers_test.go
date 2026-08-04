@@ -3,9 +3,13 @@ package cmd
 import (
 	"context"
 	"errors"
+	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
+	"s3cli/internal/action"
 	"s3cli/internal/config"
 	"s3cli/internal/s3path"
 	"s3cli/pkg/s3iface"
@@ -34,31 +38,52 @@ func TestWrapDisplayed(t *testing.T) {
 	}
 }
 
-func TestContextEnsureInit(t *testing.T) {
-	c := &Context{}
-	c.ensureInit()
-	if c.Global == nil {
-		t.Error("Global should be allocated")
+func TestExitCodeForError(t *testing.T) {
+	cases := []struct {
+		name string
+		err  error
+		want int
+	}{
+		{"nil", nil, exitOK},
+		{"generic", errors.New("boom"), exitGeneric},
+		{"canceled", context.Canceled, exitCanceled},
+		{"status404", &s3iface.ErrorResponse{StatusCode: 404}, exitNotFound},
+		{"status403", &s3iface.ErrorResponse{StatusCode: 403}, exitForbidden},
+		{"codeNoSuchKey", &s3iface.ErrorResponse{Code: "NoSuchKey"}, exitNotFound},
+		{"codeAccessDenied", &s3iface.ErrorResponse{Code: "AccessDenied"}, exitForbidden},
+		{"wrappedDisplayed404", fmt.Errorf("%w: %w", errAlreadyDisplayed, &s3iface.ErrorResponse{StatusCode: 404}), exitNotFound},
+		{"wrappedGeneric", fmt.Errorf("%w: %w", errAlreadyDisplayed, errors.New("boom")), exitGeneric},
 	}
-	g := &GlobalOptions{}
-	c2 := &Context{Global: g}
-	c2.ensureInit()
-	if c2.Global != g {
-		t.Error("existing Global should be preserved")
+	for _, tc := range cases {
+		if got := exitCodeForError(tc.err); got != tc.want {
+			t.Errorf("%s: exitCodeForError = %d, want %d", tc.name, got, tc.want)
+		}
 	}
 }
 
-func TestNewCmdContextVariants(t *testing.T) {
-	c0 := newCmdContext()
-	if c0.Global == nil {
-		t.Error("Global nil")
+// TestExitCodeForErrorDiffer 用真实 diff 结果验证 exitDiffer 分支
+// (action 包未导出 errDiffer 哨兵, 只能经由 action.Diff 构造)。
+func TestExitCodeForErrorDiffer(t *testing.T) {
+	dirA := t.TempDir()
+	dirB := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dirA, "a.txt"), []byte("hello"), 0o600); err != nil {
+		t.Fatal(err)
 	}
-	if c0.ArgParseMode != ParseS3OnlyPath {
-		t.Errorf("default mode = %v", c0.ArgParseMode)
+	if err := os.WriteFile(filepath.Join(dirB, "a.txt"), []byte("world"), 0o600); err != nil {
+		t.Fatal(err)
 	}
-	c1 := newCmdContext(ParseArgsAndS3Path)
-	if c1.ArgParseMode != ParseArgsAndS3Path {
-		t.Error("mode not set")
+	err := action.Diff(action.DiffOptions{
+		A:           &action.DiffEndpoint{Path: dirA, Ctx: context.Background()},
+		B:           &action.DiffEndpoint{Path: dirB, Ctx: context.Background()},
+		Mode:        action.DiffModeMD5,
+		Recursive:   true,
+		Concurrency: 2,
+	})
+	if !action.IsDifferErr(err) {
+		t.Fatalf("Diff error = %v, want differ", err)
+	}
+	if got := exitCodeForError(err); got != exitDiffer {
+		t.Errorf("exitCodeForError(differ) = %d, want %d", got, exitDiffer)
 	}
 }
 
@@ -168,5 +193,54 @@ func TestGetClientByAliasUnknown(t *testing.T) {
 	config.G.S = nil
 	if c := getClientByAlias(context.Background(), "nope"); c != nil {
 		t.Error("unknown alias should return nil")
+	}
+}
+
+func TestParseExpireSeconds(t *testing.T) {
+	cases := []struct {
+		in   string
+		want int
+		err  bool
+	}{
+		{"3600", 3600, false},
+		{"168h", 604800, false},
+		{"7d", 604800, false},
+		{"30m", 1800, false},
+		{"", 0, true},
+		{"0", 0, true},
+		{"abc", 0, true},
+	}
+	for _, tc := range cases {
+		got, err := parseExpireSeconds(tc.in)
+		if tc.err {
+			if err == nil {
+				t.Errorf("parseExpireSeconds(%q) = %d, want error", tc.in, got)
+			}
+			continue
+		}
+		if err != nil || got != tc.want {
+			t.Errorf("parseExpireSeconds(%q) = %d, %v; want %d", tc.in, got, err, tc.want)
+		}
+	}
+}
+
+func TestParseTagsString(t *testing.T) {
+	m, err := parseTagsString("env=prod&team=infra")
+	if err != nil || m["env"] != "prod" || m["team"] != "infra" {
+		t.Errorf("bad tags: %v err=%v", m, err)
+	}
+	// 逗号兼容
+	m, err = parseTagsString("a=1,b=2")
+	if err != nil || m["a"] != "1" || m["b"] != "2" {
+		t.Errorf("bad comma tags: %v err=%v", m, err)
+	}
+	// 非法
+	if _, err := parseTagsString("novalue"); err == nil {
+		t.Error("expected error for tag without =")
+	}
+	// 空
+	m, err = parseTagsString("")
+	if err != nil || len(m) != 0 {
+		t.Errorf("empty tags should be empty map, got %v err=%v", m, err)
 	}
 }

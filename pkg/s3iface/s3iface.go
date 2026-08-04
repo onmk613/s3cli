@@ -1,7 +1,7 @@
 // s3iface.go 定义 S3 操作的中立接口 S3Operations 及分页器接口.
 //
 // S3Operations 涵盖桶管理、桶子资源配置、对象操作、分片上传、预签名等全部底层操作.
-// s3api.Client (自建 HTTP) 和 awss3.AWS (官方 SDK) 均实现此接口.
+// s3api.Client (自建 HTTP + SigV4) 实现此接口.
 
 package s3iface
 
@@ -10,7 +10,7 @@ import (
 	"io"
 )
 
-// S3Operations 抽象所有 S3 底层操作, 是自建请求 (s3api) 与官方 SDK (awss3) 的共同契约.
+// S3Operations 抽象所有 S3 底层操作, 由自建请求客户端 s3api.Client 实现.
 type S3Operations interface {
 
 	// ---- 桶基础操作 ----
@@ -70,6 +70,9 @@ type S3Operations interface {
 	SetObjectTagging(ctx context.Context, bucket, key string, tags []Tagging, versionID string) error
 	GetObjectTagging(ctx context.Context, bucket, key, versionID string) ([]Tagging, error)
 	DeleteObjectTagging(ctx context.Context, bucket, key, versionID string) error
+
+	// ---- S3 Select ----
+	SelectObjectContent(ctx context.Context, bucket, key string, input *SelectObjectInput, onRecord func(payload []byte) error) (*SelectObjectStats, error)
 
 	// ---- 分片上传 ----
 	CreateMultipartUpload(ctx context.Context, bucket, key string, opts *PutObjectOptions) (*CreateMultipartUploadOutput, error)

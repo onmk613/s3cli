@@ -2,10 +2,13 @@ package config
 
 import (
 	"bufio"
+	"bytes"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"s3cli/pkg/fmtutil"
 
 	"github.com/BurntSushi/toml"
 )
@@ -243,6 +246,47 @@ func TestListAliasConf(t *testing.T) {
 		ConfPath = writeTempConfig(t, content)
 		if err := ListAliasConf(nil); err != nil {
 			t.Fatalf("unexpected error: %v", err)
+		}
+	})
+}
+
+// TestListAliasConfSecretMasking 回归 P2-CLI-3:
+// 默认脱敏 (只显示后 4 位), 仅显式 --show-secret 才显示明文密钥。
+func TestListAliasConfSecretMasking(t *testing.T) {
+	restore := snapshotGlobals(t)
+	defer restore()
+
+	content := "[prod]\nhost_base = \"https://s3.example.com\"\naccess_key = \"AK123\"\nsecret_key = \"SECRET123456\"\n"
+	ConfPath = writeTempConfig(t, content)
+
+	// 恢复默认 writer, 避免污染其他用例的 stdout 捕获
+	defer fmtutil.SetWriter(os.Stdout)
+
+	t.Run("default masked", func(t *testing.T) {
+		var buf bytes.Buffer
+		fmtutil.SetWriter(&buf)
+		G.F = Flags{}
+		if err := ListAliasConf(nil); err != nil {
+			t.Fatal(err)
+		}
+		out := buf.String()
+		if strings.Contains(out, "SECRET123456") {
+			t.Error("default mode should not reveal full secret key")
+		}
+		if !strings.Contains(out, "****3456") {
+			t.Errorf("default mode should show masked secret, got: %q", out)
+		}
+	})
+
+	t.Run("show-secret reveals", func(t *testing.T) {
+		var buf bytes.Buffer
+		fmtutil.SetWriter(&buf)
+		G.F = Flags{ShowSecret: true}
+		if err := ListAliasConf(nil); err != nil {
+			t.Fatal(err)
+		}
+		if !strings.Contains(buf.String(), "SECRET123456") {
+			t.Error("--show-secret should reveal full secret key")
 		}
 	})
 }

@@ -28,8 +28,13 @@ func (c *Action) SetTag(bucket, prefix string, tagStr map[string]string) error {
 	return nil
 }
 
+// TagOptions tag 命令参数.
+type TagOptions struct {
+	JSON bool // --json: 输出 JSON
+}
+
 // GetTag 查询并打印桶或对象的标签集合.
-func (c *Action) GetTag(bucket, prefix string) error {
+func (c *Action) GetTag(opt TagOptions, bucket, prefix string) error {
 	var tags []s3iface.Tagging
 	if prefix == "" {
 		result, err := c.S3.GetBucketTagging(c.Ctx, bucket)
@@ -43,6 +48,16 @@ func (c *Action) GetTag(bucket, prefix string) error {
 			return fmt.Errorf("get object tag: %s", FormatAPIError(err))
 		}
 		tags = result
+	}
+	if opt.JSON {
+		tagList := make([]map[string]string, 0, len(tags))
+		for _, t := range tags {
+			tagList = append(tagList, map[string]string{"key": t.Key, "value": t.Value})
+		}
+		return printJSONLine(map[string]any{
+			"path": c.S3Path(bucket, prefix),
+			"tags": tagList,
+		})
 	}
 	if len(tags) == 0 {
 		myprint.PrintfCyan("# %s: no tags\n", c.S3Path(bucket, prefix))

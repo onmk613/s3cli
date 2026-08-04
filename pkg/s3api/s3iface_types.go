@@ -1,5 +1,3 @@
-//go:build !aws
-
 // s3iface_types.go 将 s3api 的对外 DTO 类型别名到中立的 s3iface 包.
 //
 // s3iface 拥有类型定义; s3api 通过别名引用, 使得:

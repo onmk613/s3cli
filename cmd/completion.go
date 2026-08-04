@@ -2,7 +2,7 @@ package cmd
 
 import (
 	"context"
-	client2 "s3cli/internal/client"
+	"s3cli/internal/client"
 	"strings"
 	"time"
 
@@ -156,7 +156,7 @@ func getClientByAlias(ctx context.Context, alias string) *action.Action {
 		return nil
 	}
 
-	s3Client, err := client2.NewClient(ctx, alias, static)
+	s3Client, err := client.NewClient(ctx, alias, static)
 	if err != nil {
 		return nil
 	}

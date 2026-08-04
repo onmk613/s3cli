@@ -1,5 +1,3 @@
-//go:build !aws
-
 // bucket-policy.go 实现桶访问策略 (Bucket Policy) 管理:
 // Set/Get/DeleteBucketPolicy, 策略体为原始 JSON 文档, 由调用方负责其内容.
 

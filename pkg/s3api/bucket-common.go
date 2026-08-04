@@ -1,5 +1,3 @@
-//go:build !aws
-
 // bucket-common.go 实现桶基础操作 (ListBuckets / CreateBucket / DeleteBucket)
 // 以及桶子资源 (subresource) 的 PUT/GET/DELETE 通用辅助函数.
 // CORS / 加密 / 标签 / 版本 / 通知 / 生命周期 等具体子资源在此基础上构建.

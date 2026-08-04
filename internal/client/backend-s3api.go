@@ -1,7 +1,5 @@
-//go:build !aws
-
-// backend-s3api.go 编译期选择自建请求后端: newBackendClient 构造 s3api.Client.
-// 构建默认 (无 -tags aws) 时生效.
+// backend-s3api.go 构造自建请求后端: newBackendClient 返回 s3api.Client
+// (s3iface.S3Operations 接口的唯一实现).
 
 package client
 

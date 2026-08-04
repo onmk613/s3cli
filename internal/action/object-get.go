@@ -20,14 +20,30 @@ import (
 type GetOptions struct {
 	Recursive   bool
 	Concurrency int
-	PartSizeMB  int
 	Range       string // HTTP Range header (e.g. "bytes=0-1023"); 仅对单文件有效
 	NoProgress  bool   // 不显示进度条（--quiet）
 	Overwrite   bool   // 本地文件已存在时是否覆盖 (默认跳过)
+	VersionID   string // --version-id/--vid: 下载指定版本
 }
 
 // GetObject 下载对象
 func (c *Action) GetObject(opt GetOptions, bucket, prefix, localPath string) error {
+	if opt.VersionID != "" {
+		if opt.Recursive {
+			return fmt.Errorf("--version-id cannot be used with -r/--recursive")
+		}
+		if opt.Range != "" {
+			return fmt.Errorf("--version-id cannot be used with --range")
+		}
+		ok, err := c.IsS3File(bucket, prefix)
+		if err != nil {
+			return fmt.Errorf("check s3 path: %s", FormatAPIError(err))
+		}
+		if !ok {
+			return fmt.Errorf("source is not a single object")
+		}
+		return c.downloadSingleFile(opt, bucket, prefix, localPath)
+	}
 	ok, err := c.IsS3File(bucket, prefix)
 	if err != nil {
 		return fmt.Errorf("check s3 path: %s", FormatAPIError(err))
@@ -85,7 +101,7 @@ func (c *Action) downloadDirectory(opt GetOptions, bucket, key, localPath string
 					return nil
 				}
 			}
-			_, err := c.downloadFile(job.Src, job.Dst, bucket, report)
+			_, err := c.downloadFile(job.Src, job.Dst, bucket, report, "")
 			return err
 		},
 	})
@@ -99,7 +115,7 @@ func (c *Action) downloadSingleFile(opt GetOptions, bucket, key, localPath strin
 
 	// --range 直接走 GetObject (显式字节范围, 始终覆盖)
 	if opt.Range != "" {
-		return c.rangeGetObject(bucket, key, localFilePath, opt.Range)
+		return c.rangeGetObject(bucket, key, localFilePath, opt.Range, opt.VersionID)
 	}
 
 	// 默认不覆盖: 本地文件已存在则跳过, 仅 --overwrite 时强制下载。
@@ -111,7 +127,7 @@ func (c *Action) downloadSingleFile(opt GetOptions, bucket, key, localPath strin
 	}
 
 	myprint.Printf("get: %s --> %s ", c.S3Path(bucket, key), localFilePath)
-	size, err := c.downloadFile(key, localFilePath, bucket, nil)
+	size, err := c.downloadFile(key, localFilePath, bucket, nil, opt.VersionID)
 	if err != nil {
 		myprint.Println("FAILED")
 		return fmt.Errorf("download: %s", FormatAPIError(err))
@@ -120,12 +136,13 @@ func (c *Action) downloadSingleFile(opt GetOptions, bucket, key, localPath strin
 	return nil
 }
 
-func (c *Action) rangeGetObject(bucket, key, localFilePath, rng string) error {
+func (c *Action) rangeGetObject(bucket, key, localFilePath, rng, versionID string) error {
 	if err := os.MkdirAll(filepath.Dir(localFilePath), 0o755); err != nil {
 		return fmt.Errorf("mkdir: %w", err)
 	}
 	out, err := c.S3.GetObject(c.Ctx, bucket, key, &s3iface.GetObjectOptions{
-		Range: rng,
+		Range:     rng,
+		VersionID: versionID,
 	})
 	if err != nil {
 		return fmt.Errorf("range get: %s", FormatAPIError(err))
@@ -159,7 +176,7 @@ func (c *Action) rangeGetObject(bucket, key, localFilePath, rng string) error {
 	return nil
 }
 
-func (c *Action) downloadFile(key, localPath, bucket string, report func(n int64)) (int64, error) {
+func (c *Action) downloadFile(key, localPath, bucket string, report func(n int64), versionID string) (int64, error) {
 	if err := os.MkdirAll(filepath.Dir(localPath), 0o755); err != nil {
 		return 0, fmt.Errorf("mkdir: %w", err)
 	}
@@ -173,7 +190,7 @@ func (c *Action) downloadFile(key, localPath, bucket string, report func(n int64
 		_ = file.Close()
 	}(file)
 
-	out, err := c.S3.GetObject(c.Ctx, bucket, key, nil)
+	out, err := c.S3.GetObject(c.Ctx, bucket, key, &s3iface.GetObjectOptions{VersionID: versionID})
 	if err != nil {
 		return 0, err
 	}
