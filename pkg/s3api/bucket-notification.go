@@ -1,5 +1,3 @@
-//go:build !aws
-
 // bucket-notification.go 实现桶的事件通知配置管理: Set/Get/DeleteBucketNotification.
 // NotificationConfiguration 等类型定义在中立包 s3iface.
 

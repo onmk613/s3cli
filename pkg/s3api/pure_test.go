@@ -1,5 +1,3 @@
-//go:build !aws
-
 package s3api
 
 import (
@@ -360,6 +358,13 @@ func TestRetryBackoff(t *testing.T) {
 		}
 		if d < 0 {
 			t.Errorf("negative backoff")
+		}
+	}
+	// 回归 P2-BUG-10: 极大 attempt 不得因 int64 移位溢出变负/零
+	for _, i := range []int{50, 100, 1000} {
+		d := retryBackoff(i)
+		if d <= 0 || d > 10*time.Second {
+			t.Errorf("attempt %d: %v out of [1ns, cap]", i, d)
 		}
 	}
 }

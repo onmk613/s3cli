@@ -1,4 +1,5 @@
-// object-copy.go 实现同 endpoint 内的对象复制 CopyObjects (cp):
+// object-copy.go 实现同 endpoint 内的对象复制 CopyObjects (cp, 参数与 mc cp 对齐:
+// --recursive/-r / --storage-class/--sc / --tags / --metadata),
 // 单文件直传与目录递归 (走 RunStream), 目标 key 解析复用 s3path 规则.
 
 package action
@@ -14,8 +15,17 @@ import (
 	"s3cli/pkg/s3iface"
 )
 
+// CopyOptions cp/mv 命令参数 (mc cp/mv 对齐).
+type CopyOptions struct {
+	Recursive    bool              // -r: 递归复制目录
+	NoProgress   bool              // 不显示进度条（--quiet）
+	StorageClass string            // --storage-class/--sc: 目标存储级别
+	Tags         string            // --tags: 目标对象标签 'k1=v1&k2=v2'
+	Metadata     map[string]string // --metadata: 目标对象自定义元数据 (需 REPLACE)
+}
+
 // CopyObjects 处理同对象存储之内的复制
-func (c *Action) CopyObjects(srcBucket, srcKey, destBucket, destKey string, recursive, noProgress bool) error {
+func (c *Action) CopyObjects(opt CopyOptions, srcBucket, srcKey, destBucket, destKey string) error {
 	srcTrailing := strings.HasSuffix(srcKey, "/")
 	destTrailing := strings.HasSuffix(destKey, "/")
 
@@ -25,14 +35,14 @@ func (c *Action) CopyObjects(srcBucket, srcKey, destBucket, destKey string, recu
 		return fmt.Errorf("check source: %s", FormatAPIError(err))
 	}
 	// 为目录但是没有设置 -r
-	if !srcIsFile && !recursive {
+	if !srcIsFile && !opt.Recursive {
 		return fmt.Errorf("source is a directory; use -r/--recursive")
 	}
 
 	// 单文件源
 	if srcIsFile {
 		dst := s3path.ResolveFileDest(destKey, destTrailing, path.Base(strings.TrimSuffix(srcKey, "/")))
-		if err := c.copyObject(srcBucket, srcKey, destBucket, dst); err != nil {
+		if err := c.copyObject(opt, srcBucket, srcKey, destBucket, dst); err != nil {
 			return err
 		}
 		myprint.PrintfGreen("cp: %s -> %s\n", c.S3Path(srcBucket, srcKey), c.S3Path(destBucket, dst))
@@ -46,11 +56,23 @@ func (c *Action) CopyObjects(srcBucket, srcKey, destBucket, destKey string, recu
 		state = s3path.DestNone
 	}
 	destPrefix, appendRel := s3path.ResolveDirDestPrefix(srcKey, srcTrailing, destKey, destTrailing, state)
-	return c.copyDirStreaming(srcBucket, srcKey, destBucket, destPrefix, appendRel, noProgress)
+	return c.copyDirStreaming(opt, srcBucket, srcKey, destBucket, destPrefix, appendRel)
 }
 
-func (c *Action) copyObject(srcBucket, srcKey, destBucket, destKey string) error {
-	_, err := c.S3.CopyObject(c.Ctx, srcBucket, srcKey, destBucket, destKey, nil)
+// copyObject 单对象复制, 透传 mc 对齐的复制参数.
+func (c *Action) copyObject(opt CopyOptions, srcBucket, srcKey, destBucket, destKey string) error {
+	copyOpts := &s3iface.CopyObjectOptions{
+		StorageClass: opt.StorageClass,
+	}
+	if opt.Tags != "" {
+		copyOpts.Tagging = opt.Tags
+		copyOpts.TaggingDirective = "REPLACE"
+	}
+	if len(opt.Metadata) > 0 {
+		copyOpts.Metadata = opt.Metadata
+		copyOpts.MetadataDirective = "REPLACE"
+	}
+	_, err := c.S3.CopyObject(c.Ctx, srcBucket, srcKey, destBucket, destKey, copyOpts)
 	if err != nil {
 		return fmt.Errorf("copy: %s", FormatAPIError(err))
 	}
@@ -60,11 +82,11 @@ func (c *Action) copyObject(srcBucket, srcKey, destBucket, destKey string) error
 // copyDirStreaming 流式列出并并发复制，带进度条。
 // destPrefix 为目标前缀；appendRel=true 时把每个源对象相对源前缀的路径拼到 destPrefix 之下，
 // 否则所有源对象都写到 destPrefix（与规则 1/3 的 trailing-none/file 语义一致）。
-func (c *Action) copyDirStreaming(srcBucket, srcKey, destBucket, destPrefix string, appendRel, noProgress bool) error {
+func (c *Action) copyDirStreaming(opt CopyOptions, srcBucket, srcKey, destBucket, destPrefix string, appendRel bool) error {
 	return RunStream(c.Ctx, StreamConfig{
 		Concurrency: defaultConcurrency,
 		Label:       "cp",
-		NoProgress:  noProgress,
+		NoProgress:  opt.NoProgress,
 		Count: func(ctx context.Context, add func(n, size int64)) error {
 			return c.countS3Prefix(ctx, srcBucket, srcKey, false, add)
 		},
@@ -81,7 +103,7 @@ func (c *Action) copyDirStreaming(srcBucket, srcKey, destBucket, destPrefix stri
 		},
 		Work: func(ctx context.Context, job StreamJob, _ func(n int64)) error {
 			dstKey := buildDestKey(job.Src, srcKey, destPrefix, appendRel)
-			return c.copyObject(srcBucket, job.Src, destBucket, dstKey)
+			return c.copyObject(opt, srcBucket, job.Src, destBucket, dstKey)
 		},
 	})
 }

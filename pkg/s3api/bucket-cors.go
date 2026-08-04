@@ -1,5 +1,3 @@
-//go:build !aws
-
 // bucket-cors.go 实现桶的 CORS (跨域资源共享) 配置管理: Set/Get/DeleteBucketCors.
 // CorsConfig / CorsRule 类型定义在中立包 s3iface, 此处仅含操作逻辑.
 

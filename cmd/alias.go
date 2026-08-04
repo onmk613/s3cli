@@ -1,6 +1,8 @@
 package cmd
 
 import (
+	"fmt"
+
 	"s3cli/internal/config"
 
 	"github.com/spf13/cobra"
@@ -31,19 +33,29 @@ func NewAliasCmd() *cobra.Command {
 }
 
 func setAliasCmd() *cobra.Command {
-	return &cobra.Command{
-		Use:     "set [alias]",
-		Aliases: []string{"s", "add", "create"},
-		Short:   "Set alias, alias_name must be unique, e.g. alias set mys3Server",
-		Args:    cobra.ExactArgs(1),
+	var sessionToken string
+	cmd := &cobra.Command{
+		Use:               "set [alias] [url] [access-key] [secret-key]",
+		Aliases:           []string{"s", "add", "create"},
+		Short:             "Set alias: interactive, or `alias set ALIAS URL ACCESSKEY SECRETKEY` (mc compatible)",
+		ValidArgsFunction: AutoCompleteAlias,
+		Args:              cobra.RangeArgs(1, 4),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if len(args) == 4 {
+				return config.SetAliasStatic(args[0], args[1], args[2], args[3], sessionToken)
+			}
+			if len(args) > 1 {
+				return fmt.Errorf("alias set accepts either 1 arg (interactive) or 4 args (ALIAS URL ACCESSKEY SECRETKEY)")
+			}
 			return config.SetAliasConf(cmd.Context(), args[0])
 		},
 	}
+	cmd.Flags().StringVar(&sessionToken, "session-token", "", "Session token (with non-interactive mode)")
+	return cmd
 }
 
 func listAliasCmd() *cobra.Command {
-	return &cobra.Command{
+	cmd := &cobra.Command{
 		Use:               "list",
 		Aliases:           []string{"ls", "l", "show", "get"},
 		Short:             "List aliases",
@@ -53,6 +65,8 @@ func listAliasCmd() *cobra.Command {
 			return config.ListAliasConf(args)
 		},
 	}
+	cmd.Flags().BoolVarP(&config.G.F.ShowSecret, "show-secret", "s", false, "Reveal full secret keys")
+	return cmd
 }
 
 func delAliasCmd() *cobra.Command {

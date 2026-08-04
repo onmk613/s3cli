@@ -1,5 +1,5 @@
 // object-mv.go 实现同 endpoint 内的对象移动 Mv (mv) = copy + delete 源;
-// 单文件与目录递归语义, 目标 key 解析与 cp 一致.
+// 参数与 mc mv 对齐 (--recursive/-r / --storage-class/--sc / --tags / --metadata).
 
 package action
 
@@ -16,7 +16,7 @@ import (
 
 // Mv 移动对象 = copy + delete
 // 处理同对象存储之内的移动
-func (c *Action) Mv(srcBucket, srcKey, destBucket, destKey string, recursive, noProgress bool) error {
+func (c *Action) Mv(opt CopyOptions, srcBucket, srcKey, destBucket, destKey string) error {
 	srcTrailing := strings.HasSuffix(srcKey, "/")
 	destTrailing := strings.HasSuffix(destKey, "/")
 
@@ -24,14 +24,14 @@ func (c *Action) Mv(srcBucket, srcKey, destBucket, destKey string, recursive, no
 	if err != nil {
 		return fmt.Errorf("check source: %s", FormatAPIError(err))
 	}
-	if !srcIsFile && !recursive {
+	if !srcIsFile && !opt.Recursive {
 		return fmt.Errorf("source is a directory; use -r/--recursive")
 	}
 
 	// 单文件源：规则 5/6
 	if srcIsFile {
 		dst := s3path.ResolveFileDest(destKey, destTrailing, path.Base(strings.TrimSuffix(srcKey, "/")))
-		if err := c.mvObject(srcBucket, srcKey, destBucket, dst); err != nil {
+		if err := c.mvObject(opt, srcBucket, srcKey, destBucket, dst); err != nil {
 			return err
 		}
 		myprint.PrintfGreen("mv: %s -> %s\n", c.S3Path(srcBucket, srcKey), c.S3Path(destBucket, dst))
@@ -45,11 +45,11 @@ func (c *Action) Mv(srcBucket, srcKey, destBucket, destKey string, recursive, no
 		state = s3path.DestNone
 	}
 	destPrefix, appendRel := s3path.ResolveDirDestPrefix(srcKey, srcTrailing, destKey, destTrailing, state)
-	return c.mvDirStreaming(srcBucket, srcKey, destBucket, destPrefix, appendRel, noProgress)
+	return c.mvDirStreaming(opt, srcBucket, srcKey, destBucket, destPrefix, appendRel)
 }
 
-func (c *Action) mvObject(srcBucket, srcKey, destBucket, destKey string) error {
-	if err := c.copyObject(srcBucket, srcKey, destBucket, destKey); err != nil {
+func (c *Action) mvObject(opt CopyOptions, srcBucket, srcKey, destBucket, destKey string) error {
+	if err := c.copyObject(opt, srcBucket, srcKey, destBucket, destKey); err != nil {
 		return err
 	}
 
@@ -61,11 +61,11 @@ func (c *Action) mvObject(srcBucket, srcKey, destBucket, destKey string) error {
 }
 
 // mvDirStreaming 流式列出并并发移动，带进度条。
-func (c *Action) mvDirStreaming(srcBucket, srcKey, destBucket, destPrefix string, appendRel, noProgress bool) error {
+func (c *Action) mvDirStreaming(opt CopyOptions, srcBucket, srcKey, destBucket, destPrefix string, appendRel bool) error {
 	return RunStream(c.Ctx, StreamConfig{
 		Concurrency: defaultConcurrency,
 		Label:       "mv",
-		NoProgress:  noProgress,
+		NoProgress:  opt.NoProgress,
 		Count: func(ctx context.Context, add func(n, size int64)) error {
 			return c.countS3Prefix(ctx, srcBucket, srcKey, false, add)
 		},
@@ -82,7 +82,7 @@ func (c *Action) mvDirStreaming(srcBucket, srcKey, destBucket, destPrefix string
 		},
 		Work: func(ctx context.Context, job StreamJob, _ func(n int64)) error {
 			dstKey := buildDestKey(job.Src, srcKey, destPrefix, appendRel)
-			if err := c.copyObject(srcBucket, job.Src, destBucket, dstKey); err != nil {
+			if err := c.copyObject(opt, srcBucket, job.Src, destBucket, dstKey); err != nil {
 				return err
 			}
 			_, err := c.S3.DeleteObject(ctx, srcBucket, job.Src, "")

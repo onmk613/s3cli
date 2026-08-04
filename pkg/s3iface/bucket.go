@@ -102,10 +102,14 @@ type ServerSideEncryptionConfiguration struct {
 // ----------------------------------------------------------------------------
 
 // LifecycleConfig 是 bucket 生命周期配置.
+//
+// 注意: 不声明 XMLName 根元素约束 —— 服务端返回的根元素不统一
+// (AWS/旧版 MinIO 为 <LifecycleConfiguration>, 新版 MinIO 为
+// <BucketLifecycleConfiguration>), 去掉约束即可同时兼容;
+// 序列化时由 ToXML 显式包裹为 <LifecycleConfiguration> (PUT 的标准根元素).
 type LifecycleConfig struct {
-	XMLName xml.Name        `xml:"LifecycleConfiguration" json:"-"`
-	XMLNS   string          `xml:"xmlns,attr,omitempty" json:"-"`
-	Rules   []LifecycleRule `xml:"Rule" json:"Rules,omitempty"`
+	XMLNS string          `xml:"xmlns,attr,omitempty" json:"-"`
+	Rules []LifecycleRule `xml:"Rule" json:"Rules,omitempty"`
 }
 
 // LifecycleRule 单条生命周期规则.
@@ -123,10 +127,12 @@ type LifecycleRule struct {
 
 // Filter 过滤规则.
 type Filter struct {
-	XMLName xml.Name `xml:"Filter" json:"-"`
-	Prefix  string   `xml:"Prefix,omitempty" json:"Prefix,omitempty"`
-	Tag     *Tag     `xml:"Tag,omitempty" json:"Tag,omitempty"`
-	And     *And     `xml:"And,omitempty" json:"And,omitempty"`
+	XMLName               xml.Name `xml:"Filter" json:"-"`
+	Prefix                string   `xml:"Prefix,omitempty" json:"Prefix,omitempty"`
+	Tag                   *Tag     `xml:"Tag,omitempty" json:"Tag,omitempty"`
+	And                   *And     `xml:"And,omitempty" json:"And,omitempty"`
+	ObjectSizeLessThan    *int64   `xml:"ObjectSizeLessThan,omitempty" json:"ObjectSizeLessThan,omitempty"`
+	ObjectSizeGreaterThan *int64   `xml:"ObjectSizeGreaterThan,omitempty" json:"ObjectSizeGreaterThan,omitempty"`
 }
 
 // Tag 标签过滤.
@@ -138,9 +144,11 @@ type Tag struct {
 
 // And 组合过滤条件.
 type And struct {
-	XMLName xml.Name `xml:"And" json:"-"`
-	Prefix  string   `xml:"Prefix,omitempty" json:"Prefix,omitempty"`
-	Tags    []Tag    `xml:"Tag,omitempty" json:"Tags,omitempty"`
+	XMLName               xml.Name `xml:"And" json:"-"`
+	Prefix                string   `xml:"Prefix,omitempty" json:"Prefix,omitempty"`
+	Tags                  []Tag    `xml:"Tag,omitempty" json:"Tags,omitempty"`
+	ObjectSizeLessThan    *int64   `xml:"ObjectSizeLessThan,omitempty" json:"ObjectSizeLessThan,omitempty"`
+	ObjectSizeGreaterThan *int64   `xml:"ObjectSizeGreaterThan,omitempty" json:"ObjectSizeGreaterThan,omitempty"`
 }
 
 // Transition 过渡规则.
@@ -157,19 +165,23 @@ type Expiration struct {
 	Days                      *int     `xml:"Days,omitempty" json:"Days,omitempty"`
 	Date                      string   `xml:"Date,omitempty" json:"Date,omitempty"`
 	ExpiredObjectDeleteMarker *bool    `xml:"ExpiredObjectDeleteMarker,omitempty" json:"ExpiredObjectDeleteMarker,omitempty"`
+	// ExpiredObjectAllVersions 由 mc 的 --expire-all-object-versions 生成 (MinIO 扩展).
+	ExpiredObjectAllVersions *bool `xml:"ExpiredObjectAllVersions,omitempty" json:"ExpiredObjectAllVersions,omitempty"`
 }
 
 // NoncurrentVersionExpiration 非当前版本过期.
 type NoncurrentVersionExpiration struct {
-	XMLName        xml.Name `xml:"NoncurrentVersionExpiration" json:"-"`
-	NoncurrentDays *int     `xml:"NoncurrentDays,omitempty" json:"NoncurrentDays,omitempty"`
+	XMLName                 xml.Name `xml:"NoncurrentVersionExpiration" json:"-"`
+	NoncurrentDays          *int     `xml:"NoncurrentDays,omitempty" json:"NoncurrentDays,omitempty"`
+	NewerNoncurrentVersions *int     `xml:"NewerNoncurrentVersions,omitempty" json:"NewerNoncurrentVersions,omitempty"`
 }
 
 // NoncurrentVersionTransition 非当前版本过渡.
 type NoncurrentVersionTransition struct {
-	XMLName        xml.Name `xml:"NoncurrentVersionTransition" json:"-"`
-	NoncurrentDays *int     `xml:"NoncurrentDays,omitempty" json:"NoncurrentDays,omitempty"`
-	StorageClass   string   `xml:"StorageClass" json:"StorageClass"`
+	XMLName                 xml.Name `xml:"NoncurrentVersionTransition" json:"-"`
+	NoncurrentDays          *int     `xml:"NoncurrentDays,omitempty" json:"NoncurrentDays,omitempty"`
+	NewerNoncurrentVersions *int     `xml:"NewerNoncurrentVersions,omitempty" json:"NewerNoncurrentVersions,omitempty"`
+	StorageClass            string   `xml:"StorageClass" json:"StorageClass"`
 }
 
 // AbortIncompleteMultipartUpload 中止未完成的分片上传.
@@ -191,12 +203,20 @@ func ParseBucketLifecycleConfig(reader io.Reader) (*LifecycleConfig, error) {
 	return &c, nil
 }
 
-// ToXML 将生命周期配置序列化为 XML.
+// ToXML 将生命周期配置序列化为 XML, 根元素固定为 <LifecycleConfiguration>.
 func (c *LifecycleConfig) ToXML() ([]byte, error) {
-	if c.XMLNS == "" {
-		c.XMLNS = DefaultXMLNS
+	wrapper := struct {
+		XMLName xml.Name        `xml:"LifecycleConfiguration"`
+		XMLNS   string          `xml:"xmlns,attr,omitempty"`
+		Rules   []LifecycleRule `xml:"Rule,omitempty"`
+	}{
+		XMLNS: c.XMLNS,
+		Rules: c.Rules,
 	}
-	data, err := xml.Marshal(c)
+	if wrapper.XMLNS == "" {
+		wrapper.XMLNS = DefaultXMLNS
+	}
+	data, err := xml.Marshal(wrapper)
 	if err != nil {
 		return nil, fmt.Errorf("marshaling lifecycle xml: %w", err)
 	}

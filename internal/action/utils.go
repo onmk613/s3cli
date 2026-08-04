@@ -1,13 +1,16 @@
 // utils.go 提供 action 包内复用的通用工具: 取消/超时判断 (IsCanceled)、
-// S3 错误格式化 (FormatAPIError)、字节单位换算 (FormatBytes)、MIME 类型注册 (AddMime).
+// S3 错误格式化 (FormatAPIError)、字节单位换算 (FormatBytes)、MIME 类型注册 (AddMime)、
+// JSON lines 输出 (printJSONLine).
 
 package action
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"mime"
+	"os"
 	"strings"
 	"sync"
 
@@ -42,6 +45,17 @@ func FormatAPIError(err error) error {
 // FormatBytes 委托给 fmtutil.FormatBytes
 func FormatBytes(bytes int64) string {
 	return myprint.FormatBytes(bytes)
+}
+
+// printJSONLine 以单行 JSON (JSON lines) 输出结构化结果。
+// 各命令 --json 模式统一经此输出, 保证 schema 稳定 (见 doc/OUTPUT_SCHEMA.md)。
+func printJSONLine(v any) error {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return fmt.Errorf("marshal json: %w", err)
+	}
+	_, err = fmt.Fprintln(os.Stdout, string(b))
+	return err
 }
 
 var addMimeOnce sync.Once

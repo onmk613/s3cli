@@ -44,6 +44,7 @@ type Flags struct {
 	UserAgentSuffix string   // --user-agent-suffix 追加到 User-Agent 末尾
 	Headers         []string // --header 自定义 HTTP header, 可重复, 格式 key:value
 	OutputJson      bool     // --json json格式输出, 针对部分操作有效
+	ShowSecret      bool     // --show-secret alias list 显示完整明文密钥 (默认脱敏)
 }
 
 // Static 描述单个别名（一个 S3 端点）的静态配置。

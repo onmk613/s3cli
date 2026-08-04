@@ -111,12 +111,13 @@ func NewRootCmd() {
 	// RootCmd
 	rootCmd := &cobra.Command{
 		Use:           "s3cli",
-		Short:         "A lightweight S3 command-line client (compatible with AWS S3)",
-		Long:          "s3cli is a fast, dependency-free CLI for any S3-compatible object storage.",
+		Short:         "a lightweight S3 command-line client",
 		SilenceUsage:  true,
 		SilenceErrors: true,
 		Version:       version(),
-		RunE:          func(cmd *cobra.Command, args []string) error { return cmd.Help() },
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return cmd.Help()
+		},
 		PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
 			if shouldSkipConfLoad(cmd) {
 				return nil
@@ -133,20 +134,18 @@ func NewRootCmd() {
 	// ctx
 	rootCmd.SetContext(ctx)
 
-	// 所有子命令通用参数
-	pf := rootCmd.PersistentFlags()
-	pf.StringVarP(&config.ConfPath, "conf", "f", "", "Path to configuration file (default ~/.s3cli)")
-	pf.BoolVar(&config.G.F.Debug, "debug", false, "Print summarized S3 requests")
-	pf.BoolVar(&config.G.F.NoColor, "no-color", false, "Disable color output")
-	pf.StringVar(&config.G.F.UserAgent, "user-agent", "", "Override the HTTP User-Agent header")
-	pf.StringVar(&config.G.F.UserAgentSuffix, "user-agent-suffix", "", "Append extra content to the HTTP User-Agent header")
-	pf.StringArrayVarP(&config.G.F.Headers, "header", "H", nil, "Add a custom HTTP header (key:value), can repeat")
-	pf.BoolVarP(&config.G.F.Quiet, "quiet", "q", false, "Disable progress bar; stream plain text output instead")
-	pf.BoolVar(&config.G.F.OutputJson, "json", false, "Output format: text or json (supported commands emit structured results)")
+	// flags
+	fs := rootCmd.PersistentFlags()
+	fs.StringVarP(&config.ConfPath, "conf", "f", "", "Path to configuration file (default ~/.s3cli)")
+	fs.BoolVar(&config.G.F.Debug, "debug", false, "Print summarized S3 requests")
+	fs.BoolVar(&config.G.F.NoColor, "no-color", false, "Disable color output")
+	fs.StringVar(&config.G.F.UserAgent, "user-agent", "", "Override the HTTP User-Agent header")
+	fs.StringVar(&config.G.F.UserAgentSuffix, "user-agent-suffix", "", "Append extra content to the HTTP User-Agent header")
+	fs.StringArrayVarP(&config.G.F.Headers, "header", "H", nil, "Add a custom HTTP header (key:value), can repeat")
 
 	// 从注册表添加所有子命令（带分组显示）。
 	// 同时校验顶层命令名/别名不得重叠：cobra 在命令名与别名冲突时的命中顺序
-	// 依赖注册次序、不可靠，曾导致 `rm`（删对象）被误路由到 `rb`（删桶）。
+	// 依赖注册次序、不可靠，曾导致 `rm`（删对象）被误路由到删桶命令。
 	// 此处 fail-fast，避免再次出现这种危险的静默路由。
 	seen := make(map[string]string) // token -> 拥有它的命令 Use
 	for _, g := range cmdRegistry {
@@ -163,9 +162,6 @@ func NewRootCmd() {
 			rootCmd.AddCommand(cmd)
 		}
 	}
-
-	// 禁用help显示completion命令，保留功能，避免用户误以为是功能命令
-	rootCmd.CompletionOptions.HiddenDefaultCmd = true
 
 	err := rootCmd.Execute()
 	if err != nil {

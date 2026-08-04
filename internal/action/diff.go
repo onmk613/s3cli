@@ -61,6 +61,7 @@ type DiffOptions struct {
 	Recursive   bool // 目录模式是否递归（默认 true）
 	Concurrency int  // 比对内容时的并发（仅目录模式生效）
 	BriefOnly   bool // 只打印差异，不打印 "Identical" 列表
+	JSON        bool // --json: 输出单个 JSON 文档
 }
 
 type fileEntry struct {
@@ -141,7 +142,7 @@ func Diff(opt DiffOptions) error {
 	}
 
 	if !aIsDir {
-		return diffSingleFile(opt.A, opt.B, opt.Mode)
+		return diffSingleFile(opt.A, opt.B, opt.Mode, opt.JSON)
 	}
 
 	if !opt.Recursive {
@@ -190,7 +191,7 @@ func endpointIsDir(e *DiffEndpoint) (bool, error) {
 
 // =============== 单文件 diff ===============
 
-func diffSingleFile(a, b *DiffEndpoint, mode DiffMode) error {
+func diffSingleFile(a, b *DiffEndpoint, mode DiffMode, jsonOut bool) error {
 	ea, err := statOneFile(a, "")
 	if err != nil {
 		return fmt.Errorf("stat A: %w", err)
@@ -198,6 +199,36 @@ func diffSingleFile(a, b *DiffEndpoint, mode DiffMode) error {
 	eb, err := statOneFile(b, "")
 	if err != nil {
 		return fmt.Errorf("stat B: %w", err)
+	}
+
+	if jsonOut {
+		var differ, identical []string
+		switch {
+		case ea.Size != eb.Size:
+			differ = append(differ, fmt.Sprintf("%s vs %s (size %s vs %s)",
+				a.String(), b.String(), FormatBytes(ea.Size), FormatBytes(eb.Size)))
+		case mode == DiffModeSize:
+			identical = append(identical, fmt.Sprintf("%s vs %s (size %s)",
+				a.String(), b.String(), FormatBytes(ea.Size)))
+		case mode == DiffModeQuick && ea.Mtime != eb.Mtime:
+			differ = append(differ, fmt.Sprintf("%s vs %s (mtime %d vs %d)",
+				a.String(), b.String(), ea.Mtime, eb.Mtime))
+		case mode == DiffModeQuick:
+			identical = append(identical, fmt.Sprintf("%s vs %s (size %s, mtime match)",
+				a.String(), b.String(), FormatBytes(ea.Size)))
+		default: // MD5 模式：流式对比
+			equal, err := compareContent(a, "", b, "")
+			if err != nil {
+				return err
+			}
+			if !equal {
+				differ = append(differ, fmt.Sprintf("%s vs %s (content)", a.String(), b.String()))
+			} else {
+				identical = append(identical, fmt.Sprintf("%s vs %s (size %s, md5 match)",
+					a.String(), b.String(), FormatBytes(ea.Size)))
+			}
+		}
+		return printDiffJSON(DiffOptions{Mode: mode, A: a, B: b}, nil, nil, identical, differ, 0)
 	}
 
 	if ea.Size != eb.Size {
@@ -351,28 +382,34 @@ func diffDirectories(opt DiffOptions) error {
 	sort.Strings(differ)
 
 	// 3. 打印
-	myprint.PrintfDim("--- A: %s\n", opt.A.String())
-	myprint.PrintfDim("+++ B: %s\n", opt.B.String())
-	myprint.PrintfDim("mode=%s, concurrency=%d\n", opt.Mode, opt.Concurrency)
-	myprint.Println()
-	for _, k := range differ {
-		myprint.PrintfRed("DIFFER %s\n", k)
-	}
-	for _, k := range onlyA {
-		myprint.PrintfYellow("ONLY-A %s\n", k)
-	}
-	for _, k := range onlyB {
-		myprint.PrintfYellow("ONLY-B %s\n", k)
-	}
-	if !opt.BriefOnly {
-		for _, k := range identical {
-			myprint.PrintfGreen("OK     %s\n", k)
+	if opt.JSON {
+		if err := printDiffJSON(opt, onlyA, onlyB, identical, differ, failed.Load()); err != nil {
+			return err
 		}
-	}
+	} else {
+		myprint.PrintfDim("--- A: %s\n", opt.A.String())
+		myprint.PrintfDim("+++ B: %s\n", opt.B.String())
+		myprint.PrintfDim("mode=%s, concurrency=%d\n", opt.Mode, opt.Concurrency)
+		myprint.Println()
+		for _, k := range differ {
+			myprint.PrintfRed("DIFFER %s\n", k)
+		}
+		for _, k := range onlyA {
+			myprint.PrintfYellow("ONLY-A %s\n", k)
+		}
+		for _, k := range onlyB {
+			myprint.PrintfYellow("ONLY-B %s\n", k)
+		}
+		if !opt.BriefOnly {
+			for _, k := range identical {
+				myprint.PrintfGreen("OK     %s\n", k)
+			}
+		}
 
-	myprint.Println()
-	myprint.PrintfBoldCyan("Summary: identical=%d differ=%d only-A=%d only-B=%d\n",
-		len(identical), len(differ), len(onlyA), len(onlyB))
+		myprint.Println()
+		myprint.PrintfBoldCyan("Summary: identical=%d differ=%d only-A=%d only-B=%d\n",
+			len(identical), len(differ), len(onlyA), len(onlyB))
+	}
 
 	// 先报比较失败（I/O 错误 ≠ 内容不同），再报差异，保证退出语义正确。
 	if failed.Load() > 0 {
@@ -382,6 +419,32 @@ func diffDirectories(opt DiffOptions) error {
 		return errDiffer
 	}
 	return nil
+}
+
+// printDiffJSON 输出 diff 的单个 JSON 文档 (schema 见 doc/OUTPUT_SCHEMA.md)。
+// differ/onlyA/onlyB/identical 均为与文本模式一致的描述字符串; 空集合输出 [] 而非 null。
+func printDiffJSON(opt DiffOptions, onlyA, onlyB, identical, differ []string, failed int64) error {
+	return printJSONLine(map[string]any{
+		"mode":           opt.Mode,
+		"a":              opt.A.String(),
+		"b":              opt.B.String(),
+		"differ":         nonNilStrings(differ),
+		"onlyA":          nonNilStrings(onlyA),
+		"onlyB":          nonNilStrings(onlyB),
+		"identical":      nonNilStrings(identical),
+		"failed":         failed,
+		"differCount":    len(differ),
+		"onlyACount":     len(onlyA),
+		"onlyBCount":     len(onlyB),
+		"identicalCount": len(identical),
+	})
+}
+
+func nonNilStrings(s []string) []string {
+	if s == nil {
+		return []string{}
+	}
+	return s
 }
 
 func indexBy(list []fileEntry) map[string]fileEntry {

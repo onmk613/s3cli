@@ -1,5 +1,3 @@
-//go:build !aws
-
 // api.go 定义 S3 客户端核心: Client / Options / 构造函数 New, 以及一次完整
 // 请求的生命周期 (requestMetadata -> newRequest 签名 -> Do 发送+重试).
 // 签名细节见 signer.go, 错误解析见 error.go.
@@ -336,6 +334,11 @@ func retryBackoff(attempt int) time.Duration {
 		base     = 200 * time.Millisecond
 		retryCap = 10 * time.Second
 	)
+	// 移位前 cap attempt: 200ms << 25 约 1.7h, 已远超 retryCap;
+	// 避免极大 MaxRetries 时 int64 纳秒移位溢出为负/零。
+	if attempt > 25 {
+		attempt = 25
+	}
 	d := base << uint(attempt)
 	if d > retryCap {
 		d = retryCap

@@ -25,6 +25,7 @@ type PutOptions struct {
 	PartSizeMB      int
 	StorageClass    string            // e.g. "STANDARD_IA", "GLACIER"
 	Metadata        map[string]string // 用户元数据 (x-amz-meta-*)
+	Tags            string            // 对象标签 'k1=v1&k2=v2' (--tags)
 	NoProgress      bool              // 不显示进度条（--quiet）
 	Overwrite       bool              // 目标对象已存在时是否覆盖 (默认跳过)
 }
@@ -156,6 +157,7 @@ func (c *Action) uploadFile(ctx context.Context, opt PutOptions, mimeType, bucke
 		ContentType:  mimeType,
 		StorageClass: opt.StorageClass,
 		Metadata:     opt.Metadata,
+		Tagging:      opt.Tags,
 	}
 
 	var uploadErr error

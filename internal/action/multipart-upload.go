@@ -10,8 +10,13 @@ import (
 	"s3cli/pkg/s3iface"
 )
 
+// MpuListOptions mpu list 命令参数.
+type MpuListOptions struct {
+	JSON bool // --json: JSON lines 输出
+}
+
 // MpuList 列出未完成的 multipart upload
-func (c *Action) MpuList(bucket, prefix string) error {
+func (c *Action) MpuList(opt MpuListOptions, bucket, prefix string) error {
 	out, err := c.S3.ListMultipartUploads(c.Ctx, bucket, &s3iface.ListMultipartUploadsOptions{
 		Prefix: prefix,
 	})
@@ -20,15 +25,30 @@ func (c *Action) MpuList(bucket, prefix string) error {
 	}
 	var count int
 	for _, u := range out.Uploads {
+		count++
 		initiated := ""
 		if !u.Initiated.IsZero() {
 			initiated = u.Initiated.Format("2006-01-02 15:04:05")
 		}
+		if opt.JSON {
+			if err := printJSONLine(map[string]any{
+				"path":      c.S3Path(bucket, u.Key),
+				"bucket":    bucket,
+				"key":       u.Key,
+				"uploadId":  u.UploadID,
+				"initiated": initiated,
+			}); err != nil {
+				return err
+			}
+			continue
+		}
 		myprint.Printf("%s  %s  uploadId=%s\n",
 			initiated, c.S3Path(bucket, u.Key), u.UploadID)
-		count++
 	}
 	if count == 0 {
+		if opt.JSON {
+			return nil
+		}
 		myprint.PrintfBoldYellow("%s: no in-progress multipart uploads\n", c.S3Path(bucket, ""))
 	}
 	return nil

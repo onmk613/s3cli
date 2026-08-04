@@ -2,7 +2,7 @@
 // 内存版最小 S3 兼容服务 mockS3Server, 以及 runParityScenarios 操作断言集.
 //
 // 该文件不依赖任何具体后端实现, 仅依赖中立的 s3iface 接口, 因此无 build tag,
-// 在默认 (s3api) 与 -tags aws 两种构建下均参与编译.
+// 提供内存版最小 S3 兼容服务 mockS3Server.
 
 package action
 
@@ -157,6 +157,16 @@ func (m *mockS3Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("ETag", `"etag"`)
 		w.WriteHeader(http.StatusOK)
 
+	case r.Method == http.MethodGet && q.Has("tagging"):
+		// GetBucketTagging: 固定返回一条标签
+		w.Header().Set("Content-Type", "application/xml")
+		_, _ = w.Write([]byte(`<?xml version="1.0" encoding="UTF-8"?><Tagging><TagSet><Tag><Key>env</Key><Value>prod</Value></Tag></TagSet></Tagging>`))
+
+	case r.Method == http.MethodGet && q.Has("uploads"):
+		// ListMultipartUploads: 固定返回一条进行中的上传
+		w.Header().Set("Content-Type", "application/xml")
+		_, _ = w.Write([]byte(`<?xml version="1.0" encoding="UTF-8"?><ListMultipartUploadsResult><Bucket>mybucket</Bucket><Upload><Key>big/upload.bin</Key><UploadId>upload-123</UploadId><Initiated>2024-01-02T03:04:05.000Z</Initiated></Upload></ListMultipartUploadsResult>`))
+
 	case r.Method == http.MethodGet:
 		m.mu.Lock()
 		body, ok := m.objects[key]
@@ -207,7 +217,7 @@ func containsStr(list []string, s string) bool {
 }
 
 // runParityScenarios 用同一套操作断言跑单个后端, 验证 action 层与该后端的兼容性.
-// 各后端测试文件 (backend_switch_test.go / backend_switch_aws_test.go) 分别调用.
+// 由 s3api 后端测试文件 (backend_switch_test.go) 调用.
 func runParityScenarios(t *testing.T, name string, backend s3iface.S3Operations) {
 	t.Helper()
 	t.Run(name, func(t *testing.T) {
@@ -329,7 +339,7 @@ func runParityScenarios(t *testing.T, name string, backend s3iface.S3Operations)
 		}
 
 		// 9. action 层列举 (ListObjects) 不报错
-		if err := c.ListObjects("mybucket", "dir/", true); err != nil {
+		if err := c.ListObjects(ListOptions{Recursive: true}, "mybucket", "dir/"); err != nil {
 			t.Fatalf("ListObjects: %v", err)
 		}
 	})

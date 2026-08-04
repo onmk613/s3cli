@@ -1,7 +1,5 @@
-//go:build !aws
-
 // client-s3api_test.go 覆盖自建后端 (NewS3Client) 的构造行为.
-// 本文件仅在默认构建下编译; 官方 SDK 后端的等价测试见 awsclient_test.go.
+// s3api 客户端的单元测试.
 
 package client
 

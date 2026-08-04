@@ -1,5 +1,3 @@
-//go:build !aws
-
 package client
 
 import (
@@ -15,7 +13,6 @@ import (
 
 // NewS3Client 构建自建的 s3api.Client.
 // cfg 提供别名相关的静态配置；flags 提供进程级 CLI 开关（debug / User-Agent / 自定义 header）。
-// 本文件由 build tag "!aws" 控制, 默认构建编译此后端 (见 backend-s3api.go).
 func NewS3Client(_ context.Context, cfg config.Static, flags config.Flags) (*s3api.Client, error) {
 	transport := &http.Transport{
 		TLSClientConfig:       &tls.Config{MinVersion: tls.VersionTLS12, InsecureSkipVerify: !cfg.VerifySSL},

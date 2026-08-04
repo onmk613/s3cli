@@ -1,5 +1,3 @@
-//go:build !aws
-
 package s3api
 
 import (
