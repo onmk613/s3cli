@@ -28,12 +28,23 @@ func LoadConf() error {
 	info, err := os.Stat(ConfPath)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return fmt.Errorf("config file not found: %s", ConfPath)
+			// 配置文件不存在: 若环境变量提供了凭证, 进入纯 env 模式 (空别名表),
+			// 后续按别名解析时回退到环境变量; 否则提示用户配置或使用环境变量。
+			if _, ok := StaticFromEnv(); ok {
+				G.S = map[string]Static{}
+				return nil
+			}
+			return fmt.Errorf("config file not found: %s (create one with `s3cli alias set`, or set %s/%s/%s env vars to run without a config file)",
+				ConfPath, "S3CLI_HOST", "S3CLI_ACCESS_KEY", "S3CLI_SECRET_KEY")
 		}
 		return fmt.Errorf("stat config %s: %w", ConfPath, err)
 	}
 
 	if info.Size() == 0 {
+		if _, ok := StaticFromEnv(); ok {
+			G.S = map[string]Static{}
+			return nil
+		}
 		return fmt.Errorf("config file is empty: %s", ConfPath)
 	}
 

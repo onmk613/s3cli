@@ -10,17 +10,21 @@ import (
 	"s3cli/pkg/s3iface"
 )
 
-// SetVersioning 设置桶版本控制状态 (Enabled / Suspended).
-func (c *Action) SetVersioning(bucket string, status string) error {
-	if status == "" {
+type VersioningOptions struct {
+	Status string // Enabled / Suspended / Disabled
+}
+
+// SetVersioning 设置桶版本控制状态 (Enabled / Suspended / Disabled).
+func (c *Action) SetVersioning(opt VersioningOptions, bucket string) error {
+	if opt.Status == "" {
 		return errors.New("status cannot be empty")
 	}
 
-	if err := c.S3.SetBucketVersioning(c.Ctx, bucket, s3iface.BucketVersioningStatus(status)); err != nil {
+	if err := c.S3.SetBucketVersioning(c.Ctx, bucket, s3iface.BucketVersioningStatus(opt.Status)); err != nil {
 		return fmt.Errorf("set versioning %s: %s", bucket, FormatAPIError(err))
 	}
 
-	myprint.PrintfBoldGreen("Versioning %s for %s %s\n", status, c.Alias, bucket)
+	myprint.PrintfBoldGreen("Versioning %s for %s %s\n", opt.Status, c.Alias, bucket)
 	return nil
 }
 

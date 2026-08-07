@@ -8,12 +8,12 @@ import (
 	"time"
 
 	"s3cli/internal/config"
-	"s3cli/pkg/s3api"
+	"s3cli/pkg/api"
 )
 
-// NewS3Client 构建自建的 s3api.Client.
+// NewS3Client 构建自建的 api.Client.
 // cfg 提供别名相关的静态配置；flags 提供进程级 CLI 开关（debug / User-Agent / 自定义 header）。
-func NewS3Client(_ context.Context, cfg config.Static, flags config.Flags) (*s3api.Client, error) {
+func NewS3Client(_ context.Context, cfg config.Static, flags config.Flags) (*api.Client, error) {
 	transport := &http.Transport{
 		TLSClientConfig:       &tls.Config{MinVersion: tls.VersionTLS12, InsecureSkipVerify: !cfg.VerifySSL},
 		DialContext:           (&net.Dialer{Timeout: 10 * time.Second, KeepAlive: 30 * time.Second}).DialContext,
@@ -45,15 +45,15 @@ func NewS3Client(_ context.Context, cfg config.Static, flags config.Flags) (*s3a
 		return nil, err
 	}
 
-	var bucketLookup s3api.BucketLookupType
-	var lookupFn s3api.BucketLookupFunc
+	var bucketLookup api.BucketLookupType
+	var lookupFn api.BucketLookupFunc
 	switch lookup {
 	case config.BucketLookupPath:
-		bucketLookup = s3api.BucketLookupPath
+		bucketLookup = api.BucketLookupPath
 	case config.BucketLookupDNS:
-		bucketLookup = s3api.BucketLookupDNS
+		bucketLookup = api.BucketLookupDNS
 	case config.BucketLookupCustom:
-		bucketLookup = s3api.BucketLookupAuto
+		bucketLookup = api.BucketLookupAuto
 		lookupFn = &CustomBucketLookup{
 			Template:          customTpl,
 			BucketPlaceholder: config.BucketPlaceholder,
@@ -61,7 +61,7 @@ func NewS3Client(_ context.Context, cfg config.Static, flags config.Flags) (*s3a
 		}
 	}
 
-	opts := &s3api.Options{
+	opts := &api.Options{
 		Endpoint:           cfg.HostBase,
 		AccessKey:          cfg.AccessKey,
 		SecretKey:          cfg.SecretKey,
@@ -73,5 +73,5 @@ func NewS3Client(_ context.Context, cfg config.Static, flags config.Flags) (*s3a
 		MaxRetries:         cfg.MaxRetries,
 	}
 
-	return s3api.New(opts)
+	return api.New(opts)
 }

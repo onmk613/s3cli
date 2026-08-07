@@ -14,11 +14,13 @@ import (
 
 // ListOptions ls 命令参数 (mc ls 对齐).
 type ListOptions struct {
-	Recursive  bool // -r: 递归列举全部层级
-	Versions   bool // --versions: 列出对象的所有版本与 delete-marker
-	Incomplete bool // -I/--incomplete: 列出进行中的 multipart upload
-	Summarize  bool // --summarize: 追加对象数与总大小汇总
-	JSON       bool // --json: JSON lines 输出
+	Recursive  bool     // -r: 递归列举全部层级
+	Versions   bool     // --versions: 列出对象的所有版本与 delete-marker
+	Incomplete bool     // -I/--incomplete: 列出进行中的 multipart upload
+	Summarize  bool     // --summarize: 追加对象数与总大小汇总
+	JSON       bool     // --json: JSON lines 输出
+	Include    []string // --include: 仅列出匹配任一 glob 的对象 (建议配合 -r)
+	Exclude    []string // --exclude: 不列出匹配任一 glob 的对象
 }
 
 // ListObjects 列出桶 / 对象. bucket 为空时列出当前凭证下所有桶.
@@ -87,6 +89,13 @@ func (c *Action) listObjectsV2(bucket, prefix string, opt ListOptions) error {
 			myprint.PrintfBlue("%-22s %12s   DIR   %s\n", "", "-", c.S3Path(bucket, p))
 		}
 		for _, item := range page.Contents {
+			// --include/--exclude 过滤 (对完整 key 做 glob; 建议配合 -r)
+			if len(opt.Include) > 0 || len(opt.Exclude) > 0 {
+				if !matchesMirrorFilters(item.Key, opt.Include, opt.Exclude) {
+					hasOutput = true // 有对象但被过滤; 避免触发空结果回退
+					continue
+				}
+			}
 			hasOutput = true
 			// 目录标记对象 (以 "/" 结尾且 0 字节) 显示为 DIR
 			if strings.HasSuffix(item.Key, "/") && item.Size == 0 {
@@ -157,6 +166,11 @@ func (c *Action) listObjectVersionsAsLs(bucket, prefix string, opt ListOptions) 
 			return fmt.Errorf("list versions: %s", FormatAPIError(err))
 		}
 		for _, v := range page.Versions {
+			if len(opt.Include) > 0 || len(opt.Exclude) > 0 {
+				if !matchesMirrorFilters(v.Key, opt.Include, opt.Exclude) {
+					continue
+				}
+			}
 			count++
 			totalSize += v.Size
 			if opt.JSON {

@@ -37,6 +37,11 @@ func (c *Action) PutObject(opt PutOptions, bucket, prefix, localPath string, isS
 		opt.Concurrency = defaultConcurrency
 	}
 
+	// stdin 上传 (put - / put --stdin): 从标准输入读取并上传, 替代旧 pipe 命令.
+	if localPath == "-" {
+		return c.putStdin(opt, bucket, prefix)
+	}
+
 	// 判定本地路径是否为目录：目录必须走流式批量上传，且需要 -r。
 	fi, err := os.Stat(localPath)
 	if err != nil {
@@ -139,7 +144,7 @@ func (c *Action) uploadDirStreaming(opt PutOptions, bucket, key, localPath strin
 }
 
 func (c *Action) uploadFile(ctx context.Context, opt PutOptions, mimeType, bucket, fileKey, filePath string, report func(n int64)) error {
-	// 流式上传: 打开文件句柄直接传给 s3api, 避免整个文件读入内存 (大文件不再 OOM).
+	// 流式上传: 打开文件句柄直接传给 api, 避免整个文件读入内存 (大文件不再 OOM).
 	f, err := os.Open(filePath)
 	if err != nil {
 		return fmt.Errorf("open %s: %w", filePath, err)
@@ -184,4 +189,36 @@ func detectMime(localPath string, defaultMime string) string {
 		return defaultMime
 	}
 	return "binary/octet-stream"
+}
+
+// putStdin 从标准输入读取数据并上传到一个完整 key (put - / put --stdin).
+// 输入大小未知, 小输入走单次 PUT, 大输入自动转分片上传.
+func (c *Action) putStdin(opt PutOptions, bucket, key string) error {
+	if key == "" {
+		return fmt.Errorf("stdin upload requires a full object key (got empty key)")
+	}
+	if strings.HasSuffix(key, "/") {
+		return fmt.Errorf("stdin upload requires a full object key, not a directory prefix %q", key)
+	}
+
+	mimeType := opt.ContentType
+	if mimeType == "" {
+		if opt.DefaultMimeType != "" {
+			mimeType = opt.DefaultMimeType
+		} else {
+			mimeType = "binary/octet-stream"
+		}
+	}
+
+	putOpts := &s3iface.PutObjectOptions{
+		ContentType:  mimeType,
+		StorageClass: opt.StorageClass,
+		Metadata:     opt.Metadata,
+		Tagging:      opt.Tags,
+	}
+	if err := c.uploadUnknownSize(c.Ctx, bucket, key, os.Stdin, opt.PartSizeMB, putOpts); err != nil {
+		return fmt.Errorf("stdin upload %s: %s", c.S3Path(bucket, key), FormatAPIError(err))
+	}
+	myprint.PrintfBoldGreen("put: stdin --> %s  (%s)\n", c.S3Path(bucket, key), mimeType)
+	return nil
 }

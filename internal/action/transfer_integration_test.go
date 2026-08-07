@@ -12,7 +12,7 @@ import (
 	"sync/atomic"
 	"testing"
 
-	"s3cli/pkg/s3api"
+	"s3cli/pkg/api"
 )
 
 type roundTripperFunc func(*http.Request) (*http.Response, error)
@@ -31,9 +31,9 @@ func (b *failingBody) Read(p []byte) (int, error) {
 }
 func (*failingBody) Close() error { return nil }
 
-func actionTestClient(t *testing.T, endpoint string, transport http.RoundTripper) *s3api.Client {
+func actionTestClient(t *testing.T, endpoint string, transport http.RoundTripper) *api.Client {
 	t.Helper()
-	c, err := s3api.New(&s3api.Options{Endpoint: endpoint, AccessKey: "access", SecretKey: "secret", Transport: transport, MaxRetries: 0})
+	c, err := api.New(&api.Options{Endpoint: endpoint, AccessKey: "access", SecretKey: "secret", Transport: transport, MaxRetries: 0})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -177,7 +177,7 @@ func TestDeleteBatchReportsObjectErrors(t *testing.T) {
 	}))
 	defer server.Close()
 	client := &Action{S3: actionTestClient(t, server.URL, nil), Ctx: context.Background()}
-	err := client.deleteBatch("bucket", []s3api.ObjectIdentifier{{Key: "protected"}})
+	err := client.deleteBatch("bucket", []api.ObjectIdentifier{{Key: "protected"}})
 	if err == nil || !strings.Contains(err.Error(), `"protected": AccessDenied: denied`) {
 		t.Fatalf("delete batch error = %v", err)
 	}

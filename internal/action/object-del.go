@@ -27,16 +27,18 @@ func isBenignNotFound(err error) bool {
 
 // DelOptions rm 命令参数 (mc rm 对齐).
 type DelOptions struct {
-	Recursive  bool   // -r: 递归删除
-	Force      bool   // 递归删除必须显式 --force (mc 语义)
-	VersionID  string // --version-id/--vid: 删除指定版本
-	Versions   bool   // --versions: 删除对象及其全部版本
-	Incomplete bool   // -I/--incomplete: 中止进行中的分片上传
-	DryRun     bool   // --dry-run: 只列出将删除的对象, 不实际删除
-	OlderThan  string // 时长 (如 7d10h31s) 或绝对时间: 只删除更旧的对象
-	NewerThan  string // 时长或绝对时间: 只删除更新的对象
-	Stdin      bool   // --stdin: 从 stdin 逐行读取 key
-	NonCurrent bool   // --non-current: 删除非当前版本
+	Recursive  bool     // -r: 递归删除
+	Force      bool     // 递归删除必须显式 --force (mc 语义)
+	VersionID  string   // --version-id/--vid: 删除指定版本
+	Versions   bool     // --versions: 删除对象及其全部版本
+	Incomplete bool     // -I/--incomplete: 中止进行中的分片上传
+	DryRun     bool     // --dry-run: 只列出将删除的对象, 不实际删除
+	OlderThan  string   // 时长 (如 7d10h31s) 或绝对时间: 只删除更旧的对象
+	NewerThan  string   // 时长或绝对时间: 只删除更新的对象
+	Stdin      bool     // --stdin: 从 stdin 逐行读取 key
+	NonCurrent bool     // --non-current: 删除非当前版本
+	Include    []string // --include: 仅删除匹配任一 glob 的对象 (配合 -r)
+	Exclude    []string // --exclude: 不删除匹配任一 glob 的对象
 }
 
 // DeleteObjects 删除对象 / 目录
@@ -286,6 +288,11 @@ func (c *Action) deleteObjectsWithPrefix(bucket, prefix string, opt DelOptions) 
 			return fmt.Errorf("list objects: %s", FormatAPIError(err))
 		}
 		for _, item := range page.Contents {
+			if len(opt.Include) > 0 || len(opt.Exclude) > 0 {
+				if !matchesMirrorFilters(item.Key, opt.Include, opt.Exclude) {
+					continue
+				}
+			}
 			if !matchDeleteTime(item.LastModified, newer, older) {
 				continue
 			}
@@ -400,6 +407,11 @@ func (c *Action) deleteVersionsUnderPrefix(bucket, prefix string, opt DelOptions
 			return fmt.Errorf("list versions: %s", FormatAPIError(err))
 		}
 		for _, v := range page.Versions {
+			if len(opt.Include) > 0 || len(opt.Exclude) > 0 {
+				if !matchesMirrorFilters(v.Key, opt.Include, opt.Exclude) {
+					continue
+				}
+			}
 			// --non-current: 跳过最新版本
 			if opt.NonCurrent && v.IsLatest {
 				continue

@@ -13,7 +13,6 @@ func init() {
 	Register("read", "Read Commands", NewDuCmd)
 	Register("read", "Read Commands", NewStatCmd)
 	Register("read", "Read Commands", NewInfoCmd)
-	Register("read", "Read Commands", NewLsVersionsCmd)
 }
 
 // NewLsCmd 列出桶/对象 (mc ls 对齐: -r/--recursive, --versions, --incomplete/-I, --summarize).
@@ -34,8 +33,12 @@ func NewLsCmd() *cobra.Command {
 	f.BoolVar(&opt.Versions, "versions", false, "List all versions of objects (including delete markers)")
 	f.BoolVarP(&opt.Incomplete, "incomplete", "I", false, "List in-progress multipart uploads")
 	f.BoolVar(&opt.Summarize, "summarize", false, "Print summary (number of objects, total size)")
+	// -r/--recursive 是主入口; --all/-a 保留为兼容别名并标记弃用 (二者共享同一变量).
+	f.BoolVarP(&opt.Recursive, "recursive", "r", false, "Recursively list all objects under the path (no delimiter)")
 	f.BoolVarP(&opt.Recursive, "all", "a", false, "DEPRECATED: use -r/--recursive")
 	_ = cmd.Flags().MarkDeprecated("all", "use -r/--recursive instead")
+	f.StringSliceVar(&opt.Include, "include", nil, "Only list keys matching this glob (can repeat; best with -r)")
+	f.StringSliceVar(&opt.Exclude, "exclude", nil, "Skip keys matching this glob (can repeat)")
 	f.BoolVar(&opt.JSON, "json", false, "Output format: text or json (supported commands emit structured results)")
 	return cmd
 }
@@ -110,21 +113,4 @@ func NewInfoCmd() *cobra.Command {
 	return cmd
 }
 
-// NewLsVersionsCmd 列出对象版本 (mc ls --versions 的独立命令形态, 兼容旧用法).
-func NewLsVersionsCmd() *cobra.Command {
-	var opt action.ListOptions
-	cmd := &cobra.Command{
-		Use:               "lsv [alias:bucket[/prefix]] ...",
-		Aliases:           []string{"ls-versions", "list-versions"},
-		Short:             "List object versions (including delete markers)",
-		ValidArgsFunction: AutoCompletePath,
-		Args:              cobra.MinimumNArgs(1),
-		RunE: NewRunE(func(S3 action.Action, dst *s3path.Path) error {
-			opt.Versions = true
-			return S3.ListObjects(opt, dst.Bucket, dst.Key)
-		}),
-	}
-	cmd.Flags().BoolVar(&opt.Summarize, "summarize", false, "Print summary (number of versions, total size)")
-	cmd.Flags().BoolVar(&opt.JSON, "json", false, "Output format: text or json (supported commands emit structured results)")
-	return cmd
-}
+// (已移除 NewLsVersionsCmd: 列举版本请使用 `ls --versions`.)

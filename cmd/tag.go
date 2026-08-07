@@ -1,9 +1,6 @@
 package cmd
 
 import (
-	"fmt"
-	"strings"
-
 	"s3cli/internal/action"
 	"s3cli/internal/s3path"
 
@@ -12,7 +9,7 @@ import (
 
 func init() { Register("object", "Object Operations", NewTagCmd) }
 
-// NewTagCmd 管理桶/对象标签 (mc tag 对齐: set/list/remove).
+// NewTagCmd 管理桶/对象标签
 func NewTagCmd() *cobra.Command {
 	tagCmd := &cobra.Command{
 		Use:   "tag",
@@ -22,9 +19,8 @@ func NewTagCmd() *cobra.Command {
 	return tagCmd
 }
 
-// NewSetTagCmd 设置标签 (mc tag set --tags 'k1=v1&k2=v2' 格式; 兼容旧 --tag 逗号格式).
+// NewSetTagCmd 设置标签
 func NewSetTagCmd() *cobra.Command {
-	var tagString string
 	var legacy map[string]string
 	cmd := &cobra.Command{
 		Use:               "set [alias:bucket[/key]] ...",
@@ -34,19 +30,11 @@ func NewSetTagCmd() *cobra.Command {
 		ValidArgsFunction: AutoCompletePath,
 		Annotations:       ParseS3OnlyPath,
 		RunE: NewRunE(func(S3 action.Action, dst *s3path.Path) error {
-			m, err := parseTagsString(tagString)
-			if err != nil {
-				return err
-			}
-			if len(legacy) > 0 {
-				m = legacy
-			}
-			return S3.SetTag(dst.Bucket, dst.Key, m)
+			return S3.SetTag(dst.Bucket, dst.Key, legacy)
 		}),
 	}
-	cmd.Flags().StringVar(&tagString, "tags", "", "Tag set: '<key1>=<value1>&<key2>=<value2>'")
-	cmd.Flags().StringToStringVar(&legacy, "tag", nil, "DEPRECATED: use --tags")
-	_ = cmd.Flags().MarkDeprecated("tag", "use --tags 'k=v&k2=v2' instead")
+	cmd.Flags().StringToStringVar(&legacy, "tag", nil, "key1=value1,key2=value2 format")
+	_ = cmd.MarkFlagRequired("tag")
 	return cmd
 }
 
@@ -81,29 +69,4 @@ func NewRemoveTagCmd() *cobra.Command {
 			return S3.DelTag(dst.Bucket, dst.Key)
 		}),
 	}
-}
-
-// parseTagsString 解析 mc 风格 'k1=v1&k2=v2' 标签串; 同时兼容旧逗号分隔格式.
-func parseTagsString(s string) (map[string]string, error) {
-	m := map[string]string{}
-	s = strings.TrimSpace(s)
-	if s == "" {
-		return m, nil
-	}
-	sep := "&"
-	if !strings.Contains(s, "&") && strings.Contains(s, ",") {
-		sep = ","
-	}
-	for _, part := range strings.Split(s, sep) {
-		part = strings.TrimSpace(part)
-		if part == "" {
-			continue
-		}
-		kv := strings.SplitN(part, "=", 2)
-		if len(kv) != 2 || strings.TrimSpace(kv[0]) == "" {
-			return nil, fmt.Errorf("invalid tag %q: expected key=value", part)
-		}
-		m[strings.TrimSpace(kv[0])] = strings.TrimSpace(kv[1])
-	}
-	return m, nil
 }

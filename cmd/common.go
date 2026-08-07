@@ -120,18 +120,6 @@ func NewRunE(fn ActionFunc) func(*cobra.Command, []string) error {
 	})
 }
 
-// NewRunEWithPreprocess 供参数需要先加工成 S3 路径列表的命令使用:
-// 先用 preprocess 从 args 中提取 S3 path，再复用 runForPaths 的统一执行/错误收尾。
-func NewRunEWithPreprocess(preprocess func(cmd *cobra.Command, args []string) ([]string, error), fn ActionFunc) func(*cobra.Command, []string) error {
-	return func(cmd *cobra.Command, args []string) error {
-		s3Args, err := preprocess(cmd, args)
-		if err != nil {
-			return err
-		}
-		return runForPaths(cmd.Context(), s3Args, fn)
-	}
-}
-
 // NewRunELocal 供不解析 S3 路径的本地命令使用，统一 cancel 与错误展示语义。
 func NewRunELocal(fn func(cmd *cobra.Command, args []string) error) func(*cobra.Command, []string) error {
 	return func(cmd *cobra.Command, args []string) error {
@@ -202,36 +190,6 @@ func NewRunETwoPaths(fn TwoS3ActionFunc) func(cmd *cobra.Command, args []string)
 		}
 		return nil
 	}
-}
-
-// runForPaths 对每个 S3 路径 arg 依次执行 fn, 收集错误并统一包装。
-// 供需要自定义参数预处理的命令 (bucket cors set / policy set) 复用
-// NewRunE 的"逐路径执行 + 错误收集 + errAlreadyDisplayed 包装"语义。
-func runForPaths(ctx context.Context, args []string, fn func(S3 action.Action, sp *s3path.Path) error) error {
-	var errs []error
-	for _, arg := range args {
-		S3, sp, err := parseClient(ctx, arg)
-		if err != nil {
-			if isCanceled(ctx) {
-				return nil
-			}
-			displayError(err)
-			errs = append(errs, err)
-			continue
-		}
-		if err := fn(S3, sp); err != nil {
-			if isCanceled(ctx) {
-				return nil
-			}
-			displayError(err)
-			errs = append(errs, err)
-			continue
-		}
-	}
-	if len(errs) > 0 {
-		return fmt.Errorf("%w: %w", errAlreadyDisplayed, errs[0])
-	}
-	return nil
 }
 
 // parseClient 封装 client 解析 + cancel + 错误展示，返回构造好的 S3Client。

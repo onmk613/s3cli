@@ -13,10 +13,13 @@
 package action
 
 import (
-	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
+	"slices"
+	"strings"
+
 	myprint "s3cli/pkg/fmtutil"
 	"s3cli/pkg/s3iface"
 )
@@ -39,7 +42,7 @@ func (c *Action) SetPolicy(opt PolicyOptions, bucket string) error {
 		return c.setPolicyFromFile(opt.ConfigFile, bucket)
 	}
 	if opt.Permission == "" {
-		return fmt.Errorf("policy set: either --permission/-p PERMISSION or -f/--from-file is required")
+		return fmt.Errorf("policy set: either --type TYPE or --from-file FILE is required")
 	}
 	return c.applyCannedPolicy(opt.Permission, bucket, opt.Prefix)
 }
@@ -61,20 +64,41 @@ func (c *Action) setPolicyFromFile(policyFile, bucket string) error {
 	return nil
 }
 
-// GetPolicy 读取并以 pretty JSON 打印桶的访问策略.
-func (c *Action) GetPolicy(bucket string) error {
+// GetPolicyOptions 控制 GetPolicy 的输出方式.
+type GetPolicyOptions struct {
+	JSON bool // --json: 直接输出服务器返回的原始策略 JSON
+}
+
+// GetPolicy 读取桶策略: 默认解析策略 JSON 并输出策略类型
+// (private/download/upload/public/custom); --json 时直接输出原始策略 JSON.
+func (c *Action) GetPolicy(opt GetPolicyOptions, bucket string) error {
 	raw, err := c.S3.GetBucketPolicy(c.Ctx, bucket)
 	if err != nil {
+		// 无策略等价于 private, 默认输出直接展示类型; --json 无原始 JSON 可输出, 保持报错.
+		var apiErr *s3iface.ErrorResponse
+		if !opt.JSON && errors.As(err, &apiErr) && apiErr.Code == "NoSuchBucketPolicy" {
+			myprint.PrintfBoldBlue("# %s policy:\n", c.S3Path(bucket, ""))
+			myprint.PrintlnGreen("type: private")
+			return nil
+		}
 		return FormatAPIError(err)
 	}
-	myprint.PrintfBoldBlue("# %s policy:\n", c.S3Path(bucket, ""))
 
-	var pretty bytes.Buffer
-	if err := json.Indent(&pretty, raw, "", "  "); err == nil {
-		myprint.PrintlnGreen(pretty.String())
-	} else {
-		myprint.PrintlnGreen(string(raw))
+	if opt.JSON {
+		out := string(raw)
+		if !strings.HasSuffix(out, "\n") {
+			out += "\n"
+		}
+		_, err := fmt.Fprint(os.Stdout, out)
+		return err
 	}
+
+	typ, err := classifyPolicyType(raw, bucket)
+	if err != nil {
+		return err
+	}
+	myprint.PrintfBoldBlue("# %s policy:\n", c.S3Path(bucket, ""))
+	myprint.PrintfGreen("type: %s\n", typ)
 	return nil
 }
 
@@ -239,4 +263,260 @@ func (c *Action) applyCannedPolicy(name, bucket, prefix string) error {
 	}
 	myprint.PrintfBoldGreen("Policy %s set for %s (%s)\n", perm, c.S3Path(bucket, ""), scope)
 	return nil
+}
+
+// ----------------------------------------------------------------------------
+// 策略类型识别 (PolicyGetCmd 默认输出)
+// ----------------------------------------------------------------------------
+
+// policyStatement / policyDocument 仅用于类型识别: 宽松解析 Action/Resource
+// (S3 策略允许单个字符串或字符串数组), 忽略 Sid 等不影响识别的字段.
+type policyStatement struct {
+	Action    any            `json:"Action"`
+	Effect    string         `json:"Effect"`
+	Principal any            `json:"Principal"`
+	Resource  any            `json:"Resource"`
+	Condition map[string]any `json:"Condition"`
+}
+
+type policyDocument struct {
+	Version   string          `json:"Version"`
+	Statement json.RawMessage `json:"Statement"`
+}
+
+// policySigPart 是单条策略语句的规范化签名, 用于和预定义策略做精确比对.
+type policySigPart struct {
+	Actions   []string `json:"a"`
+	Resources []string `json:"r"`
+	Prefix    string   `json:"p,omitempty"`
+}
+
+// classifyPolicyType 解析桶策略 JSON 并识别匿名访问类型: download / upload /
+// public 与 SetPolicy 的预定义策略一一对应; 合法 JSON 但无法对应任何预定义
+// 策略时返回 custom.
+func classifyPolicyType(raw []byte, bucket string) (string, error) {
+	var doc policyDocument
+	if err := json.Unmarshal(raw, &doc); err != nil {
+		return "", fmt.Errorf("policy get: invalid policy JSON: %w", err)
+	}
+	if doc.Version != "2012-10-17" || len(doc.Statement) == 0 {
+		return "custom", nil
+	}
+
+	stmts, err := parsePolicyStatements(doc.Statement)
+	if err != nil {
+		return "custom", nil
+	}
+
+	var sigs []string
+	prefixes := map[string]bool{}
+	for _, st := range stmts {
+		sig, condPrefix, ok := policyStatementSignature(st)
+		if !ok {
+			return "custom", nil
+		}
+		sigs = append(sigs, sig)
+		if condPrefix != "" {
+			prefixes[condPrefix] = true
+		}
+		resources, ok := normalizeStringSet(st.Resource)
+		if !ok {
+			return "custom", nil
+		}
+		for _, res := range resources {
+			p, isObj := objectResourcePrefix(bucket, res)
+			if isObj {
+				prefixes[p] = true
+			}
+		}
+	}
+	if len(prefixes) > 1 {
+		return "custom", nil
+	}
+	prefix := ""
+	for p := range prefixes {
+		prefix = p
+	}
+	slices.Sort(sigs)
+
+	for _, perm := range []string{"download", "upload", "public"} {
+		expected := cannedPolicySignatures(perm, bucket, prefix)
+		if slices.Equal(sigs, expected) {
+			return perm, nil
+		}
+	}
+	return "custom", nil
+}
+
+// parsePolicyStatements 兼容 Statement 为单个对象或对象数组两种写法.
+func parsePolicyStatements(raw json.RawMessage) ([]policyStatement, error) {
+	var list []policyStatement
+	if err := json.Unmarshal(raw, &list); err == nil {
+		return list, nil
+	}
+	var one policyStatement
+	if err := json.Unmarshal(raw, &one); err == nil {
+		return []policyStatement{one}, nil
+	}
+	return nil, fmt.Errorf("policy get: invalid Statement")
+}
+
+// policyStatementSignature 把单条语句归一化为可比较签名; 任何不属于预定义
+// 匿名策略的写法 (Deny、非匿名 Principal、额外 Condition 等) 返回 ok=false.
+func policyStatementSignature(st policyStatement) (sig, condPrefix string, ok bool) {
+	if st.Effect != "Allow" || !isAnonymousPrincipal(st.Principal) {
+		return "", "", false
+	}
+	actions, ok := normalizeStringSet(st.Action)
+	if !ok {
+		return "", "", false
+	}
+	resources, ok := normalizeStringSet(st.Resource)
+	if !ok {
+		return "", "", false
+	}
+	condPrefix, ok = normalizePolicyCondition(st.Condition)
+	if !ok {
+		return "", "", false
+	}
+	b, err := json.Marshal(policySigPart{
+		Actions:   actions,
+		Resources: resources,
+		Prefix:    condPrefix,
+	})
+	if err != nil {
+		return "", "", false
+	}
+	return string(b), condPrefix, true
+}
+
+// isAnonymousPrincipal 判断 Principal 是否为匿名主体 "*" (字符串或 AWS 数组形式).
+func isAnonymousPrincipal(v any) bool {
+	switch p := v.(type) {
+	case string:
+		return p == "*"
+	case map[string]any:
+		aws, ok := p["AWS"]
+		if !ok {
+			return false
+		}
+		switch a := aws.(type) {
+		case string:
+			return a == "*"
+		case []any:
+			return len(a) == 1 && a[0] == "*"
+		}
+	}
+	return false
+}
+
+// normalizeStringSet 把单个字符串或字符串数组归一化为非空字符串集合.
+func normalizeStringSet(v any) ([]string, bool) {
+	var out []string
+	switch t := v.(type) {
+	case string:
+		if t == "" {
+			return nil, false
+		}
+		out = []string{t}
+	case []any:
+		for _, e := range t {
+			s, ok := e.(string)
+			if !ok || s == "" {
+				return nil, false
+			}
+			out = append(out, s)
+		}
+	default:
+		return nil, false
+	}
+	return out, len(out) > 0
+}
+
+// normalizePolicyCondition 只接受预定义策略使用的 StringEquals s3:prefix 条件,
+// 返回前缀值; 无条件返回 "".
+func normalizePolicyCondition(cond map[string]any) (string, bool) {
+	if len(cond) == 0 {
+		return "", true
+	}
+	if len(cond) != 1 {
+		return "", false
+	}
+	seq, ok := cond["StringEquals"].(map[string]any)
+	if !ok || len(seq) != 1 {
+		return "", false
+	}
+	val, ok := seq["s3:prefix"]
+	if !ok {
+		return "", false
+	}
+	var prefix string
+	switch v := val.(type) {
+	case string:
+		prefix = v
+	case []any:
+		if len(v) != 1 {
+			return "", false
+		}
+		s, ok := v[0].(string)
+		if !ok {
+			return "", false
+		}
+		prefix = s
+	default:
+		return "", false
+	}
+	if prefix == "" {
+		return "", false
+	}
+	return prefix, true
+}
+
+// objectResourcePrefix 从对象资源 ARN 中提取策略前缀:
+// arn:aws:s3:::bucket/prefix* -> prefix; 非对象资源返回 ok=false.
+func objectResourcePrefix(bucket, res string) (prefix string, ok bool) {
+	bucketARN := "arn:aws:s3:::" + bucket
+	if !strings.HasPrefix(res, bucketARN+"/") || !strings.HasSuffix(res, "*") {
+		return "", false
+	}
+	return strings.TrimSuffix(strings.TrimPrefix(res, bucketARN+"/"), "*"), true
+}
+
+// cannedPolicySignatures 生成预定义策略的规范化语句签名集合 (已排序),
+// 与 buildAnonymousPolicy 的结构一一对应.
+func cannedPolicySignatures(perm, bucket, prefix string) []string {
+	bucketRes := "arn:aws:s3:::" + bucket
+	objRes := bucketRes + "/" + prefix + "*"
+
+	sig := func(actions, resources []string, condPrefix string) string {
+		b, _ := json.Marshal(policySigPart{
+			Actions:   actions,
+			Resources: resources,
+			Prefix:    condPrefix,
+		})
+		return string(b)
+	}
+
+	var sigs []string
+	switch perm {
+	case "download":
+		sigs = []string{
+			sig([]string{actionGetBucketLocation}, []string{bucketRes}, ""),
+			sig([]string{actionListBucket}, []string{bucketRes}, prefix),
+			sig([]string{actionGetObject}, []string{objRes}, ""),
+		}
+	case "upload":
+		sigs = []string{
+			sig([]string{actionGetBucketLocation, actionListBucketMultipart}, []string{bucketRes}, ""),
+			sig([]string{actionAbortMultipart, actionDeleteObject, actionListMultipartParts, actionPutObject}, []string{objRes}, ""),
+		}
+	case "public":
+		sigs = []string{
+			sig([]string{actionGetBucketLocation, actionListBucketMultipart}, []string{bucketRes}, ""),
+			sig([]string{actionListBucket}, []string{bucketRes}, prefix),
+			sig([]string{actionAbortMultipart, actionDeleteObject, actionGetObject, actionListMultipartParts, actionPutObject}, []string{objRes}, ""),
+		}
+	}
+	slices.Sort(sigs)
+	return sigs
 }

@@ -13,13 +13,11 @@ import (
 
 func init() { Register("tool", "Tools", NewShareCmd) }
 
-// NewShareCmd 生成预签名 URL (mc share 对齐: download/upload 子命令, --expire/-E 时长).
-// 兼容旧用法: 直接 `share [alias:bucket/path] ...` 等价于 `share download`.
+// NewShareCmd 生成预签名 URL
 func NewShareCmd() *cobra.Command {
 	shareCmd := &cobra.Command{
 		Use:   "share",
-		Long:  "Generate URL for temporary access to an object (text output only)",
-		Short: "Generate URL for temporary access to an object (mc share compatible)",
+		Short: "Generate URL for temporary access to an object",
 		Args:  cobra.MinimumNArgs(1),
 	}
 	shareCmd.AddCommand(NewShareDownloadCmd(), NewShareUploadCmd())
@@ -30,7 +28,6 @@ func NewShareCmd() *cobra.Command {
 func NewShareDownloadCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:               "download [alias:bucket/path] ...",
-		Long:              "Generate a pre-signed URL to download (GET) an object (text output only)",
 		Aliases:           []string{"get"},
 		Short:             "Generate a pre-signed URL to download (GET) an object",
 		Args:              cobra.MinimumNArgs(1),
@@ -43,7 +40,6 @@ func NewShareDownloadCmd() *cobra.Command {
 func NewShareUploadCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:               "upload [alias:bucket/path] ...",
-		Long:              "Generate a pre-signed URL to upload (PUT) to an object (text output only)",
 		Aliases:           []string{"put"},
 		Short:             "Generate a pre-signed URL to upload (PUT) to an object",
 		Args:              cobra.MinimumNArgs(1),
