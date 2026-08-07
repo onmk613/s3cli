@@ -18,7 +18,7 @@ func formatUserError(err error) error {
 	if err == nil {
 		return nil
 	}
-	// 对 S3 API 错误 (s3api.ErrorResponse) 做友好格式化
+	// 对 S3 API 错误 (api.ErrorResponse) 做友好格式化
 	return action.FormatAPIError(err)
 }
 

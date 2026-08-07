@@ -18,7 +18,7 @@ import (
 const defaultConcurrency = 10
 
 // Action 封装 S3 操作后端, 持有 alias 和 ctx.
-// S3 字段为 s3iface.S3Operations 接口, 底层实现为自建请求的 s3api.Client
+// S3 字段为 s3iface.S3Operations 接口, 底层实现为自建请求的 api.Client
 // (由 client 包统一构造).
 type Action struct {
 	S3    s3iface.S3Operations

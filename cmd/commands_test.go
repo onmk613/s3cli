@@ -63,6 +63,12 @@ func TestTransferCommandsUseArgParseAnnotations(t *testing.T) {
 	}
 }
 
+func TestPolicyGetCmdJSONFlag(t *testing.T) {
+	if got := PolicyGetCmd().Flags().Lookup("json"); got == nil {
+		t.Fatal("policy get missing --json flag")
+	}
+}
+
 func TestSplitArgsModes(t *testing.T) {
 	cmd := &cobra.Command{}
 

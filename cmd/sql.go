@@ -14,8 +14,7 @@ func NewSqlCmd() *cobra.Command {
 	var opt action.SelectOptions
 	cmd := &cobra.Command{
 		Use:               "sql [alias:bucket/path] ...",
-		Long:              "Run SQL queries against objects (text output only)",
-		Short:             "Run SQL queries on objects (mc sql compatible)",
+		Short:             "Run SQL queries against objects (text output only)",
 		Args:              cobra.MinimumNArgs(1),
 		ValidArgsFunction: AutoCompletePath,
 		RunE: NewRunE(func(S3 action.Action, dst *s3path.Path) error {

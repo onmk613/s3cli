@@ -112,3 +112,106 @@ func TestNormalizePermission(t *testing.T) {
 		t.Error("expected error for unknown permission")
 	}
 }
+
+func TestClassifyPolicyType(t *testing.T) {
+	cases := []struct {
+		name   string
+		perm   string
+		bucket string
+		prefix string
+	}{
+		{"download", "download", "mybucket", ""},
+		{"download-prefix", "download", "mybucket", "logs/"},
+		{"upload", "upload", "mybucket", ""},
+		{"upload-prefix", "upload", "mybucket", "incoming/"},
+		{"public", "public", "mybucket", ""},
+		{"public-prefix", "public", "mybucket", "img"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			raw, err := buildAnonymousPolicy(tc.perm, tc.bucket, tc.prefix)
+			if err != nil {
+				t.Fatal(err)
+			}
+			got, err := classifyPolicyType(raw, tc.bucket)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got != tc.perm {
+				t.Fatalf("classifyPolicyType = %q, want %q", got, tc.perm)
+			}
+		})
+	}
+
+	// 合法自定义策略 (单对象 Statement / 单字符串 Action / Sid) 识别为 custom
+	custom := []byte(`{"Version":"2012-10-17","Statement":{"Effect":"Allow","Principal":{"AWS":"*"},"Action":"s3:GetObject","Resource":"arn:aws:s3:::mybucket/*","Sid":"custom"}}`)
+	if got, err := classifyPolicyType(custom, "mybucket"); err != nil || got != "custom" {
+		t.Fatalf("custom policy = %q, %v; want custom", got, err)
+	}
+
+	// Deny 语句不是匿名预定义策略
+	deny := []byte(`{"Version":"2012-10-17","Statement":[{"Action":["s3:GetObject"],"Effect":"Deny","Principal":{"AWS":["*"]},"Resource":["arn:aws:s3:::mybucket/*"]}]}`)
+	if got, _ := classifyPolicyType(deny, "mybucket"); got != "custom" {
+		t.Fatalf("deny policy = %q, want custom", got)
+	}
+
+	// 预定义策略放到另一个桶名下识别为 custom (资源 ARN 不匹配)
+	raw, _ := buildAnonymousPolicy("download", "otherbucket", "")
+	if got, _ := classifyPolicyType(raw, "mybucket"); got != "custom" {
+		t.Fatalf("mismatched bucket = %q, want custom", got)
+	}
+
+	// 非法 JSON 报错
+	if _, err := classifyPolicyType([]byte(`{`), "mybucket"); err == nil {
+		t.Fatal("expected error for invalid JSON")
+	}
+}
+
+func TestGetPolicyDefaultOutputsType(t *testing.T) {
+	c := newJSONTestClient(t)
+	out := captureStdout(t, func() {
+		if err := c.GetPolicy(GetPolicyOptions{}, "mybucket"); err != nil {
+			t.Error(err)
+		}
+	})
+	if !strings.Contains(out, "type: download") {
+		t.Fatalf("default policy output missing type: %q", out)
+	}
+	if strings.Contains(out, `"Version"`) {
+		t.Fatalf("default policy output should not include policy JSON: %q", out)
+	}
+}
+
+func TestGetPolicyJSONOutputsRaw(t *testing.T) {
+	c := newJSONTestClient(t)
+	out := captureStdout(t, func() {
+		if err := c.GetPolicy(GetPolicyOptions{JSON: true}, "mybucket"); err != nil {
+			t.Error(err)
+		}
+	})
+	var m map[string]any
+	if err := json.Unmarshal([]byte(out), &m); err != nil {
+		t.Fatalf("--json output is not valid JSON: %v\n%q", err, out)
+	}
+	if m["Version"] != "2012-10-17" {
+		t.Fatalf("--json output = %v", m)
+	}
+}
+
+func TestGetPolicyPrivate(t *testing.T) {
+	c := newJSONTestClient(t)
+	if err := c.S3.DeleteBucketPolicy(c.Ctx, "mybucket"); err != nil {
+		t.Fatal(err)
+	}
+	out := captureStdout(t, func() {
+		if err := c.GetPolicy(GetPolicyOptions{}, "mybucket"); err != nil {
+			t.Error(err)
+		}
+	})
+	if !strings.Contains(out, "type: private") {
+		t.Fatalf("private policy output = %q", out)
+	}
+	if err := c.GetPolicy(GetPolicyOptions{JSON: true}, "mybucket"); err == nil {
+		t.Fatal("--json on a bucket without policy should fail")
+	}
+}

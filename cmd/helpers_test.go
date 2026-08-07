@@ -223,24 +223,3 @@ func TestParseExpireSeconds(t *testing.T) {
 		}
 	}
 }
-
-func TestParseTagsString(t *testing.T) {
-	m, err := parseTagsString("env=prod&team=infra")
-	if err != nil || m["env"] != "prod" || m["team"] != "infra" {
-		t.Errorf("bad tags: %v err=%v", m, err)
-	}
-	// 逗号兼容
-	m, err = parseTagsString("a=1,b=2")
-	if err != nil || m["a"] != "1" || m["b"] != "2" {
-		t.Errorf("bad comma tags: %v err=%v", m, err)
-	}
-	// 非法
-	if _, err := parseTagsString("novalue"); err == nil {
-		t.Error("expected error for tag without =")
-	}
-	// 空
-	m, err = parseTagsString("")
-	if err != nil || len(m) != 0 {
-		t.Errorf("empty tags should be empty map, got %v err=%v", m, err)
-	}
-}

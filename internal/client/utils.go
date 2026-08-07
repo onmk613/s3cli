@@ -14,7 +14,7 @@ import (
 var S3Clients = &kvcache.Cache[string, s3iface.S3Operations]{}
 
 // NewClient 按 alias 的静态配置构造编译期选定的 S3 后端客户端,
-// 返回 s3iface.S3Operations 接口. 底层实现为自建请求的 s3api.Client,
+// 返回 s3iface.S3Operations 接口. 底层实现为自建请求的 api.Client,
 // 调用方不感知具体实现.
 func NewClient(ctx context.Context, alias string, static config.Static) (s3iface.S3Operations, error) {
 	if cachedClient, ok := S3Clients.Get(alias); ok {
@@ -43,11 +43,17 @@ func ParsePathAndNewClient(ctx context.Context, arg string) (s3iface.S3Operation
 		return cachedClient, p, err
 	}
 
-	// alias 不存在时给出明确指引, 而不是零值配置导致的
+	// alias 不存在时: 优先回退到环境变量 (无 TOML 配置的 CI/容器场景);
+	// 环境变量也没有时给出明确指引, 而不是零值配置导致的
 	// "endpoint, access key, and secret key cannot be empty" 误导性报错。
 	static, ok := config.G.S[p.Alias]
 	if !ok {
-		return nil, nil, fmt.Errorf("alias %q not found in config %s (run `s3cli alias set %s` to create, or `s3cli alias list` to see existing)", p.Alias, config.ConfPath, p.Alias)
+		if envStatic, envOK := config.StaticFromEnv(); envOK {
+			static = envStatic
+		} else {
+			return nil, nil, fmt.Errorf("alias %q not found in config %s (run `s3cli alias set %s` to create, `s3cli alias list` to see existing, or set %s/%s/%s env vars)",
+				p.Alias, config.ConfPath, p.Alias, "S3CLI_HOST", "S3CLI_ACCESS_KEY", "S3CLI_SECRET_KEY")
+		}
 	}
 
 	s3Client, clientErr := NewClient(ctx, p.Alias, static)

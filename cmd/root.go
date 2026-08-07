@@ -111,7 +111,7 @@ func NewRootCmd() {
 	// RootCmd
 	rootCmd := &cobra.Command{
 		Use:           "s3cli",
-		Short:         "a lightweight S3 command-line client",
+		Short:         "A lightweight S3 command-line client",
 		SilenceUsage:  true,
 		SilenceErrors: true,
 		Version:       version(),

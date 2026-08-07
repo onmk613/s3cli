@@ -298,3 +298,123 @@ const (
 	// VersioningSuspended 暂停版本控制.
 	VersioningSuspended BucketVersioningStatus = "Suspended"
 )
+
+// ----------------------------------------------------------------------------
+// 公共访问阻断 (Public Access Block)
+// ----------------------------------------------------------------------------
+
+// PublicAccessBlockConfiguration 桶级公共访问阻断配置.
+type PublicAccessBlockConfiguration struct {
+	XMLName               xml.Name `xml:"PublicAccessBlockConfiguration" json:"-"`
+	BlockPublicAcls       bool     `xml:"BlockPublicAcls" json:"BlockPublicAcls"`
+	IgnorePublicAcls      bool     `xml:"IgnorePublicAcls" json:"IgnorePublicAcls"`
+	BlockPublicPolicy     bool     `xml:"BlockPublicPolicy" json:"BlockPublicPolicy"`
+	RestrictPublicBuckets bool     `xml:"RestrictPublicBuckets" json:"RestrictPublicBuckets"`
+}
+
+// ----------------------------------------------------------------------------
+// Object Lock
+// ----------------------------------------------------------------------------
+
+// ObjectLockConfiguration 桶级 Object Lock 配置 (含默认保留规则).
+type ObjectLockConfiguration struct {
+	XMLName           xml.Name        `xml:"ObjectLockConfiguration" json:"-"`
+	ObjectLockEnabled string          `xml:"ObjectLockEnabled,omitempty" json:"ObjectLockEnabled,omitempty"` // "Enabled"
+	Rule              *ObjectLockRule `xml:"Rule,omitempty" json:"Rule,omitempty"`
+}
+
+// ObjectLockRule Object Lock 默认保留规则容器.
+type ObjectLockRule struct {
+	DefaultRetention DefaultRetention `xml:"DefaultRetention" json:"DefaultRetention"`
+}
+
+// DefaultRetention 默认保留设置.
+type DefaultRetention struct {
+	Mode  string `xml:"Mode" json:"Mode"` // GOVERNANCE / COMPLIANCE
+	Days  int    `xml:"Days,omitempty" json:"Days,omitempty"`
+	Years int    `xml:"Years,omitempty" json:"Years,omitempty"`
+}
+
+// ObjectLockRetention 对象级保留设置 (PUT/GET ?retention).
+type ObjectLockRetention struct {
+	XMLName         xml.Name `xml:"Retention" json:"-"`
+	Mode            string   `xml:"Mode" json:"Mode"`                                           // GOVERNANCE / COMPLIANCE
+	RetainUntilDate string   `xml:"RetainUntilDate,omitempty" json:"RetainUntilDate,omitempty"` // RFC3339
+}
+
+// ObjectLockLegalHold 对象级法律留存 (PUT/GET ?legal-hold).
+type ObjectLockLegalHold struct {
+	XMLName xml.Name `xml:"LegalHold" json:"-"`
+	Status  string   `xml:"Status" json:"Status"` // ON / OFF
+}
+
+// ----------------------------------------------------------------------------
+// 归档恢复 (RestoreObject)
+// ----------------------------------------------------------------------------
+
+// RestoreRequest POST ?restore 请求体.
+type RestoreRequest struct {
+	XMLName              xml.Name              `xml:"RestoreRequest" json:"-"`
+	Days                 int                   `xml:"Days" json:"Days"`
+	GlacierJobParameters *GlacierJobParameters `xml:"GlacierJobParameters,omitempty" json:"GlacierJobParameters,omitempty"`
+}
+
+// GlacierJobParameters 归档恢复层级.
+type GlacierJobParameters struct {
+	Tier string `xml:"Tier" json:"Tier"` // Expedited / Standard / Bulk
+}
+
+// ----------------------------------------------------------------------------
+// 复制 (Replication)
+// ----------------------------------------------------------------------------
+
+// ReplicationConfiguration 桶级复制配置.
+type ReplicationConfiguration struct {
+	XMLName xml.Name          `xml:"ReplicationConfiguration" json:"-"`
+	Role    string            `xml:"Role" json:"Role"`
+	Rules   []ReplicationRule `xml:"Rule" json:"Rules"`
+}
+
+// ReplicationRule 单条复制规则.
+type ReplicationRule struct {
+	XMLName                 xml.Name               `xml:"Rule" json:"-"`
+	ID                      string                 `xml:"ID,omitempty" json:"ID,omitempty"`
+	Priority                *int                   `xml:"Priority,omitempty" json:"Priority,omitempty"`
+	Status                  string                 `xml:"Status" json:"Status"` // Enabled / Disabled
+	Prefix                  string                 `xml:"Prefix,omitempty" json:"Prefix,omitempty"`
+	Filter                  *ReplicationFilter     `xml:"Filter,omitempty" json:"Filter,omitempty"`
+	Destination             ReplicationDestination `xml:"Destination" json:"Destination"`
+	DeleteMarkerReplication *bool                  `xml:"DeleteMarkerReplication,omitempty" json:"DeleteMarkerReplication,omitempty"`
+}
+
+// ReplicationFilter 复制过滤.
+type ReplicationFilter struct {
+	XMLName xml.Name `xml:"Filter" json:"-"`
+	Prefix  string   `xml:"Prefix,omitempty" json:"Prefix,omitempty"`
+	Tag     *Tag     `xml:"Tag,omitempty" json:"Tag,omitempty"`
+}
+
+// ReplicationDestination 复制目标.
+type ReplicationDestination struct {
+	Bucket       string `xml:"Bucket" json:"Bucket"`
+	StorageClass string `xml:"StorageClass,omitempty" json:"StorageClass,omitempty"`
+	Account      string `xml:"Account,omitempty" json:"Account,omitempty"`
+}
+
+// ----------------------------------------------------------------------------
+// 访问控制列表 (ACL)
+//
+// S3 ACL 的 XML (含 xsi:type 的 Grantee) 较繁琐且易错; 此处 PUT 采用 canned ACL
+// 头 (x-amz-acl) 与 grant 头 (x-amz-grant-*), 覆盖绝大多数场景且不依赖 XML;
+// GET 返回原始 XML ([]byte) 供调用方自行解析或展示.
+// ----------------------------------------------------------------------------
+
+// ACLOptions 控制 ACL 设置 (canned ACL + grant 头).
+type ACLOptions struct {
+	ACL              string `json:"ACL,omitempty"` // x-amz-acl: private|public-read|public-read-write|authenticated-read|bucket-owner-read|bucket-owner-full-control|log-delivery-write
+	GrantFullControl string `json:"GrantFullControl,omitempty"`
+	GrantRead        string `json:"GrantRead,omitempty"`
+	GrantReadACP     string `json:"GrantReadACP,omitempty"`
+	GrantWrite       string `json:"GrantWrite,omitempty"`
+	GrantWriteACP    string `json:"GrantWriteACP,omitempty"`
+}

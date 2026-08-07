@@ -142,6 +142,8 @@ func NewMirrorCmd() *cobra.Command {
 	f.BoolVar(&opt.DryRun, "dry-run", false, "Show what would be done without making any changes")
 	f.IntVar(&opt.Concurrency, "concurrency", config.DefaultConcurrency, "Number of concurrent transfers")
 	f.IntVar(&opt.PartSizeMB, "part-size", config.DefaultPartSizeMB, "Multipart part size in MB (cross-endpoint only) (default: alias multipart_chunk_size_mb or 15)")
+	f.StringVar(&opt.StorageClass, "storage-class", "", "Storage class for target objects: STANDARD / STANDARD_IA / GLACIER / DEEP_ARCHIVE / ...")
+	f.StringVar(&opt.StorageClass, "sc", "", "Alias of --storage-class")
 	f.Int64Var(&opt.SizeLimit, "size-limit", 0, "Skip objects larger than N bytes (0 = no limit)")
 	f.IntVar(&opt.MaxDelete, "max-delete", 0, "Abort before deleting more than N target objects (0 = no limit)")
 	f.StringSliceVar(&opt.Include, "include", nil, "Only sync keys matching this glob (can repeat)")

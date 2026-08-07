@@ -1,6 +1,6 @@
 // json_output_test.go 验证 --json 各命令输出合法且 schema 稳定
 // (schema 文档: doc/OUTPUT_SCHEMA.md)。
-// 基于内存 mock S3 服务端 + 自建 s3api 后端跑真实请求路径。
+// 基于内存 mock S3 服务端 + 自建 api 后端跑真实请求路径。
 
 package action
 
@@ -13,11 +13,12 @@ import (
 	"strings"
 	"testing"
 
-	"s3cli/pkg/s3api"
+	"s3cli/pkg/api"
+	myprint "s3cli/pkg/fmtutil"
 	"s3cli/pkg/s3iface"
 )
 
-// captureStdout 捕获 fn 期间写入 os.Stdout 的全部内容。
+// captureStdout 捕获 fn 期间写入 os.Stdout 以及全局 myprint writer 的全部内容。
 func captureStdout(t *testing.T, fn func()) string {
 	t.Helper()
 	old := os.Stdout
@@ -26,7 +27,11 @@ func captureStdout(t *testing.T, fn func()) string {
 		t.Fatal(err)
 	}
 	os.Stdout = w
-	defer func() { os.Stdout = old }()
+	myprint.SetWriter(w)
+	defer func() {
+		os.Stdout = old
+		myprint.SetWriter(old)
+	}()
 	fn()
 	_ = w.Close()
 	b, err := io.ReadAll(r)
@@ -40,7 +45,7 @@ func newJSONTestClient(t *testing.T) *Action {
 	t.Helper()
 	server := httptest.NewServer(newMockS3Server())
 	t.Cleanup(server.Close)
-	builtin, err := s3api.New(&s3api.Options{
+	builtin, err := api.New(&api.Options{
 		Endpoint:   server.URL,
 		AccessKey:  "access",
 		SecretKey:  "secret",

@@ -25,8 +25,11 @@ func sameEndpoint(src, tgt *S3PathOptions) bool {
 }
 
 // copyObjectSameEndpoint 同 endpoint 服务端复制.
-func copyObjectSameEndpoint(c *Action, srcBucket, srcKey, tgtBucket, tgtKey string) error {
-	_, err := c.S3.CopyObject(c.Ctx, srcBucket, srcKey, tgtBucket, tgtKey, &s3iface.CopyObjectOptions{MetadataDirective: "COPY"})
+func copyObjectSameEndpoint(c *Action, srcBucket, srcKey, tgtBucket, tgtKey, storageClass string) error {
+	_, err := c.S3.CopyObject(c.Ctx, srcBucket, srcKey, tgtBucket, tgtKey, &s3iface.CopyObjectOptions{
+		MetadataDirective: "COPY",
+		StorageClass:      storageClass,
+	})
 	if err != nil {
 		return fmt.Errorf("copy: %s", FormatAPIError(err))
 	}
@@ -38,7 +41,7 @@ func copyObjectSameEndpoint(c *Action, srcBucket, srcKey, tgtBucket, tgtKey stri
 // report 用于在传输过程中实时上报新增字节 (增量), 可为 nil.
 func copyObjectCrossEndpoint(
 	src, tgt *Action,
-	srcBucket, srcKey, tgtBucket, tgtKey string,
+	srcBucket, srcKey, tgtBucket, tgtKey, storageClass string,
 	partSize int64,
 	report func(n int64),
 ) error {
@@ -49,14 +52,14 @@ func copyObjectCrossEndpoint(
 
 	totalSize := headResp.ContentLength
 	if totalSize <= partSize {
-		return copySingleCrossEndpoint(src, tgt, srcBucket, srcKey, tgtBucket, tgtKey)
+		return copySingleCrossEndpoint(src, tgt, srcBucket, srcKey, tgtBucket, tgtKey, storageClass)
 	}
-	return copyMultipartCrossEndpoint(src, tgt, srcBucket, srcKey, tgtBucket, tgtKey, totalSize, partSize, headResp, report)
+	return copyMultipartCrossEndpoint(src, tgt, srcBucket, srcKey, tgtBucket, tgtKey, storageClass, totalSize, partSize, headResp, report)
 }
 
 // copySingleCrossEndpoint 跨端复制单个 (小) 对象: 整体下载到内存再 PutObject.
 // HTTP 响应流不可 seek, 而签名需要可 seek 的 body 计算 payload hash, 故先读入内存.
-func copySingleCrossEndpoint(src, tgt *Action, srcBucket, srcKey, tgtBucket, tgtKey string) error {
+func copySingleCrossEndpoint(src, tgt *Action, srcBucket, srcKey, tgtBucket, tgtKey, storageClass string) error {
 	getResp, err := src.S3.GetObject(src.Ctx, srcBucket, srcKey, nil)
 	if err != nil {
 		return fmt.Errorf("get s3://%s/%s: %s", srcBucket, srcKey, FormatAPIError(err))
@@ -79,6 +82,7 @@ func copySingleCrossEndpoint(src, tgt *Action, srcBucket, srcKey, tgtBucket, tgt
 		ContentEncoding:    getResp.ContentEncoding,
 		ContentLanguage:    getResp.ContentLanguage,
 		Metadata:           getResp.Metadata,
+		StorageClass:       storageClass,
 	}); err != nil {
 		return fmt.Errorf("put s3://%s/%s: %s", tgtBucket, tgtKey, FormatAPIError(err))
 	}
@@ -89,7 +93,7 @@ func copySingleCrossEndpoint(src, tgt *Action, srcBucket, srcKey, tgtBucket, tgt
 // 内存占用上限为一个分片. 失败时通过 defer 中止已创建的分片上传.
 func copyMultipartCrossEndpoint(
 	src, tgt *Action,
-	srcBucket, srcKey, tgtBucket, tgtKey string,
+	srcBucket, srcKey, tgtBucket, tgtKey, storageClass string,
 	totalSize, partSize int64,
 	head *s3iface.HeadObjectOutput,
 	report func(n int64),
@@ -107,6 +111,7 @@ func copyMultipartCrossEndpoint(
 		ContentEncoding:    head.ContentEncoding,
 		ContentLanguage:    head.ContentLanguage,
 		Metadata:           head.Metadata,
+		StorageClass:       storageClass,
 	})
 	if err != nil {
 		return fmt.Errorf("create mpu s3://%s/%s: %s", tgtBucket, tgtKey, FormatAPIError(err))

@@ -3,7 +3,7 @@
 //
 // 设计要点:
 //   - Action.S3 字段是 s3iface.S3Operations 接口 (见 common.go), 底层实现由
-//     由 client 包的 newBackendClient 统一构造 (见 internal/client/backend-s3api.go).
+//     由 client 包的 newBackendClient 统一构造 (见 internal/client/backend-api.go).
 //     业务操作层不感知具体实现;
 //   - 流式传输 (put/get/cp/mv) 统一走 stream.go 的 RunStream, 提供并发、进度条与
 //     预统计; 大文件自动走分片上传 (multipart-transfer.go) 并支持断点续传;

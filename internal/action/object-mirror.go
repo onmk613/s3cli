@@ -44,6 +44,7 @@ type MirrorOptions struct {
 	DryRun       bool     // 仅打印将要做的事, 不实际执行
 	Concurrency  int      // 并发数 (默认 defaultConcurrency)
 	PartSizeMB   int      // 分片大小 MB (经 multipartPartSize 钳制, 最小 5MB)
+	StorageClass string   // 目标对象的存储类别 (STANDARD / STANDARD_IA / GLACIER / ...)
 	SizeLimit    int64    // 单对象大小上限 (字节), 0 表示不限制
 	MaxDelete    int      // --remove 时允许删除的最大对象数, 0 表示不限制
 	Include      []string // 仅同步匹配任一 glob 的相对 key; 为空表示全部
@@ -326,9 +327,9 @@ func (p *mirrorPlan) copyOne(pt *progress.Tracker, rel string, objSize int64, co
 	var err error
 	if p.sameEP {
 		// 服务端 CopyObject 无分片进度, 不传 report, 靠成功后对账补齐。
-		err = copyObjectSameEndpoint(p.srcClient, p.srcBucket, srcKey, p.tgtBucket, tgtKey)
+		err = copyObjectSameEndpoint(p.srcClient, p.srcBucket, srcKey, p.tgtBucket, tgtKey, p.cfg.StorageClass)
 	} else {
-		err = copyObjectCrossEndpoint(p.srcClient, p.tgtClient, p.srcBucket, srcKey, p.tgtBucket, tgtKey, p.partSize, report)
+		err = copyObjectCrossEndpoint(p.srcClient, p.tgtClient, p.srcBucket, srcKey, p.tgtBucket, tgtKey, p.cfg.StorageClass, p.partSize, report)
 	}
 	msg := fmt.Sprintf("%s → %s", p.srcClient.S3Path(p.srcBucket, srcKey), p.tgtClient.S3Path(p.tgtBucket, tgtKey))
 	if err != nil {

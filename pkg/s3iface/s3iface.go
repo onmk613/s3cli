@@ -1,7 +1,7 @@
 // s3iface.go 定义 S3 操作的中立接口 S3Operations 及分页器接口.
 //
 // S3Operations 涵盖桶管理、桶子资源配置、对象操作、分片上传、预签名等全部底层操作.
-// s3api.Client (自建 HTTP + SigV4) 实现此接口.
+// api.Client (自建 HTTP + SigV4) 实现此接口.
 
 package s3iface
 
@@ -10,7 +10,7 @@ import (
 	"io"
 )
 
-// S3Operations 抽象所有 S3 底层操作, 由自建请求客户端 s3api.Client 实现.
+// S3Operations 抽象所有 S3 底层操作, 由自建请求客户端 api.Client 实现.
 type S3Operations interface {
 
 	// ---- 桶基础操作 ----
@@ -48,6 +48,35 @@ type S3Operations interface {
 	SetBucketVersioning(ctx context.Context, bucket string, status BucketVersioningStatus) error
 	GetBucketVersioning(ctx context.Context, bucket string) (BucketVersioningStatus, error)
 
+	// ---- 桶子资源: 公共访问阻断 ----
+	GetPublicAccessBlock(ctx context.Context, bucket string) (*PublicAccessBlockConfiguration, error)
+	PutPublicAccessBlock(ctx context.Context, bucket string, config *PublicAccessBlockConfiguration) error
+	DeletePublicAccessBlock(ctx context.Context, bucket string) error
+
+	// ---- 桶子资源: Object Lock 配置 ----
+	GetObjectLockConfiguration(ctx context.Context, bucket string) (*ObjectLockConfiguration, error)
+	PutObjectLockConfiguration(ctx context.Context, bucket string, config *ObjectLockConfiguration) error
+
+	// ---- 桶子资源: 复制 (Replication) ----
+	GetBucketReplication(ctx context.Context, bucket string) (*ReplicationConfiguration, error)
+	PutBucketReplication(ctx context.Context, bucket string, config *ReplicationConfiguration) error
+	DeleteBucketReplication(ctx context.Context, bucket string) error
+
+	// ---- 桶 / 对象 ACL (canned + grant 头; GET 返回原始 XML) ----
+	GetBucketACL(ctx context.Context, bucket string) ([]byte, error)
+	PutBucketACL(ctx context.Context, bucket string, opts *ACLOptions) error
+	GetObjectACL(ctx context.Context, bucket, key, versionID string) ([]byte, error)
+	PutObjectACL(ctx context.Context, bucket, key, versionID string, opts *ACLOptions) error
+
+	// ---- Object Lock 对象级 (retention / legal-hold) ----
+	GetObjectRetention(ctx context.Context, bucket, key, versionID string) (*ObjectLockRetention, error)
+	PutObjectRetention(ctx context.Context, bucket, key, versionID string, retention *ObjectLockRetention) error
+	GetObjectLegalHold(ctx context.Context, bucket, key, versionID string) (*ObjectLockLegalHold, error)
+	PutObjectLegalHold(ctx context.Context, bucket, key, versionID string, hold *ObjectLockLegalHold) error
+
+	// ---- 归档恢复 (Glacier) ----
+	RestoreObject(ctx context.Context, bucket, key, versionID string, req *RestoreRequest) error
+
 	// ---- 桶子资源: 策略 ----
 	SetBucketPolicy(ctx context.Context, bucket string, data []byte) error
 	GetBucketPolicy(ctx context.Context, bucket string) ([]byte, error)
@@ -77,6 +106,7 @@ type S3Operations interface {
 	// ---- 分片上传 ----
 	CreateMultipartUpload(ctx context.Context, bucket, key string, opts *PutObjectOptions) (*CreateMultipartUploadOutput, error)
 	UploadPart(ctx context.Context, bucket, key, uploadID string, partNumber int, body []byte) (*UploadPartOutput, error)
+	UploadPartCopy(ctx context.Context, srcBucket, srcKey, destBucket, destKey, uploadID string, partNumber int, opts *UploadPartCopyOptions) (*UploadPartCopyOutput, error)
 	CompleteMultipartUpload(ctx context.Context, bucket, key, uploadID string, parts []CompletedPart) (*CompleteMultipartUploadOutput, error)
 	AbortMultipartUpload(ctx context.Context, bucket, key, uploadID string) error
 	ListMultipartUploads(ctx context.Context, bucket string, opts *ListMultipartUploadsOptions) (*ListMultipartUploadsOutput, error)

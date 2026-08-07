@@ -61,7 +61,7 @@ func (c *Action) MakeBuckets(opt MakeBucketOptions, bucket string) error {
 		step("lifecycle", func() error { return c.SetLifecycle(LifecycleOptions{ConfigFile: opt.LifecycleFile}, bucket) })
 	}
 	if opt.Versioning {
-		step("versioning", func() error { return c.SetVersioning(bucket, "Enabled") })
+		step("versioning", func() error { return c.SetVersioning(VersioningOptions{Status: "Enabled"}, bucket) })
 	}
 
 	return errors.Join(errs...)
