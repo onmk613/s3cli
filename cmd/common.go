@@ -15,19 +15,22 @@ var AllowAliasOnly bool
 
 const (
 	AnnoArgParseMode = "ArgParseMode"
-	AddedArgs        = "AddedArgs"
+	LocalFileOrPath  = "LocalFileOrPath"
 
-	ModeS3OnlyPath    = "ParseS3OnlyPath"
-	ModeArgsAndS3Path = "ParseArgsAndS3Path"
-	ModeS3PathAndArgs = "ParseS3PathAndArgs"
+	OnlyS3Path           = "OnlyS3Path"
+	FirstLocalFileOrPath = "FirstLocalFileOrPath"
+	LastLocalFileOrPath  = "LastLocalFileOrPath"
 )
+
+// The First one
+// The last one
 
 type ArgParseMode map[string]string
 
 var (
-	ParseS3OnlyPath    = ArgParseMode{AnnoArgParseMode: ModeS3OnlyPath}
-	ParseArgsAndS3Path = ArgParseMode{AnnoArgParseMode: ModeArgsAndS3Path}
-	ParseS3PathAndArgs = ArgParseMode{AnnoArgParseMode: ModeS3PathAndArgs}
+	OnlyS3PathMode           = ArgParseMode{AnnoArgParseMode: OnlyS3Path}
+	FirstLocalFileOrPathMode = ArgParseMode{AnnoArgParseMode: FirstLocalFileOrPath}
+	LastLocalFileOrPathMode  = ArgParseMode{AnnoArgParseMode: LastLocalFileOrPath}
 )
 
 // ActionFunc 默认, args[] 中只有s3path, ls/cat等等
@@ -44,21 +47,21 @@ func splitArgs(cmd *cobra.Command, args []string) ([]string, ArgParseMode, error
 	opts := ArgParseMode{}
 
 	switch mode := cmd.Annotations[AnnoArgParseMode]; mode {
-	case "", ModeS3OnlyPath:
+	case "", OnlyS3Path:
 		return args, opts, nil
 
-	case ModeArgsAndS3Path: // 首参非 s3 路径，如 put localfile s3://...
+	case FirstLocalFileOrPath: // 首参非 s3 路径，如 put localfile s3://...
 		if len(args) < 2 {
 			return nil, nil, fmt.Errorf("%s: 至少需要 2 个参数, 实际 %d", cmd.CommandPath(), len(args))
 		}
-		opts[AddedArgs] = args[0]
+		opts[LocalFileOrPath] = args[0]
 		return args[1:], opts, nil
 
-	case ModeS3PathAndArgs: // 末参非 s3 路径，如 get s3://... localdir
+	case LastLocalFileOrPath: // 末参非 s3 路径，如 get s3://... localdir
 		if len(args) < 2 {
 			return args, opts, nil // 单参数时视为纯 s3 路径（沿用原语义）
 		}
-		opts[AddedArgs] = args[len(args)-1]
+		opts[LocalFileOrPath] = args[len(args)-1]
 		return args[:len(args)-1], opts, nil
 
 	default:
@@ -194,7 +197,7 @@ func NewRunETwoPaths(fn TwoS3ActionFunc) func(cmd *cobra.Command, args []string)
 
 // parseClient 封装 client 解析 + cancel + 错误展示，返回构造好的 S3Client。
 func parseClient(ctx context.Context, arg string) (action.Action, *s3path.Path, error) {
-	s3client, sp, err := client.ParsePathAndNewClient(ctx, arg)
+	s3client, sp, err := client.ParsePathAndNewClient(arg)
 	if err != nil {
 		if errors.Is(err, s3path.ErrAliasOnly) && s3client != nil {
 			return action.Action{S3: s3client, Alias: sp.Alias, Ctx: ctx}, sp, err

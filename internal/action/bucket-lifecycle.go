@@ -1,20 +1,18 @@
 // bucket-lifecycle.go 实现桶生命周期配置管理.
 //
-// 对齐 mc 的 `mc ilm rule` 子命令集:
-//   - AddLifecycleRule    add     --prefix/--tags/--size-lt/--size-gt/--expire-days/...
-//   - EditLifecycleRule   edit    --id + 可修改字段 + --enable/--disable
-//   - RemoveLifecycleRules remove  --id 或 --all --force
-//   - ListLifecycle       list    表格或 --json 输出
-//   - ExportLifecycle     export  输出整份配置 JSON
-//   - ImportLifecycle     import  从 JSON/XML 文件 (或 stdin) 整体替换
+// 三个入口, 与其他桶配置命令 (cors/policy/encryption) 风格一致:
+//   - SetLifecycleRule    set     --id/--prefix/--expire-days/... upsert 单条规则;
+//                                 -f 文件整体替换整份配置
+//   - RemoveLifecycleRules remove --id 删单条; --all --force 清空
+//   - ListLifecycle       list    表格或 --json 输出整份配置
 //
-// 兼容保留: SetLifecycle (--prefix/--ttl 或 -f) / GetLifecycle / DelLifecycle.
+// 兼容保留: SetLifecycle (bucket create --set-lifecycle 使用).
 
 package action
 
 import (
 	"bytes"
-	"crypto/rand"
+	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -41,11 +39,12 @@ type LifecycleOptions struct {
 	ConfigFile string // 自定义配置文件 (JSON/XML); 非空时覆盖 Prefix/TTL (-f)
 }
 
-// LifecycleRuleOptions 承载单条生命周期规则的全部可设字段 (mc ilm rule add/edit 对齐).
-// 指针字段表示"未设置", edit 时仅应用非 nil 字段; add 时只有显式字段参与建规则.
+// LifecycleRuleOptions 承载单条生命周期规则的全部可设字段 (set 命令).
+// 指针字段表示"未设置"; set 以显式给出的字段为准构造完整规则
+// (同 ID 规则已存在时整条覆盖, 未给出的字段/动作不会保留).
 type LifecycleRuleOptions struct {
-	ID     string // add 缺省时自动生成; edit 时必须指定
-	Status *bool  // edit: true=Enabled, false=Disabled (--enable/--disable)
+	ID     string // --id 显式指定; 缺省时按规则内容生成确定性 ID
+	Status *bool  // true=Enabled, false=Disabled
 
 	Prefix *string // 对象前缀
 	Tags   *string // 'k1=v1&k2=v2'
@@ -65,7 +64,7 @@ type LifecycleRuleOptions struct {
 	NoncurrentTransitionDays *int    // 非当前版本过渡天数
 	NoncurrentTransitionTier *string // 非当前版本过渡层级
 
-	ConfigFile string // add/set 兼容: 非空时整体加载配置文件
+	ConfigFile string // set: 非空时从文件整体替换整份配置
 }
 
 // RemoveLifecycleOptions 控制 RemoveLifecycleRules (mc ilm rule remove).
@@ -94,7 +93,7 @@ func (c *Action) SetLifecycle(opt LifecycleOptions, bucket string) error {
 		cfg = loaded
 	} else {
 		if opt.TTL == "" {
-			return fmt.Errorf("lifecycle set: either --prefix+--ttl or -f/--from-file is required")
+			return fmt.Errorf("lifecycle set: either --prefix+--ttl or --from-file is required")
 		}
 		days, err := ParseTTLDays(opt.TTL)
 		if err != nil {
@@ -114,9 +113,11 @@ func (c *Action) SetLifecycle(opt LifecycleOptions, bucket string) error {
 	return nil
 }
 
-// AddLifecycleRule 添加一条生命周期规则 (mc ilm rule add):
-// 读取现有配置并追加新规则; 桶无配置时按空配置处理.
-func (c *Action) AddLifecycleRule(opt LifecycleRuleOptions, bucket string) error {
+// SetLifecycleRule 创建或整体替换单条生命周期规则 (upsert):
+//   - ConfigFile 非空: 从文件 (JSON/XML, "-" 表示 stdin) 整体替换整份配置.
+//   - 否则按参数构造完整规则: 桶中已存在同 ID 规则则整条覆盖, 否则追加.
+//     --id 缺省时按规则内容生成确定性 ID, 因此重复执行相同命令是幂等的.
+func (c *Action) SetLifecycleRule(opt LifecycleRuleOptions, bucket string) error {
 	if opt.ConfigFile != "" {
 		return c.SetLifecycle(LifecycleOptions{ConfigFile: opt.ConfigFile}, bucket)
 	}
@@ -128,42 +129,21 @@ func (c *Action) AddLifecycleRule(opt LifecycleRuleOptions, bucket string) error
 	if err != nil {
 		return err
 	}
-	cfg.Rules = append(cfg.Rules, rule)
-	if err := c.S3.SetBucketLifecycle(c.Ctx, bucket, cfg); err != nil {
-		return fmt.Errorf("add lifecycle rule %s: %s", bucket, FormatAPIError(err))
-	}
-	myprint.PrintfBoldGreen("Lifecycle rule %s added to %s %s\n", rule.ID, c.Alias, bucket)
-	return nil
-}
-
-// EditLifecycleRule 按 ID 修改现有规则 (mc ilm rule edit): 仅应用显式给出的字段.
-func (c *Action) EditLifecycleRule(opt LifecycleRuleOptions, bucket string) error {
-	if opt.ID == "" {
-		return fmt.Errorf("lifecycle edit: --id is required")
-	}
-	cfg, err := c.getLifecycle(bucket)
-	if err != nil {
-		return err
-	}
-	idx := -1
 	for i := range cfg.Rules {
-		if cfg.Rules[i].ID == opt.ID {
-			idx = i
-			break
+		if cfg.Rules[i].ID == rule.ID {
+			cfg.Rules[i] = rule
+			if err := c.S3.SetBucketLifecycle(c.Ctx, bucket, cfg); err != nil {
+				return fmt.Errorf("set lifecycle rule %s: %s", bucket, FormatAPIError(err))
+			}
+			myprint.PrintfBoldGreen("Lifecycle rule %s updated on %s %s\n", rule.ID, c.Alias, bucket)
+			return nil
 		}
 	}
-	if idx < 0 {
-		return fmt.Errorf("lifecycle rule with ID %q not found on %s/%s", opt.ID, c.Alias, bucket)
-	}
-	rule := cfg.Rules[idx]
-	if err := applyLifecycleRuleChanges(&rule, opt); err != nil {
-		return err
-	}
-	cfg.Rules[idx] = rule
+	cfg.Rules = append(cfg.Rules, rule)
 	if err := c.S3.SetBucketLifecycle(c.Ctx, bucket, cfg); err != nil {
-		return fmt.Errorf("edit lifecycle rule %s: %s", bucket, FormatAPIError(err))
+		return fmt.Errorf("set lifecycle rule %s: %s", bucket, FormatAPIError(err))
 	}
-	myprint.PrintfBoldGreen("Lifecycle rule %s updated on %s %s\n", opt.ID, c.Alias, bucket)
+	myprint.PrintfBoldGreen("Lifecycle rule %s added to %s %s\n", rule.ID, c.Alias, bucket)
 	return nil
 }
 
@@ -435,53 +415,12 @@ func printLifecycleSection(title string, header []string, rows [][6]string) {
 	_ = w.Flush()
 }
 
-// ExportLifecycle 输出整份生命周期配置 JSON (mc ilm rule export).
-func (c *Action) ExportLifecycle(bucket string) error {
-	cfg, err := c.getLifecycle(bucket)
-	if err != nil {
-		return err
-	}
-	b, err := json.MarshalIndent(cfg, "", "  ")
-	if err != nil {
-		return fmt.Errorf("marshal lifecycle: %w", err)
-	}
-	myprint.PrintlnGreen(string(b))
-	return nil
-}
-
-// ImportLifecycle 从文件 (JSON/XML, "-" 表示 stdin) 整体替换生命周期配置 (mc ilm rule import).
-func (c *Action) ImportLifecycle(file, bucket string) error {
-	data, format, err := loadAWSConfigArg(file)
-	if err != nil {
-		return err
-	}
-	cfg, err := parseLifecycleConfig(data, format)
-	if err != nil {
-		return fmt.Errorf("parse lifecycle %s: %w", file, err)
-	}
-	if err := validateLifecycleConfig(cfg); err != nil {
-		return err
-	}
-	if err := c.S3.SetBucketLifecycle(c.Ctx, bucket, cfg); err != nil {
-		return fmt.Errorf("import lifecycle %s: %s", bucket, FormatAPIError(err))
-	}
-	myprint.PrintfBoldGreen("Lifecycle imported to %s %s (%d rules)\n", c.Alias, bucket, len(cfg.Rules))
-	return nil
-}
-
-// ----------------------------------------------------------------------------
-// 规则构建 / 修改 / 校验
-// ----------------------------------------------------------------------------
-
-// buildLifecycleRule 按参数构造一条规则 (mc ilm rule add 语义).
+// buildLifecycleRule 按参数构造一条完整规则 (set 语义: 以显式字段为准).
 func buildLifecycleRule(opt LifecycleRuleOptions) (s3.LifecycleRule, error) {
 	rule := s3.LifecycleRule{
 		ID:     opt.ID,
 		Status: "Enabled",
 		Filter: buildRuleFilter(opt.Prefix, opt.Tags, opt.SizeLT, opt.SizeGT),
-	}
-	if opt.ID == "" {
-		rule.ID = genLifecycleRuleID()
 	}
 	if opt.Status != nil {
 		if *opt.Status {
@@ -559,105 +498,11 @@ func buildLifecycleRule(opt LifecycleRuleOptions) (s3.LifecycleRule, error) {
 	if !hasLifecycleAction(rule) {
 		return rule, fmt.Errorf("at least one of --expire-days/--expiry-date/--expire-delete-marker/--expire-all-object-versions/--transition-days/--noncurrent-expire-days/--noncurrent-transition-days must be specified")
 	}
+	// ID 在动作字段全部就位后生成, 确保不同内容 (动作/天数/层级) 得到不同 ID.
+	if rule.ID == "" {
+		rule.ID = genLifecycleRuleID(rule)
+	}
 	return rule, nil
-}
-
-// applyLifecycleRuleChanges 仅把 opt 中显式设置的字段应用到现有规则 (mc ilm rule edit 语义).
-func applyLifecycleRuleChanges(rule *s3.LifecycleRule, opt LifecycleRuleOptions) error {
-	if opt.Status != nil {
-		if *opt.Status {
-			rule.Status = "Enabled"
-		} else {
-			rule.Status = "Disabled"
-		}
-	}
-
-	if opt.Prefix != nil || opt.Tags != nil || opt.SizeLT != nil || opt.SizeGT != nil {
-		p, t, lt, gt := ruleFilterValues(rule.Filter)
-		if opt.Prefix != nil {
-			p = *opt.Prefix
-		}
-		if opt.Tags != nil {
-			t = *opt.Tags
-		}
-		if opt.SizeLT != nil {
-			lt = opt.SizeLT
-		}
-		if opt.SizeGT != nil {
-			gt = opt.SizeGT
-		}
-		rule.Filter = buildRuleFilter(strOrNil(p), strOrNil(t), lt, gt)
-	}
-
-	expiryChanged := false
-	if opt.ExpiryDays != nil {
-		days := *opt.ExpiryDays
-		rule.Expiration = &s3.Expiration{Days: &days}
-		expiryChanged = true
-	}
-	if opt.ExpiryDate != nil {
-		if err := validateLifecycleDate(*opt.ExpiryDate); err != nil {
-			return err
-		}
-		date, _ := normalizeLifecycleDate(*opt.ExpiryDate)
-		rule.Expiration = &s3.Expiration{Date: date}
-		expiryChanged = true
-	}
-	if opt.ExpireDeleteMarker != nil {
-		dm := *opt.ExpireDeleteMarker
-		rule.Expiration = &s3.Expiration{ExpiredObjectDeleteMarker: &dm}
-		expiryChanged = true
-	}
-	if opt.ExpireAllObjectVersions != nil {
-		all := *opt.ExpireAllObjectVersions
-		if rule.Expiration == nil {
-			rule.Expiration = &s3.Expiration{}
-		}
-		rule.Expiration.ExpiredObjectAllVersions = &all
-		expiryChanged = true
-	}
-	if opt.TransitionDays != nil || opt.TransitionTier != nil {
-		if opt.TransitionDays == nil || opt.TransitionTier == nil {
-			return fmt.Errorf("--transition-days and --transition-tier must be set together")
-		}
-		days := *opt.TransitionDays
-		rule.Transitions = []s3.Transition{{Days: &days, StorageClass: strings.ToUpper(*opt.TransitionTier)}}
-	}
-	if opt.NoncurrentExpireDays != nil || opt.NoncurrentExpireNewer != nil {
-		n := &s3.NoncurrentVersionExpiration{}
-		if rule.NoncurrentVersionExpiration != nil {
-			n = rule.NoncurrentVersionExpiration
-		}
-		if opt.NoncurrentExpireDays != nil {
-			d := *opt.NoncurrentExpireDays
-			n.NoncurrentDays = &d
-		}
-		if opt.NoncurrentExpireNewer != nil {
-			v := *opt.NoncurrentExpireNewer
-			n.NewerNoncurrentVersions = &v
-		}
-		rule.NoncurrentVersionExpiration = n
-	}
-	if opt.NoncurrentTransitionDays != nil || opt.NoncurrentTransitionTier != nil {
-		if opt.NoncurrentTransitionDays == nil || opt.NoncurrentTransitionTier == nil {
-			return fmt.Errorf("--noncurrent-transition-days and --noncurrent-transition-tier must be set together")
-		}
-		days := *opt.NoncurrentTransitionDays
-		rule.NoncurrentVersionTransitions = []s3.NoncurrentVersionTransition{
-			{NoncurrentDays: &days, StorageClass: strings.ToUpper(*opt.NoncurrentTransitionTier)},
-		}
-	}
-
-	if expiryChanged {
-		if rule.Expiration != nil && rule.Expiration.Days == nil && rule.Expiration.Date == "" &&
-			rule.Expiration.ExpiredObjectDeleteMarker == nil && rule.Expiration.ExpiredObjectAllVersions == nil {
-			rule.Expiration = nil
-		}
-	}
-	if !hasLifecycleAction(*rule) {
-		return fmt.Errorf("edited rule has no lifecycle action; add at least one of expire/transition/noncurrent actions")
-	}
-	return nil
 }
 
 // buildRuleFilter 按 mc 语义构造 Filter:
@@ -699,28 +544,6 @@ func buildRuleFilter(prefix, tags *string, sizeLT, sizeGT *int64) *s3.Filter {
 		f.Tag = &tagList[0]
 	}
 	return f
-}
-
-// ruleFilterValues 从现有 Filter 提取 prefix/tags/size 现值 (edit 时用于合并).
-func ruleFilterValues(f *s3.Filter) (prefix, tags string, lt, gt *int64) {
-	if f == nil {
-		return "", "", nil, nil
-	}
-	prefix = f.Prefix
-	lt, gt = f.ObjectSizeLessThan, f.ObjectSizeGreaterThan
-	if f.And != nil {
-		prefix = f.And.Prefix
-		lt, gt = f.And.ObjectSizeLessThan, f.And.ObjectSizeGreaterThan
-		for _, t := range f.And.Tags {
-			if tags != "" {
-				tags += "&"
-			}
-			tags += t.Key + "=" + t.Value
-		}
-	} else if f.Tag != nil {
-		tags = f.Tag.Key + "=" + f.Tag.Value
-	}
-	return prefix, tags, lt, gt
 }
 
 // hasLifecycleAction 判断规则是否至少包含一个动作.
@@ -780,13 +603,58 @@ func normalizeLifecycleDate(date string) (string, error) {
 // 解析辅助
 // ----------------------------------------------------------------------------
 
-// genLifecycleRuleID 生成随机规则 ID (8 字节 hex).
-func genLifecycleRuleID() string {
-	b := make([]byte, 8)
-	if _, err := rand.Read(b); err != nil {
-		return fmt.Sprintf("s3cli-%d", os.Getpid())
+// genLifecycleRuleID 按规则内容生成确定性 ID: <action>-<scope>-<hash8>.
+// 同一命令重复执行产生相同 ID, set 因此幂等 (不会追加重复规则).
+func genLifecycleRuleID(rule s3.LifecycleRule) string {
+	action := "rule"
+	switch {
+	case rule.Expiration != nil:
+		action = "expire"
+	case len(rule.Transitions) > 0:
+		action = "transition"
+	case rule.NoncurrentVersionExpiration != nil:
+		action = "nc-expire"
+	case len(rule.NoncurrentVersionTransitions) > 0:
+		action = "nc-transition"
+	case rule.AbortIncompleteMultipartUpload != nil:
+		action = "abort-mpu"
 	}
-	return hex.EncodeToString(b)
+	prefix := ""
+	if rule.Filter != nil {
+		prefix = rule.Filter.Prefix
+		if rule.Filter.And != nil {
+			prefix = rule.Filter.And.Prefix
+		}
+	}
+	if prefix == "" {
+		prefix = "all"
+	}
+	prefix = sanitizeIDPart(prefix)
+	// 用 JSON 序列化做 hash 输入: 指针字段序列化为值 (稳定), 字段顺序固定.
+	b, _ := json.Marshal(rule)
+	h := sha256.Sum256(b)
+	return fmt.Sprintf("%s-%s-%s", action, prefix, hex.EncodeToString(h[:4]))
+}
+
+// sanitizeIDPart 把 ID 片段规整为 [a-zA-Z0-9._-], 截断到 40 字符.
+func sanitizeIDPart(s string) string {
+	var b strings.Builder
+	for _, r := range s {
+		switch {
+		case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z', r >= '0' && r <= '9', r == '.', r == '_', r == '-':
+			b.WriteRune(r)
+		default:
+			b.WriteByte('-')
+		}
+	}
+	out := strings.Trim(b.String(), "-")
+	if len(out) > 40 {
+		out = out[:40]
+	}
+	if out == "" {
+		out = "all"
+	}
+	return out
 }
 
 // parseILMTags 解析 'k1=v1&k2=v2' 标签串; 无 '=' 的项 Key 生效、Value 为空.
@@ -988,21 +856,6 @@ func ParseTTLDays(s string) (int, error) {
 		d = 1
 	}
 	return d, nil
-}
-
-// GetLifecycle 打印生命周期.
-func (c *Action) GetLifecycle(bucket string) error {
-	cfg, err := c.getLifecycle(bucket)
-	if err != nil {
-		return err
-	}
-	return c.printBucketConfigJSON(bucket, "lifecycle:", cfg)
-}
-
-// DelLifecycle 删除生命周期.
-func (c *Action) DelLifecycle(bucket string) error {
-	return c.deleteBucketConfig(bucket, "lifecycle", "Lifecycle deleted for %s %s\n",
-		func() error { return c.S3.DeleteBucketLifecycle(c.Ctx, bucket) })
 }
 
 // parseLifecycleConfig 解析生命周期配置文件, 支持 JSON 和 XML 格式.

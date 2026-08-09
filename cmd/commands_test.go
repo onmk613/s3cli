@@ -52,14 +52,14 @@ func TestTransferCommandsExposeExpectedFlags(t *testing.T) {
 }
 
 func TestTransferCommandsUseArgParseAnnotations(t *testing.T) {
-	if got := NewGetCmd().Annotations[AnnoArgParseMode]; got != ModeS3PathAndArgs {
-		t.Errorf("get annotation = %q, want %q", got, ModeS3PathAndArgs)
+	if got := NewGetCmd().Annotations[AnnoArgParseMode]; got != LastLocalFileOrPath {
+		t.Errorf("get annotation = %q, want %q", got, LastLocalFileOrPath)
 	}
-	if got := NewPutCmd().Annotations[AnnoArgParseMode]; got != ModeArgsAndS3Path {
-		t.Errorf("put annotation = %q, want %q", got, ModeArgsAndS3Path)
+	if got := NewPutCmd().Annotations[AnnoArgParseMode]; got != FirstLocalFileOrPath {
+		t.Errorf("put annotation = %q, want %q", got, FirstLocalFileOrPath)
 	}
-	if got := EventSetCmd().Annotations[AnnoArgParseMode]; got != ModeArgsAndS3Path {
-		t.Errorf("bucket event set annotation = %q, want %q", got, ModeArgsAndS3Path)
+	if got := EventSetCmd().Annotations[AnnoArgParseMode]; got != FirstLocalFileOrPath {
+		t.Errorf("bucket event set annotation = %q, want %q", got, FirstLocalFileOrPath)
 	}
 }
 
@@ -72,22 +72,22 @@ func TestPolicyGetCmdJSONFlag(t *testing.T) {
 func TestSplitArgsModes(t *testing.T) {
 	cmd := &cobra.Command{}
 
-	cmd.Annotations = ParseArgsAndS3Path
+	cmd.Annotations = FirstLocalFileOrPathMode
 	s3Args, opts, err := splitArgs(cmd, []string{"local-file", "a:b", "c:d"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if opts[AddedArgs] != "local-file" || len(s3Args) != 2 || s3Args[0] != "a:b" || s3Args[1] != "c:d" {
-		t.Fatalf("ParseArgsAndS3Path: s3Args=%v opts=%v", s3Args, opts)
+	if opts[LocalFileOrPath] != "local-file" || len(s3Args) != 2 || s3Args[0] != "a:b" || s3Args[1] != "c:d" {
+		t.Fatalf("FirstLocalFileOrPathMode: s3Args=%v opts=%v", s3Args, opts)
 	}
 
-	cmd.Annotations = ParseS3PathAndArgs
+	cmd.Annotations = LastLocalFileOrPathMode
 	s3Args, opts, err = splitArgs(cmd, []string{"a:b", "local-file"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if opts[AddedArgs] != "local-file" || len(s3Args) != 1 || s3Args[0] != "a:b" {
-		t.Fatalf("ParseS3PathAndArgs: s3Args=%v opts=%v", s3Args, opts)
+	if opts[LocalFileOrPath] != "local-file" || len(s3Args) != 1 || s3Args[0] != "a:b" {
+		t.Fatalf("LastLocalFileOrPathMode: s3Args=%v opts=%v", s3Args, opts)
 	}
 }
 

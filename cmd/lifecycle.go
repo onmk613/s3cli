@@ -8,99 +8,27 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// LifecycleCmd 管理桶的生命周期规则 (子命令与 mc ilm rule 对齐:
-// add/edit/list/remove/export/import; 兼容旧名 set/get/del).
+// LifecycleCmd 管理桶的生命周期规则 (list/set/remove 命令, 与其他桶配置命令风格一致).
 func LifecycleCmd() *cobra.Command {
 	lifecycleCmd := &cobra.Command{
 		Use:   "lifecycle",
-		Short: "Manage lifecycle rules (mc ilm compatible)",
+		Short: "Manage bucket lifecycle rules",
 	}
 	lifecycleCmd.AddCommand(
-		LifecycleAddCmd(),
-		LifecycleEditCmd(),
 		LifecycleListCmd(),
+		LifecycleSetCmd(),
 		LifecycleRemoveCmd(),
-		LifecycleExportCmd(),
-		LifecycleImportCmd(),
 	)
 	return lifecycleCmd
 }
 
-// LifecycleAddCmd 添加生命周期规则 (mc ilm rule add), 全部参数直接生成规则, 不依赖文件.
-func LifecycleAddCmd() *cobra.Command {
-	var opt action.LifecycleRuleOptions
-	var ttl string
-	cmd := &cobra.Command{
-		Use:               "add [alias:bucket] ...",
-		Aliases:           []string{"set"},
-		Short:             "Add a lifecycle rule (mc ilm rule add compatible)",
-		ValidArgsFunction: AutoCompleteBucket,
-		Args:              cobra.MinimumNArgs(1),
-	}
-	materialize := addLifecycleRuleFlags(cmd, &opt)
-	cmd.RunE = NewRunE(func(S3 action.Action, dst *s3path.Path) error {
-		if err := materialize(); err != nil {
-			return err
-		}
-		if ttl != "" {
-			if opt.ExpiryDays != nil {
-				return fmt.Errorf("--ttl conflicts with --expire-days: use only one")
-			}
-			days, err := action.ParseTTLDays(ttl)
-			if err != nil {
-				return err
-			}
-			opt.ExpiryDays = &days
-		}
-		return S3.AddLifecycleRule(opt, dst.Bucket)
-	})
-	cmd.Flags().StringVar(&ttl, "ttl", "", "Expiration TTL, e.g. 30d / 12h / 1w / 2m (bare number = days, alias of --expire-days)")
-	_ = cmd.Flags().MarkHidden("ttl")
-	cmd.ValidArgsFunction = AutoCompleteBucket
-	return cmd
-}
-
-// LifecycleEditCmd 按 ID 修改生命周期规则 (mc ilm rule edit).
-func LifecycleEditCmd() *cobra.Command {
-	var opt action.LifecycleRuleOptions
-	var enable, disable bool
-	cmd := &cobra.Command{
-		Use:               "edit [alias:bucket] ...",
-		Short:             "Modify a lifecycle rule by --id (mc ilm rule edit compatible)",
-		ValidArgsFunction: AutoCompleteBucket,
-		Args:              cobra.MinimumNArgs(1),
-	}
-	materialize := addLifecycleRuleFlags(cmd, &opt)
-	cmd.RunE = NewRunE(func(S3 action.Action, dst *s3path.Path) error {
-		if err := materialize(); err != nil {
-			return err
-		}
-		if enable && disable {
-			return fmt.Errorf("--enable and --disable are mutually exclusive")
-		}
-		if enable {
-			v := true
-			opt.Status = &v
-		}
-		if disable {
-			v := false
-			opt.Status = &v
-		}
-		return S3.EditLifecycleRule(opt, dst.Bucket)
-	})
-	cmd.Flags().BoolVar(&enable, "enable", false, "Enable the rule")
-	cmd.Flags().BoolVar(&disable, "disable", false, "Disable the rule")
-	cmd.ValidArgsFunction = AutoCompleteBucket
-	return cmd
-}
-
-// LifecycleListCmd 列出生命周期规则 (mc ilm rule list); 默认表格, --json 输出 JSON.
+// LifecycleListCmd 列出生命周期规则; 默认表格, --json 输出整份配置 JSON.
 func LifecycleListCmd() *cobra.Command {
 	var opt action.ListLifecycleOptions
 	cmd := &cobra.Command{
 		Use:               "list [alias:bucket] ...",
-		Aliases:           []string{"ls"},
-		Short:             "List lifecycle rules (mc ilm rule list compatible)",
+		Aliases:           []string{"ls", "get"},
+		Short:             "List lifecycle rules (--json prints the whole config)",
 		ValidArgsFunction: AutoCompleteBucket,
 		Args:              cobra.MinimumNArgs(1),
 		RunE: NewRunE(func(S3 action.Action, dst *s3path.Path) error {
@@ -114,13 +42,44 @@ func LifecycleListCmd() *cobra.Command {
 	return cmd
 }
 
-// LifecycleRemoveCmd 删除生命周期规则 (mc ilm rule remove): --id 删单条, --all --force 清空.
+// LifecycleSetCmd 创建或整体替换生命周期规则:
+//   - 带规则 flag (--id/--prefix/--expire-days/...) 时 upsert 单条规则:
+//     同 --id 已存在则整条覆盖, 否则新建; --id 缺省时按规则内容生成确定性 ID (幂等).
+//   - 带 --from-file 时从 JSON/XML 文件整体替换整份配置.
+func LifecycleSetCmd() *cobra.Command {
+	var opt action.LifecycleRuleOptions
+	var disable bool
+	cmd := &cobra.Command{
+		Use:               "set [alias:bucket] ...",
+		Short:             "Create/replace a lifecycle rule (flags), or load whole config (--from-file)",
+		ValidArgsFunction: AutoCompleteBucket,
+		Args:              cobra.MinimumNArgs(1),
+	}
+	materialize := addLifecycleRuleFlags(cmd, &opt)
+	cmd.Flags().BoolVar(&disable, "disable", false, "Set the rule status to Disabled (default: Enabled)")
+	cmd.RunE = NewRunE(func(S3 action.Action, dst *s3path.Path) error {
+		if err := materialize(); err != nil {
+			return err
+		}
+		if disable {
+			opt.Status = new(false)
+		}
+		if opt.ConfigFile != "" && (disable || lifecycleRuleFieldsSet(opt)) {
+			return fmt.Errorf("--from-file cannot be combined with rule flags or --disable")
+		}
+		return S3.SetLifecycleRule(opt, dst.Bucket)
+	})
+	cmd.ValidArgsFunction = AutoCompleteBucket
+	return cmd
+}
+
+// LifecycleRemoveCmd 删除生命周期规则: --id 删单条, --all --force 清空整份配置.
 func LifecycleRemoveCmd() *cobra.Command {
 	var opt action.RemoveLifecycleOptions
 	cmd := &cobra.Command{
 		Use:               "remove [alias:bucket] ...",
 		Aliases:           []string{"rm", "del"},
-		Short:             "Remove lifecycle rules by --id or --all --force (mc ilm rule remove compatible)",
+		Short:             "Remove a lifecycle rule by --id, or all rules with --all --force",
 		ValidArgsFunction: AutoCompleteBucket,
 		Args:              cobra.MinimumNArgs(1),
 		RunE: NewRunE(func(S3 action.Action, dst *s3path.Path) error {
@@ -134,38 +93,28 @@ func LifecycleRemoveCmd() *cobra.Command {
 	return cmd
 }
 
-// LifecycleExportCmd 导出整份生命周期配置 JSON (mc ilm rule export; 兼容旧 get).
-func LifecycleExportCmd() *cobra.Command {
-	return &cobra.Command{
-		Use:               "export [alias:bucket] ...",
-		Aliases:           []string{"get"},
-		Short:             "Export lifecycle configuration as JSON (mc ilm rule export compatible)",
-		ValidArgsFunction: AutoCompleteBucket,
-		Args:              cobra.MinimumNArgs(1),
-		RunE: NewRunE(func(S3 action.Action, dst *s3path.Path) error {
-			return S3.ExportLifecycle(dst.Bucket)
-		}),
+// lifecycleRuleFieldsSet 判断是否给出了除 --from-file 以外的规则构造 flag.
+func lifecycleRuleFieldsSet(opt action.LifecycleRuleOptions) bool {
+	if opt.ID != "" || opt.Status != nil {
+		return true
 	}
+	if opt.Prefix != nil || opt.Tags != nil || opt.SizeLT != nil || opt.SizeGT != nil {
+		return true
+	}
+	if opt.ExpiryDate != nil || opt.ExpiryDays != nil || opt.ExpireDeleteMarker != nil || opt.ExpireAllObjectVersions != nil {
+		return true
+	}
+	if opt.TransitionDays != nil || opt.TransitionTier != nil {
+		return true
+	}
+	if opt.NoncurrentExpireDays != nil || opt.NoncurrentExpireNewer != nil ||
+		opt.NoncurrentTransitionDays != nil || opt.NoncurrentTransitionTier != nil {
+		return true
+	}
+	return false
 }
 
-// LifecycleImportCmd 从 JSON/XML 文件 (或 stdin) 整体导入生命周期配置 (mc ilm rule import).
-func LifecycleImportCmd() *cobra.Command {
-	var file string
-	cmd := &cobra.Command{
-		Use:               "import [alias:bucket] ...",
-		Short:             "Import lifecycle configuration from a JSON/XML file or stdin (mc ilm rule import compatible)",
-		ValidArgsFunction: AutoCompleteBucket,
-		Args:              cobra.MinimumNArgs(1),
-		RunE: NewRunE(func(S3 action.Action, dst *s3path.Path) error {
-			return S3.ImportLifecycle(file, dst.Bucket)
-		}),
-	}
-	cmd.Flags().StringVarP(&file, "from-file", "", "-", "Config file (JSON/XML), or - to read from stdin")
-	cmd.ValidArgsFunction = AutoCompleteBucket
-	return cmd
-}
-
-// addLifecycleRuleFlags 注册 mc ilm rule add/edit 的全部参数, 并返回 materialize 闭包:
+// addLifecycleRuleFlags 注册单条规则的构造参数, 并返回 materialize 闭包:
 // 在 RunE 阶段把显式设置的 flag 值物化为指针字段.
 func addLifecycleRuleFlags(cmd *cobra.Command, opt *action.LifecycleRuleOptions) func() error {
 	var prefix, tags, sizeLT, sizeGT, expiryDate, transitionTier, noncurrentTransitionTier string
@@ -173,7 +122,7 @@ func addLifecycleRuleFlags(cmd *cobra.Command, opt *action.LifecycleRuleOptions)
 	var expireDeleteMarker, expireAllObjectVersions bool
 
 	f := cmd.Flags()
-	f.StringVar(&opt.ID, "id", "", "ID of the rule (auto-generated if empty)")
+	f.StringVar(&opt.ID, "id", "", "ID of the rule (auto-derived from rule content if empty)")
 	f.StringVar(&prefix, "prefix", "", "Object prefix")
 	f.StringVar(&tags, "tags", "", "Tag filter: '<key1>=<value1>&<key2>=<value2>'")
 	f.StringVar(&sizeLT, "size-lt", "", "Select objects smaller than this size, e.g. 1MiB / 500K / 1048576")
@@ -188,7 +137,7 @@ func addLifecycleRuleFlags(cmd *cobra.Command, opt *action.LifecycleRuleOptions)
 	f.IntVar(&noncurrentExpireNewer, "noncurrent-expire-newer", 0, "Number of newer noncurrent versions to retain")
 	f.IntVar(&noncurrentTransitionDays, "noncurrent-transition-days", 0, "Number of days to transition noncurrent versions")
 	f.StringVar(&noncurrentTransitionTier, "noncurrent-transition-tier", "", "Remote tier name to transition noncurrent versions to")
-	f.StringVarP(&opt.ConfigFile, "from-file", "", "", "Load entire lifecycle config from a JSON/XML file (overrides flags)")
+	f.StringVar(&opt.ConfigFile, "from-file", "", "Load entire lifecycle config from a JSON/XML file (overrides flags)")
 	cmd.MarkFlagsMutuallyExclusive("expire-days", "expiry-date", "expire-delete-marker")
 
 	changed := func(name string) bool { return f.Changed(name) }

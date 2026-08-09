@@ -28,7 +28,7 @@ func NewSetTagCmd() *cobra.Command {
 		Short:             "Set tag(s) on a bucket or object(s)",
 		Args:              cobra.MinimumNArgs(1),
 		ValidArgsFunction: AutoCompletePath,
-		Annotations:       ParseS3OnlyPath,
+		Annotations:       OnlyS3PathMode,
 		RunE: NewRunE(func(S3 action.Action, dst *s3path.Path) error {
 			return S3.SetTag(dst.Bucket, dst.Key, legacy)
 		}),
@@ -47,7 +47,7 @@ func NewListTagCmd() *cobra.Command {
 		Short:             "List tag(s) of bucket(s) or object(s)",
 		Args:              cobra.MinimumNArgs(1),
 		ValidArgsFunction: AutoCompletePath,
-		Annotations:       ParseS3OnlyPath,
+		Annotations:       OnlyS3PathMode,
 		RunE: NewRunE(func(S3 action.Action, dst *s3path.Path) error {
 			return S3.GetTag(opt, dst.Bucket, dst.Key)
 		}),
@@ -64,7 +64,7 @@ func NewRemoveTagCmd() *cobra.Command {
 		Short:             "Remove tag(s) from bucket(s) or object(s)",
 		Args:              cobra.MinimumNArgs(1),
 		ValidArgsFunction: AutoCompletePath,
-		Annotations:       ParseS3OnlyPath,
+		Annotations:       OnlyS3PathMode,
 		RunE: NewRunE(func(S3 action.Action, dst *s3path.Path) error {
 			return S3.DelTag(dst.Bucket, dst.Key)
 		}),

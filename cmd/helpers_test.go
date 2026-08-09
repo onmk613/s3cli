@@ -19,11 +19,11 @@ import (
 
 func snapshotConfig(t *testing.T) func() {
 	t.Helper()
-	oldG, oldPath := config.G, config.ConfPath
+	oldG, oldPath := config.G, config.G.C
 	config.G = &config.Config{}
-	config.ConfPath = ""
+	config.G.C = ""
 	return func() {
-		config.G, config.ConfPath = oldG, oldPath
+		config.G, config.G.C = oldG, oldPath
 	}
 }
 

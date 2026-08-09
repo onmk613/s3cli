@@ -1,374 +1,148 @@
 package config
 
 import (
-	"bufio"
-	"bytes"
+	"errors"
+	"io"
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
-
-	"s3cli/pkg/fmtutil"
-
-	"github.com/BurntSushi/toml"
 )
 
-// snapshotGlobals 保存 G 与 ConfPath, 返回 restore; 测试必须用它隔离全局状态。
-func snapshotGlobals(t *testing.T) func() {
+// snapshotHooks 保存全部可注入钩子并在测试结束时恢复。
+func snapshotHooks(t *testing.T) {
 	t.Helper()
-	oldG, oldPath := G, ConfPath
-	G = &Config{}
-	ConfPath = ""
-	return func() {
-		G, ConfPath = oldG, oldPath
+	old := struct {
+		isTerminal   func(int) bool
+		readPassword func(int) ([]byte, error)
+		userHomeDir  func() (string, error)
+		osStat       func(string) (os.FileInfo, error)
+		mkdirAll     func(string, os.FileMode) error
+		createTemp   func(string, string) (*os.File, error)
+		chmodFile    func(*os.File, os.FileMode) error
+		encodeTOML   func(io.Writer, any) error
+		syncFile     func(*os.File) error
+		closeFile    func(*os.File) error
+		rename       func(string, string) error
+		chmodPath    func(string, os.FileMode) error
+	}{
+		isTerminal, readPassword, userHomeDir, osStat,
+		mkdirAll, createTemp, chmodFile, encodeTOML,
+		syncFile, closeFile, rename, chmodPath,
 	}
+	t.Cleanup(func() {
+		isTerminal, readPassword, userHomeDir, osStat = old.isTerminal, old.readPassword, old.userHomeDir, old.osStat
+		mkdirAll, createTemp, chmodFile, encodeTOML = old.mkdirAll, old.createTemp, old.chmodFile, old.encodeTOML
+		syncFile, closeFile, rename, chmodPath = old.syncFile, old.closeFile, old.rename, old.chmodPath
+	})
 }
 
-func writeTempConfig(t *testing.T, content string) string {
+// snapshotGlobal 保存 G 全局状态并在测试结束时恢复。
+func snapshotGlobal(t *testing.T) {
 	t.Helper()
-	dir := t.TempDir()
-	p := filepath.Join(dir, ".s3cli")
-	if err := os.WriteFile(p, []byte(content), 0o600); err != nil {
+	oldC, oldF, oldS := G.C, G.F, G.S
+	t.Cleanup(func() { G.C, G.F, G.S = oldC, oldF, oldS })
+}
+
+// tempConfPath 把 G.C 指向临时配置文件路径并清空 G.S。
+func tempConfPath(t *testing.T) string {
+	t.Helper()
+	snapshotGlobal(t)
+	path := filepath.Join(t.TempDir(), "conf")
+	G.C = path
+	G.S = nil
+	return path
+}
+
+// feedStdin 把 os.Stdin 替换为管道，写入 input 后关闭。
+func feedStdin(t *testing.T, input string) {
+	t.Helper()
+	pr, pw, err := os.Pipe()
+	if err != nil {
 		t.Fatal(err)
 	}
-	return p
+	old := os.Stdin
+	os.Stdin = pr
+	t.Cleanup(func() { os.Stdin = old })
+	go func() {
+		_, _ = pw.WriteString(input)
+		_ = pw.Close()
+	}()
+}
+
+func TestDefaultConfigPath(t *testing.T) {
+	snapshotHooks(t)
+
+	home, err := os.UserHomeDir()
+	if err != nil {
+		t.Fatal(err)
+	}
+	userHomeDir = func() (string, error) { return home, nil }
+	if got := DefaultConfigPath(); got != filepath.Join(home, ".s3cli") {
+		t.Errorf("DefaultConfigPath = %q, want %q", got, filepath.Join(home, ".s3cli"))
+	}
+
+	userHomeDir = func() (string, error) { return "", errors.New("no home") }
+	if got := DefaultConfigPath(); got != "" {
+		t.Errorf("DefaultConfigPath = %q, want empty on error", got)
+	}
 }
 
 func TestResolveBucketLookup(t *testing.T) {
 	cases := []struct {
-		in       string
-		wantMode string
-		wantTpl  string
-		wantErr  bool
+		name    string
+		in      string
+		mode    string
+		tpl     string
+		wantErr bool
 	}{
-		{"", BucketLookupPath, "", false},
-		{"path", BucketLookupPath, "", false},
-		{"PATH", BucketLookupPath, "", false}, // 大小写不敏感
-		{"dns", BucketLookupDNS, "", false},
-		{"DNS", BucketLookupDNS, "", false},
-		{"https://%(bucket).s3.example.com", BucketLookupCustom, "https://%(bucket).s3.example.com", false},
-		{"https://%(bucket).s3.%(region).amazonaws.com", BucketLookupCustom, "https://%(bucket).s3.%(region).amazonaws.com", false},
-		{"garbage", "", "", true},
-		{"https://example.com", "", "", true}, // 缺 %(bucket)
+		{"empty defaults to path", "", BucketLookupPath, "", false},
+		{"path", "path", BucketLookupPath, "", false},
+		{"path uppercase", "PATH", BucketLookupPath, "", false},
+		{"dns", "dns", BucketLookupDNS, "", false},
+		{"custom", "https://%(bucket).s3.example.com", BucketLookupCustom, "https://%(bucket).s3.example.com", false},
+		{"custom with region", "https://%(bucket).s3.%(region).example.com", BucketLookupCustom, "https://%(bucket).s3.%(region).example.com", false},
+		{"invalid", "garbage", "", "", true},
 	}
 	for _, tc := range cases {
-		s := &Static{BucketLookup: tc.in}
-		mode, tpl, err := s.ResolveBucketLookup()
-		if tc.wantErr {
-			if err == nil {
-				t.Errorf("BucketLookup=%q: expected error, got nil", tc.in)
+		t.Run(tc.name, func(t *testing.T) {
+			s := Static{BucketLookup: tc.in}
+			mode, tpl, err := s.ResolveBucketLookup()
+			if tc.wantErr {
+				if err == nil {
+					t.Fatal("want error")
+				}
+				return
 			}
-			continue
-		}
-		if err != nil {
-			t.Errorf("BucketLookup=%q: unexpected error %v", tc.in, err)
-			continue
-		}
-		if mode != tc.wantMode || tpl != tc.wantTpl {
-			t.Errorf("BucketLookup=%q: got (%q,%q), want (%q,%q)", tc.in, mode, tpl, tc.wantMode, tc.wantTpl)
-		}
+			if err != nil {
+				t.Fatal(err)
+			}
+			if mode != tc.mode || tpl != tc.tpl {
+				t.Errorf("got (%q, %q), want (%q, %q)", mode, tpl, tc.mode, tc.tpl)
+			}
+		})
 	}
 }
 
 func TestValidateCustomTemplate(t *testing.T) {
-	good := []string{
-		"https://%(bucket).s3.example.com",
-		"https://%(bucket).s3.%(region).amazonaws.com",
-		"http://%(bucket).local:9000",
-	}
-	bad := []string{
-		"",                                 // 空
-		"https://example.com",              // 无 %(bucket)
-		"https://%(bucket)",                // %(bucket) 在末尾
-		"https://%(bucket)%(bucket).x.com", // 多个 %(bucket)
-		"https://%(bucket).s3.%(region).%(region).com", // 多个 %(region)
-		"%(bucket)", // 解析后无 host
-	}
-	for _, tpl := range good {
-		if !validateCustomTemplate(tpl) {
-			t.Errorf("expected %q to be valid", tpl)
-		}
-	}
-	for _, tpl := range bad {
-		if validateCustomTemplate(tpl) {
-			t.Errorf("expected %q to be invalid", tpl)
-		}
-	}
-}
-
-func TestEnsureConfPath(t *testing.T) {
-	restore := snapshotGlobals(t)
-	defer restore()
-
-	// 空时回退到 $HOME/.s3cli
-	ConfPath = ""
-	got := ensureConfPath()
-	want := filepath.Join(os.Getenv("HOME"), ".s3cli")
-	if got != want {
-		t.Errorf("ensureConfPath() = %q, want %q", got, want)
-	}
-	if ConfPath != want {
-		t.Errorf("ConfPath not set, got %q", ConfPath)
-	}
-	// 已设置时直接返回
-	ConfPath = "/tmp/custom"
-	if g := ensureConfPath(); g != "/tmp/custom" {
-		t.Errorf("ensureConfPath() = %q, want /tmp/custom", g)
-	}
-}
-
-func TestMaskSecret(t *testing.T) {
-	cases := []struct{ in, want string }{
-		{"", "****"},
-		{"abc", "****"},
-		{"abcd", "****"},
-		{"abcde", "****bcde"},
-		{"0123456789", "****6789"},
-	}
-	for _, tc := range cases {
-		if got := maskSecret(tc.in); got != tc.want {
-			t.Errorf("maskSecret(%q) = %q, want %q", tc.in, got, tc.want)
-		}
-	}
-}
-
-func TestStringInSlice(t *testing.T) {
-	if !stringInSlice("b", []string{"a", "b", "c"}) {
-		t.Error("expected true for present")
-	}
-	if stringInSlice("x", []string{"a", "b", "c"}) {
-		t.Error("expected false for absent")
-	}
-	if stringInSlice("a", nil) {
-		t.Error("expected false for nil list")
-	}
-}
-
-func TestSaveConfig(t *testing.T) {
-	restore := snapshotGlobals(t)
-	defer restore()
-
-	aliases := map[string]Static{
-		"myalias": {
-			AccessKey: "AKIA123",
-			HostBase:  "https://s3.example.com",
-		},
-	}
-
-	dir := t.TempDir()
-	p := filepath.Join(dir, "sub", "nested", ".s3cli") // 测 MkdirAll
-	if err := saveConfig(aliases, p); err != nil {
-		t.Fatalf("saveConfig: %v", err)
-	}
-
-	info, err := os.Stat(p)
-	if err != nil {
-		t.Fatalf("file not created: %v", err)
-	}
-	if mode := info.Mode().Perm(); mode != 0o600 {
-		t.Errorf("perm = %o, want 0600", mode)
-	}
-	// 内容可重新加载
-	var got map[string]Static
-	if _, err := toml.DecodeFile(p, &got); err != nil {
-		t.Fatalf("reload: %v", err)
-	}
-	if got["myalias"].AccessKey != "AKIA123" {
-		t.Errorf("after reload: AccessKey = %q, want AKIA123", got["myalias"].AccessKey)
-	}
-}
-
-func TestLoadConf(t *testing.T) {
-	restore := snapshotGlobals(t)
-	defer restore()
-
-	t.Run("valid", func(t *testing.T) {
-		content := "[alias1]\naccess_key = \"AK\"\nsecret_key = \"SK\"\nhost_base = \"https://s3.example.com\"\nverify_ssl = true\n" +
-			"[alias2]\naccess_key = \"AK2\"\nsecret_key = \"SK2\"\nhost_base = \"https://s3b.example.com\"\n"
-		ConfPath = writeTempConfig(t, content)
-		if err := LoadConf(); err != nil {
-			t.Fatal(err)
-		}
-		if len(G.S) != 2 {
-			t.Fatalf("expected 2 sections, got %d", len(G.S))
-		}
-		a1 := G.S["alias1"]
-		if a1.AccessKey != "AK" || a1.HostBase != "https://s3.example.com" || !a1.VerifySSL {
-			t.Errorf("alias1 misparsed: %#v", a1)
-		}
-		a2 := G.S["alias2"]
-		// verify_ssl 缺失时应默认 true
-		if !a2.VerifySSL {
-			t.Error("expected VerifySSL default true when key absent")
-		}
-	})
-
-	t.Run("missing file", func(t *testing.T) {
-		ConfPath = filepath.Join(t.TempDir(), "nope")
-		if err := LoadConf(); err == nil {
-			t.Error("expected error for missing file")
-		}
-	})
-
-	t.Run("empty file", func(t *testing.T) {
-		ConfPath = writeTempConfig(t, "")
-		if err := LoadConf(); err == nil {
-			t.Error("expected error for empty file")
-		}
-	})
-
-	t.Run("malformed", func(t *testing.T) {
-		ConfPath = writeTempConfig(t, "foo = \"unterminated string\n")
-		if err := LoadConf(); err == nil {
-			t.Error("expected error for malformed toml")
-		}
-	})
-}
-
-func TestListAliasConf(t *testing.T) {
-	restore := snapshotGlobals(t)
-	defer restore()
-
-	t.Run("missing file returns error", func(t *testing.T) {
-		ConfPath = filepath.Join(t.TempDir(), "nope")
-		if err := ListAliasConf(nil); err == nil {
-			t.Error("expected error")
-		}
-	})
-	t.Run("empty file returns error", func(t *testing.T) {
-		ConfPath = writeTempConfig(t, "")
-		if err := ListAliasConf(nil); err == nil {
-			t.Error("expected error")
-		}
-	})
-	t.Run("valid sections no error", func(t *testing.T) {
-		content := "[prod]\nhost_base = \"https://s3.example.com\"\naccess_key = \"AK\"\nsecret_key = \"SECRET123456\"\n"
-		ConfPath = writeTempConfig(t, content)
-		if err := ListAliasConf(nil); err != nil {
-			t.Fatalf("unexpected error: %v", err)
-		}
-	})
-}
-
-// TestListAliasConfSecretMasking 回归 P2-CLI-3:
-// 默认脱敏 (只显示后 4 位), 仅显式 --show-secret 才显示明文密钥。
-func TestListAliasConfSecretMasking(t *testing.T) {
-	restore := snapshotGlobals(t)
-	defer restore()
-
-	content := "[prod]\nhost_base = \"https://s3.example.com\"\naccess_key = \"AK123\"\nsecret_key = \"SECRET123456\"\n"
-	ConfPath = writeTempConfig(t, content)
-
-	// 恢复默认 writer, 避免污染其他用例的 stdout 捕获
-	defer fmtutil.SetWriter(os.Stdout)
-
-	t.Run("default masked", func(t *testing.T) {
-		var buf bytes.Buffer
-		fmtutil.SetWriter(&buf)
-		G.F = Flags{}
-		if err := ListAliasConf(nil); err != nil {
-			t.Fatal(err)
-		}
-		out := buf.String()
-		if strings.Contains(out, "SECRET123456") {
-			t.Error("default mode should not reveal full secret key")
-		}
-		if !strings.Contains(out, "****3456") {
-			t.Errorf("default mode should show masked secret, got: %q", out)
-		}
-	})
-
-	t.Run("show-secret reveals", func(t *testing.T) {
-		var buf bytes.Buffer
-		fmtutil.SetWriter(&buf)
-		G.F = Flags{ShowSecret: true}
-		if err := ListAliasConf(nil); err != nil {
-			t.Fatal(err)
-		}
-		if !strings.Contains(buf.String(), "SECRET123456") {
-			t.Error("--show-secret should reveal full secret key")
-		}
-	})
-}
-
-func TestConfirmDelete(t *testing.T) {
 	cases := []struct {
-		input string
-		want  bool
+		in   string
+		want bool
 	}{
-		{"y\n", true},
-		{"Y\n", true},
-		{"yes\n", true},
-		{"  YES  \n", true},
-		{"n\n", false},
-		{"no\n", false},
-		{"\n", false},
-		{"", false}, // EOF
+		{"https://%(bucket).s3.example.com", true},
+		{"https://%(bucket).s3.%(region).example.com", true},
+		{"https://example.com", false},                           // 缺 %(bucket)
+		{"https://example.com/%(bucket)", false},                 // %(bucket) 在最末尾
+		{"https://%(bucket)x.example.com/%(bucket)/y", false},    // %(bucket) 出现两次
+		{"https://%(bucket).x.%(region).y.%(region).com", false}, // %(region) 出现两次
+		{"https://%(bucket)..example.com", false},                // host 连续点
+		{"https:///%(bucket)/x", false},                          // host 为空
+		{"https://%(bucket).example.com/%zz", false},             // 替换后非法 URL 转义
+		{"://%(bucket).x.com", false},                            // 非法 URL
+		{"", false},                                              // 空
 	}
 	for _, tc := range cases {
-		r := bufio.NewReader(strings.NewReader(tc.input))
-		if got := confirmDelete(r, "x"); got != tc.want {
-			t.Errorf("input %q: got %v, want %v", tc.input, got, tc.want)
+		if got := validateCustomTemplate(tc.in); got != tc.want {
+			t.Errorf("validateCustomTemplate(%q) = %v, want %v", tc.in, got, tc.want)
 		}
-	}
-}
-
-func TestDelConf(t *testing.T) {
-	restore := snapshotGlobals(t)
-	defer restore()
-
-	t.Run("empty name", func(t *testing.T) {
-		ConfPath = writeTempConfig(t, "[a]\nhost_base = \"x\"\n")
-		if err := delConf("  "); err == nil {
-			t.Error("expected error for empty name")
-		}
-	})
-
-	t.Run("unknown section", func(t *testing.T) {
-		ConfPath = writeTempConfig(t, "[a]\nhost_base = \"x\"\n")
-		if err := delConf("missing"); err == nil {
-			t.Error("expected error for missing section")
-		}
-	})
-
-	t.Run("delete existing", func(t *testing.T) {
-		ConfPath = writeTempConfig(t, "[a]\nhost_base = \"x\"\n[b]\nhost_base = \"y\"\n")
-		if err := delConf("a"); err != nil {
-			t.Fatalf("unexpected error: %v", err)
-		}
-		var got map[string]Static
-		if _, err := toml.DecodeFile(ConfPath, &got); err != nil {
-			t.Fatalf("reload: %v", err)
-		}
-		if _, ok := got["a"]; ok {
-			t.Error("section a should be deleted")
-		}
-		if _, ok := got["b"]; !ok {
-			t.Error("section b should remain")
-		}
-	})
-}
-
-func TestDelConfTopLevel(t *testing.T) {
-	restore := snapshotGlobals(t)
-	defer restore()
-
-	ConfPath = writeTempConfig(t, "[a]\nhost_base = \"x\"\n[b]\nhost_base = \"y\"\n")
-	// 非 TTY (go test 的 stdin 是管道) → 直接删除无需确认
-	if err := DelConf([]string{"a"}); err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	var got map[string]Static
-	if _, err := toml.DecodeFile(ConfPath, &got); err != nil {
-		t.Fatalf("reload: %v", err)
-	}
-	if _, ok := got["a"]; ok {
-		t.Error("section a should be deleted")
-	}
-
-	// 缺失配置文件
-	ConfPath = filepath.Join(t.TempDir(), "nope")
-	if err := DelConf([]string{"a"}); err == nil {
-		t.Error("expected error for missing file")
 	}
 }

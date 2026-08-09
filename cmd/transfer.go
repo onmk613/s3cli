@@ -24,9 +24,9 @@ func NewGetCmd() *cobra.Command {
 		Short:             "Download object(s) from S3",
 		Args:              cobra.MatchAll(cobra.MinimumNArgs(1), cobra.MaximumNArgs(2)),
 		ValidArgsFunction: CompleteLocalLast(AutoCompletePath, 1),
-		Annotations:       ParseS3PathAndArgs,
+		Annotations:       LastLocalFileOrPathMode,
 		RunE: NewRunEWithMode(func(S3 action.Action, dst *s3path.Path, opts ArgParseMode) error {
-			return S3.GetObject(getOpt, dst.Bucket, dst.Key, opts[AddedArgs])
+			return S3.GetObject(getOpt, dst.Bucket, dst.Key, opts[LocalFileOrPath])
 		}),
 	}
 	f := cmd.Flags()
@@ -54,7 +54,7 @@ func NewPutCmd() *cobra.Command {
 		Short:             "Upload file(s) to S3",
 		Args:              cobra.ExactArgs(2),
 		ValidArgsFunction: CompleteLocalFirst(AutoCompletePath),
-		Annotations:       ParseArgsAndS3Path,
+		Annotations:       FirstLocalFileOrPathMode,
 		RunE: NewRunEWithMode(func(S3 action.Action, dst *s3path.Path, opts ArgParseMode) error {
 			if cfg, ok := config.G.S[S3.Alias]; ok {
 				if cfg.DefaultMimeType != "" {
@@ -65,7 +65,7 @@ func NewPutCmd() *cobra.Command {
 					putOpt.PartSizeMB = cfg.MultipartChunkSizeMb
 				}
 			}
-			return S3.PutObject(putOpt, dst.Bucket, dst.Key, opts[AddedArgs], dst.TrailingSlash)
+			return S3.PutObject(putOpt, dst.Bucket, dst.Key, opts[LocalFileOrPath], dst.TrailingSlash)
 		}),
 	}
 	f := cmd.Flags()

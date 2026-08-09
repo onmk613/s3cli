@@ -1,4 +1,4 @@
-// utils.go 提供包内复用的通用工具: SHA256/HMAC/MD5 哈希计算、RFC 3986 百分号编码、
+// parse-path.go 提供包内复用的通用工具: SHA256/HMAC/MD5 哈希计算、RFC 3986 百分号编码、
 // XML 编解码辅助、字符串处理 (trimQuotes / parseInt64 / indexOfByte),
 // 以及 S3 桶名严格校验.
 

@@ -33,7 +33,7 @@ func NewDiffCmd() *cobra.Command {
 		return ok
 	}
 	makeClient := func(ctx context.Context, sp *s3path.Path) (s3iface.S3Operations, error) {
-		cli, _, err := client.ParsePathAndNewClient(ctx, formatPath(sp))
+		cli, _, err := client.ParsePathAndNewClient(formatPath(sp))
 		return cli, err
 	}
 	parseDiffArg := func(ctx context.Context, arg string) (*action.DiffEndpoint, error) {

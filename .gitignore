@@ -1,9 +1,10 @@
-s3cli*
-bin/
 .DS_Store
 .vscode/
 .idea/
 .github/
+.reasonix/
 vendor/
 docs/
-*test/
+bin/
+reasonix*
+s3cli*
