@@ -10,16 +10,13 @@ import (
 
 var globalSeq atomic.Int64
 
-type Transport struct {
+type dumpTransport struct {
 	base http.RoundTripper
 	tag  string
 }
 
-func NewDumper(base http.RoundTripper) http.RoundTripper {
-	if base == nil {
-		base = http.DefaultTransport
-	}
-	return &Transport{
+func newDumper(base http.RoundTripper) http.RoundTripper {
+	return &dumpTransport{
 		base: base,
 		tag:  "HTTP",
 	}
@@ -29,6 +26,9 @@ var sensitiveHeaders = map[string]struct{}{
 	"Authorization": {}, "Proxy-Authorization": {}, "X-Amz-Security-Token": {}, "Cookie": {}, "Set-Cookie": {},
 	"X-Amz-Server-Side-Encryption-Customer-Key": {},
 }
+
+// dumpResponse 是 httputil.DumpResponse 的间接层, 便于测试覆盖其错误分支.
+var dumpResponse = httputil.DumpResponse
 
 func redactedRequest(req *http.Request) *http.Request {
 	clone := req.Clone(req.Context())
@@ -52,7 +52,7 @@ func redactedResponse(resp *http.Response) *http.Response {
 	return clone
 }
 
-func (t *Transport) RoundTrip(req *http.Request) (*http.Response, error) {
+func (t *dumpTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	seq := globalSeq.Add(1)
 	myprint.Println()
 	// dump request
@@ -76,7 +76,7 @@ func (t *Transport) RoundTrip(req *http.Request) (*http.Response, error) {
 	// Debug logging intentionally excludes response bodies: error bodies may
 	// contain tenant data and can be arbitrarily large.
 	if resp != nil {
-		if b, err := httputil.DumpResponse(redactedResponse(resp), false); err != nil {
+		if b, err := dumpResponse(redactedResponse(resp), false); err != nil {
 			myprint.PrintfRed("[%v #%v] dump response error: %v\n", t.tag, seq, err)
 		} else {
 			myprint.Println()

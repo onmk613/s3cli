@@ -23,9 +23,9 @@ func EventSetCmd() *cobra.Command {
 		Short:             "Set bucket event notifications (SQS/SNS/Lambda, JSON, AWS CLI compatible)",
 		ValidArgsFunction: CompleteLocalFirst(AutoCompleteBucket),
 		Args:              cobra.MinimumNArgs(2),
-		Annotations:       ParseArgsAndS3Path,
+		Annotations:       FirstLocalFileOrPathMode,
 		RunE: NewRunEWithMode(func(S3 action.Action, dst *s3path.Path, opts ArgParseMode) error {
-			return S3.SetNotification(opts[AddedArgs], dst.Bucket)
+			return S3.SetNotification(opts[LocalFileOrPath], dst.Bucket)
 		}),
 	}
 }

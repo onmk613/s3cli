@@ -1,6 +1,6 @@
 // common.go 定义 action 包的核心: Action 类型、S3 路径格式化与存在性/目录探测
 // (S3Path / IsS3File / DestStateOf), 以及对象遍历器 forEachObject.
-// 凭证/错误/MIME 等通用工具在 utils.go.
+// 凭证/错误/MIME 等通用工具在 parse-path.go.
 
 package action
 

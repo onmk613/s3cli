@@ -1,4 +1,4 @@
-// utils.go 提供 action 包内复用的通用工具: 取消/超时判断 (IsCanceled)、
+// parse-path.go 提供 action 包内复用的通用工具: 取消/超时判断 (IsCanceled)、
 // S3 错误格式化 (FormatAPIError)、字节单位换算 (FormatBytes)、MIME 类型注册 (AddMime)、
 // JSON lines 输出 (printJSONLine).
 

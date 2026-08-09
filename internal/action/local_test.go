@@ -418,9 +418,31 @@ func TestBuildLifecycleRule(t *testing.T) {
 	})
 
 	t.Run("auto id", func(t *testing.T) {
-		rule, err := buildLifecycleRule(LifecycleRuleOptions{ExpiryDays: intPtr(30)})
+		rule, err := buildLifecycleRule(LifecycleRuleOptions{ExpiryDays: intPtr(30), Prefix: strPtr("logs/")})
 		if err != nil || rule.ID == "" {
-			t.Errorf("expected auto id, got %+v err=%v", rule, err)
+			t.Fatalf("expected auto id, got %+v err=%v", rule, err)
+		}
+		// 确定性: 相同内容得到相同 ID, 内容不同 (天数/动作) 得到不同 ID.
+		rule2, err := buildLifecycleRule(LifecycleRuleOptions{ExpiryDays: intPtr(30), Prefix: strPtr("logs/")})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if rule.ID != rule2.ID {
+			t.Errorf("same content must derive same ID: %q vs %q", rule.ID, rule2.ID)
+		}
+		rule3, err := buildLifecycleRule(LifecycleRuleOptions{ExpiryDays: intPtr(90), Prefix: strPtr("logs/")})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if rule.ID == rule3.ID {
+			t.Errorf("different days must derive different IDs, both %q", rule.ID)
+		}
+		rule4, err := buildLifecycleRule(LifecycleRuleOptions{Prefix: strPtr("logs/"), TransitionDays: intPtr(30), TransitionTier: strPtr("GLACIER")})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if rule.ID == rule4.ID {
+			t.Errorf("different actions must derive different IDs, both %q", rule.ID)
 		}
 	})
 

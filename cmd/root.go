@@ -68,11 +68,13 @@ func shouldSkipConfLoad(cmd *cobra.Command) bool {
 
 	// 某些命令不需要加载配置文件
 	skipCommands := map[string]bool{
-		"help":        true,
-		"completion":  true,
-		"alias":       true,
-		"local-list":  true,
-		"local-clear": true,
+		"help":             true,
+		"completion":       true,
+		"__complete":       true, // cobra 补全实际调用的是隐藏命令 __complete,
+		"__completeNoDesc": true, // 必须一并跳过, 否则无配置文件时补全直接报错失效
+		"alias":            true,
+		"local-list":       true,
+		"local-clear":      true,
 	}
 	for c := cmd; c != nil; c = c.Parent() {
 		if skipCommands[c.Name()] {
@@ -119,10 +121,12 @@ func NewRootCmd() {
 			return cmd.Help()
 		},
 		PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
+			// 环境变量绑定对所有命令生效（含 alias/help/completion），
+			// 因此放在 skip 判断之前。
+			bindEnv(cmd.Flags())
 			if shouldSkipConfLoad(cmd) {
 				return nil
 			}
-			bindEnv(cmd.Flags())
 			myprint.SetColor(!config.G.F.NoColor)
 			return config.LoadConf()
 		},
@@ -136,12 +140,14 @@ func NewRootCmd() {
 
 	// flags
 	fs := rootCmd.PersistentFlags()
-	fs.StringVarP(&config.ConfPath, "conf", "f", "", "Path to configuration file (default ~/.s3cli)")
+	fs.StringVarP(&config.G.C, "conf", "f", config.DefaultConfigPath(), "Path to configuration file (default ~/.s3cli)")
 	fs.BoolVar(&config.G.F.Debug, "debug", false, "Print summarized S3 requests")
 	fs.BoolVar(&config.G.F.NoColor, "no-color", false, "Disable color output")
 	fs.StringVar(&config.G.F.UserAgent, "user-agent", "", "Override the HTTP User-Agent header")
 	fs.StringVar(&config.G.F.UserAgentSuffix, "user-agent-suffix", "", "Append extra content to the HTTP User-Agent header")
 	fs.StringArrayVarP(&config.G.F.Headers, "header", "H", nil, "Add a custom HTTP header (key:value), can repeat")
+	fs.StringVar(&config.G.F.HostBase, "host-base", "", "Override the endpoint host for all aliases")
+	fs.BoolVar(&config.G.F.NoVerifySSL, "no-verify-ssl", false, "Skip TLS certificate verification")
 
 	// 从注册表添加所有子命令（带分组显示）。
 	// 同时校验顶层命令名/别名不得重叠：cobra 在命令名与别名冲突时的命中顺序

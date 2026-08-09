@@ -16,7 +16,10 @@ func (c *captureTransport) RoundTrip(req *http.Request) (*http.Response, error) 
 
 func TestHeaderAndUserAgentTransportsCloneAndApplyValues(t *testing.T) {
 	capture := &captureTransport{}
-	rt := newCustomHeaderTransport(newUserAgentTransport(capture, "s3cli-test", "ci"), http.Header{"X-Test": {"one", "two"}})
+	rt, err := newHeaderTransport(newUserAgentTransport(capture, "s3cli-test", "ci"), []string{"X-Test:1", "X-Test=2"})
+	if err != nil {
+		t.Fatal(err)
+	}
 	req, err := http.NewRequest(http.MethodGet, "https://example.test", nil)
 	if err != nil {
 		t.Fatal(err)
@@ -38,17 +41,30 @@ func TestHeaderAndUserAgentTransportsCloneAndApplyValues(t *testing.T) {
 	}
 }
 
-func TestParseHeaders(t *testing.T) {
-	h, err := parseHeaders([]string{"X-A: one", "X-A=two"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if got := h.Values("X-A"); len(got) != 2 {
-		t.Fatalf("values = %v", got)
-	}
-	if _, err := parseHeaders([]string{"missing-separator"}); err == nil {
-		t.Fatal("expected validation error")
-	}
+func TestNewHeaderTransport(t *testing.T) {
+	t.Run("both separators picks earliest", func(t *testing.T) {
+		capture := &captureTransport{}
+		rt, err := newHeaderTransport(capture, []string{"X-Both:a=b"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		req, _ := http.NewRequest(http.MethodGet, "https://example.test", nil)
+		if _, err := rt.RoundTrip(req); err != nil {
+			t.Fatal(err)
+		}
+		if got := capture.req.Header.Get("X-Both"); got != "a=b" {
+			t.Fatalf("X-Both = %q", got)
+		}
+	})
+
+	t.Run("empty key rejected", func(t *testing.T) {
+		if _, err := newHeaderTransport(&captureTransport{}, []string{":value"}); err == nil {
+			t.Fatal("expected error for empty key")
+		}
+		if _, err := newHeaderTransport(&captureTransport{}, []string{"=value"}); err == nil {
+			t.Fatal("expected error for empty key")
+		}
+	})
 }
 
 func TestRedaction(t *testing.T) {

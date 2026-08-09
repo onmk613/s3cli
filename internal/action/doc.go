@@ -12,7 +12,7 @@
 // 文件组织:
 //   - interface.go:            操作接口定义与编译期实现检查
 //   - common.go:               Action 核心、路径/存在性判断、对象遍历
-//   - utils.go / awsfile.go:   通用工具与 AWS 配置文件解析
+//   - parse-path.go / awsfile.go:   通用工具与 AWS 配置文件解析
 //   - stream.go:               流式传输框架 (RunStream)
 //   - bucket-*.go:             桶级操作 (创建/删除/子资源配置)
 //   - object-*.go:             对象级操作 (列举/上传/下载/复制/删除/标签等)

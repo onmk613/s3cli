@@ -20,7 +20,7 @@
 //   - api.go:              Client 核心类型、请求构建、发送、重试
 //   - signer.go:           AWS SigV4 签名实现
 //   - error.go:            S3 错误响应解析
-//   - utils.go:            通用工具函数 (哈希、编码、桶名校验等)
+//   - parse-path.go:            通用工具函数 (哈希、编码、桶名校验等)
 //   - bucket-*.go:         桶级操作 (创建/删除/子资源配置)
 //   - object-*.go:         对象级操作 (上传/下载/复制/删除/标签等)
 //   - list.go:             ListObjectsV2 / ListObjectVersions 及分页器
