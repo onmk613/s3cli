@@ -1,5 +1,3 @@
-//go:build !aws
-
 package action
 
 import (
@@ -14,7 +12,7 @@ import (
 	"sync/atomic"
 	"testing"
 
-	"s3cli/pkg/s3api"
+	"s3cli/pkg/api"
 )
 
 type roundTripperFunc func(*http.Request) (*http.Response, error)
@@ -33,9 +31,9 @@ func (b *failingBody) Read(p []byte) (int, error) {
 }
 func (*failingBody) Close() error { return nil }
 
-func actionTestClient(t *testing.T, endpoint string, transport http.RoundTripper) *s3api.Client {
+func actionTestClient(t *testing.T, endpoint string, transport http.RoundTripper) *api.Client {
 	t.Helper()
-	c, err := s3api.New(&s3api.Options{Endpoint: endpoint, AccessKey: "access", SecretKey: "secret", Transport: transport, MaxRetries: 0})
+	c, err := api.New(&api.Options{Endpoint: endpoint, AccessKey: "access", SecretKey: "secret", Transport: transport, MaxRetries: 0})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -50,7 +48,7 @@ func TestDownloadFileAtomicallyReplacesOnlyAfterSuccess(t *testing.T) {
 		t.Fatal(err)
 	}
 	client := &Action{S3: actionTestClient(t, server.URL, nil), Ctx: context.Background()}
-	if _, err := client.downloadFile("key", path, "bucket", nil); err != nil {
+	if _, err := client.downloadFile("key", path, "bucket", nil, ""); err != nil {
 		t.Fatal(err)
 	}
 	data, _ := os.ReadFile(path)
@@ -64,7 +62,7 @@ func TestDownloadFileAtomicallyReplacesOnlyAfterSuccess(t *testing.T) {
 	if err := os.WriteFile(path, []byte("preserved"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := failing.downloadFile("key", path, "bucket", nil); err == nil {
+	if _, err := failing.downloadFile("key", path, "bucket", nil, ""); err == nil {
 		t.Fatal("expected download failure")
 	}
 	data, _ = os.ReadFile(path)
@@ -118,7 +116,7 @@ func TestRecursiveDeleteAndCancelledMirrorDoNotDeleteUnexpectedly(t *testing.T) 
 	defer server.Close()
 	api := actionTestClient(t, server.URL, nil)
 	client := &Action{S3: api, Alias: "test", Ctx: context.Background()}
-	if err := client.DeleteObjects("bucket", "prefix/", DelOptions{Recursive: true}); err != nil {
+	if err := client.DeleteObjects("bucket", "prefix/", DelOptions{Recursive: true, Force: true}); err != nil {
 		t.Fatal(err)
 	}
 	if batchDeletes.Load() != 1 {
@@ -179,7 +177,7 @@ func TestDeleteBatchReportsObjectErrors(t *testing.T) {
 	}))
 	defer server.Close()
 	client := &Action{S3: actionTestClient(t, server.URL, nil), Ctx: context.Background()}
-	err := client.deleteBatch("bucket", []s3api.ObjectIdentifier{{Key: "protected"}})
+	err := client.deleteBatch("bucket", []api.ObjectIdentifier{{Key: "protected"}})
 	if err == nil || !strings.Contains(err.Error(), `"protected": AccessDenied: denied`) {
 		t.Fatalf("delete batch error = %v", err)
 	}

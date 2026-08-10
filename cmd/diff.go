@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"context"
 	"fmt"
 
 	"s3cli/internal/client"
@@ -20,79 +21,61 @@ func init() {
 // NewDiffCmd diff 命令：比较两个路径下的文件是否相同。
 func NewDiffCmd() *cobra.Command {
 	var (
-		modeFlag    string
-		recursive   bool
-		concurrency int
-		briefOnly   bool
+		modeFlag string
+		opt      action.DiffOptions
 	)
+
+	aliasExists := func(name string) bool {
+		if config.G.S == nil {
+			return false
+		}
+		_, ok := config.G.S[name]
+		return ok
+	}
+	makeClient := func(ctx context.Context, sp *s3path.Path) (s3iface.S3Operations, error) {
+		cli, _, err := client.ParsePathAndNewClient(formatPath(sp))
+		return cli, err
+	}
+	parseDiffArg := func(ctx context.Context, arg string) (*action.DiffEndpoint, error) {
+		return action.ParseDiffArg(ctx, arg, aliasExists, func(sp *s3path.Path) (s3iface.S3Operations, error) {
+			return makeClient(ctx, sp)
+		})
+	}
+	runDiff := func(a, b *action.DiffEndpoint) error {
+		opt.A = a
+		opt.B = b
+		mode := action.DiffMode(modeFlag)
+		switch mode {
+		case action.DiffModeMD5, action.DiffModeSize, action.DiffModeQuick:
+		default:
+			return fmt.Errorf("invalid --check %q (use md5/size/quick)", modeFlag)
+		}
+		opt.Mode = mode
+		err := action.Diff(opt)
+		if action.IsDifferErr(err) {
+			// 类似 Unix diff：有差异时以非零退出码（exitDiffer=6）告知脚本，
+			// 但不再额外打印错误。走统一错误通道（而非 os.Exit），
+			// 保证 root 的 defer/清理逻辑正常执行；
+			// errAlreadyDisplayed 抑制重复打印。
+			return fmt.Errorf("%w: %w", errAlreadyDisplayed, err)
+		}
+		return err
+	}
 
 	cmd := &cobra.Command{
 		Use:               "diff [path-a] [path-b]",
 		Short:             "Compare files/directories between s3 and/or local paths",
 		Args:              cobra.ExactArgs(2),
 		ValidArgsFunction: AutoCompletePath,
-		RunE: func(cmd *cobra.Command, args []string) error {
-			mode := action.DiffMode(modeFlag)
-			switch mode {
-			case action.DiffModeMD5, action.DiffModeSize, action.DiffModeQuick:
-			default:
-				return fmt.Errorf("invalid --check %q (use md5/size/quick)", modeFlag)
-			}
-
-			aliasExists := func(name string) bool {
-				if config.G.S == nil {
-					return false
-				}
-				_, ok := config.G.S[name]
-				return ok
-			}
-			makeClient := func(sp *s3path.Path) (s3iface.S3Operations, error) {
-				cli, _, err := client.ParsePathAndNewClient(cmd.Context(), formatPath(sp))
-				return cli, err
-			}
-
-			a, err := action.ParseDiffArg(cmd.Context(), args[0], aliasExists, makeClient)
-			if err != nil {
-				if isCanceled(cmd.Context()) {
-					return nil
-				}
-				return fmt.Errorf("parse %q: %w", args[0], err)
-			}
-			b, err := action.ParseDiffArg(cmd.Context(), args[1], aliasExists, makeClient)
-			if err != nil {
-				if isCanceled(cmd.Context()) {
-					return nil
-				}
-				return fmt.Errorf("parse %q: %w", args[1], err)
-			}
-
-			err = action.Diff(action.DiffOptions{
-				A:           a,
-				B:           b,
-				Mode:        mode,
-				Recursive:   recursive,
-				Concurrency: concurrency,
-				BriefOnly:   briefOnly,
-			})
-			// 用户主动取消（Ctrl+C）：静默退出，不打印错误。
-			if isCanceled(cmd.Context()) || action.IsCanceled(err) {
-				return nil
-			}
-			if action.IsDifferErr(err) {
-				// 类似 Unix diff：有差异时退出码为 1，但不再额外打印错误。
-				// 走统一错误通道（而非 os.Exit），保证 root 的 defer/清理逻辑正常执行;
-				// errAlreadyDisplayed 抑制重复打印, exitCodeForError 归一到退出码 1。
-				return fmt.Errorf("%w: %w", errAlreadyDisplayed, err)
-			}
-			return err
-		},
+		RunE:              NewRunEMixedPair(parseDiffArg, runDiff),
 	}
 
 	f := cmd.Flags()
 	f.StringVar(&modeFlag, "check", "md5", "Compare strategy: md5 | size | quick")
-	f.BoolVarP(&recursive, "recursive", "r", true, "Recursively diff directories")
-	f.IntVar(&concurrency, "concurrency", config.DefaultConcurrency, "Concurrent file comparisons (directory mode)")
-	f.BoolVar(&briefOnly, "brief", false, "Print only differences, hide identical files")
+	f.BoolVarP(&opt.Recursive, "recursive", "r", true, "Recursively diff directories")
+	f.IntVar(&opt.Concurrency, "concurrency", config.DefaultConcurrency, "Concurrent file comparisons (directory mode)")
+	f.BoolVar(&opt.BriefOnly, "brief", false, "Print only differences, hide identical files")
+	f.BoolVar(&opt.JSON, "json", false, "Output format: text or json (supported commands emit structured results)")
 	return cmd
 }
 

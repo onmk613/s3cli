@@ -6,24 +6,30 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-
-	"github.com/BurntSushi/toml"
 )
 
-// Defaults 集中管理硬编码默认值，避免散落各处。
+// userHomeDir 可注入钩子（测试用），避免直接依赖系统用户目录。
+var userHomeDir = os.UserHomeDir
+
+// DefaultConfigPath 返回默认配置文件路径 ~/.s3cli。
+// pflag 注册时会把默认值写入 G.C，以便在未指定 --config 时使用。
+func DefaultConfigPath() string {
+	if home, err := userHomeDir(); err == nil {
+		return filepath.Join(home, ".s3cli")
+	}
+	return ""
+}
+
+// 默认值与 bucket 寻址相关的合法取值，集中管理避免散落各处。
 const (
+	DefaultConcurrency = 10
+	DefaultPartSizeMB  = 15
 	BucketLookupPath   = "path"
 	BucketLookupDNS    = "dns"
 	BucketLookupCustom = "custom"
 	BucketPlaceholder  = "%(bucket)"
 	RegionPlaceholder  = "%(region)"
-	DefaultConcurrency = 10
-	DefaultPartSizeMB  = 15
-	DefaultMimeType    = "binary/octet-stream"
 )
-
-// ConfPath 配置文件路径
-var ConfPath string
 
 // G 是进程级运行时配置：别名表 + CLI 全局开关。
 var G = &Config{}
@@ -32,30 +38,33 @@ var G = &Config{}
 type Config struct {
 	S map[string]Static
 	F Flags
+	C string
 }
 
 // Flags 承载来自命令行全局 flag 的运行时开关，与单个别名无关。
-// 由 pkg/cmd 层的 cobra flag 绑定（&config.G.Flags.X）写入。
+// 由 cmd 层的 cobra flag 绑定（&config.G.Flags.X）写入。
 type Flags struct {
 	Debug           bool     // --debug 输出http请求摘要
 	NoColor         bool     // --no-color 关闭彩色输出
-	Quiet           bool     // --quiet 关闭进度条, 输出纯文本
 	UserAgent       string   // --user-agent 覆盖整个 User-Agent
 	UserAgentSuffix string   // --user-agent-suffix 追加到 User-Agent 末尾
 	Headers         []string // --header 自定义 HTTP header, 可重复, 格式 key:value
-	OutputJson      bool     // --json json格式输出, 针对部分操作有效
+	ShowSecret      bool     // --show-secret alias list 显示完整明文密钥 (默认脱敏)
+	HostBase        string   // --host-base 覆盖所有别名的 endpoint host
+	NoVerifySSL     bool     // --no-verify-ssl 全局跳过 TLS 证书校验 (与别名配置取或)
 }
 
 // Static 描述单个别名（一个 S3 端点）的静态配置。
-// TOML tag 与磁盘文件 key 一一对应；与 INI 版本字段名完全一致，便于老用户对照迁移。
+// TOML tag 与磁盘文件 key 一一对应；与 INI 版本字段名基本一致，便于老用户对照迁移
+// （注意 verify_ssl 已改为语义相反的 no_verify_ssl，迁移时需翻转）。
 type Static struct {
 	AccessKey    string `toml:"access_key"`
 	SecretKey    string `toml:"secret_key"`
 	SessionToken string `toml:"session_token"`
 	HostBase     string `toml:"host_base"`
 
-	Region    string `toml:"region"`
-	VerifySSL bool   `toml:"verify_ssl"`
+	Region      string `toml:"region"`
+	NoVerifySSL bool   `toml:"no_verify_ssl"`
 	// path / dns / https://www.%(bucket).example.com
 	BucketLookup string `toml:"bucket_lookup"`
 
@@ -80,14 +89,6 @@ func (c *Static) ResolveBucketLookup() (mode string, tpl string, err error) {
 	}
 
 	return "", "", fmt.Errorf("invalid bucket_lookup %s, expected path / dns / custom-template containing %%(bucket)", c.BucketLookup)
-}
-
-// ensureConfPath 保证 ConfPath 非空，若为空则使用默认路径 ~/.s3cli
-func ensureConfPath() string {
-	if ConfPath == "" {
-		ConfPath = filepath.Join(os.Getenv("HOME"), ".s3cli")
-	}
-	return ConfPath
 }
 
 // validateCustomTemplate 自定义寻址模板的合法性检查。
@@ -128,83 +129,4 @@ func validateCustomTemplate(tpl string) bool {
 	}
 
 	return true
-}
-
-// buildOutputMap 把单个别名转换为 map[string]any，跳过取默认值的字段，
-// 让写入的配置文件保持简洁（与原 INI 版本里 DeleteKey 默认值字段的语义一致）。
-// 字段裁剪规则：
-//   - access_key / secret_key / host_base 必写
-//   - session_token / region / bucket_lookup / default_mime_type: 非空才写
-//   - verify_ssl: 仅 false 才写 (缺省 = true，由 LoadConf 在读取时回填)
-//   - multipart_chunk_size_mb: > 0 且 != 15 才写
-//   - max_retries: > 0 才写
-func buildOutputMap(s Static) map[string]any {
-	m := map[string]any{
-		"access_key": s.AccessKey,
-		"secret_key": s.SecretKey,
-		"host_base":  s.HostBase,
-	}
-	if s.SessionToken != "" {
-		m["session_token"] = s.SessionToken
-	}
-	if s.Region != "" {
-		m["region"] = s.Region
-	}
-	if !s.VerifySSL {
-		m["verify_ssl"] = false
-	}
-	if s.BucketLookup != "" {
-		m["bucket_lookup"] = s.BucketLookup
-	}
-	if s.DefaultMimeType != "" {
-		m["default_mime_type"] = s.DefaultMimeType
-	}
-	if s.MultipartChunkSizeMb > 0 && s.MultipartChunkSizeMb != DefaultPartSizeMB {
-		m["multipart_chunk_size_mb"] = s.MultipartChunkSizeMb
-	}
-	if s.MaxRetries > 0 {
-		m["max_retries"] = s.MaxRetries
-	}
-	return m
-}
-
-// saveConfig 以原子方式写入凭据，并设置仅限所有者访问的权限。
-// 输入是 alias 名 → Static 的整张表；内部按 buildOutputMap 过滤后用 TOML 编码。
-func saveConfig(aliases map[string]Static, filename string) error {
-	out := make(map[string]map[string]any, len(aliases))
-	for name, s := range aliases {
-		out[name] = buildOutputMap(s)
-	}
-
-	dir := filepath.Dir(filename)
-	if err := os.MkdirAll(dir, 0o700); err != nil {
-		return fmt.Errorf("create config directory: %w", err)
-	}
-
-	tmp, err := os.CreateTemp(dir, ".s3cli-*")
-	if err != nil {
-		return err
-	}
-	tmpName := tmp.Name()
-	defer func() { _ = os.Remove(tmpName) }()
-
-	if err := tmp.Chmod(0o600); err != nil {
-		_ = tmp.Close()
-		return err
-	}
-	if err := toml.NewEncoder(tmp).Encode(out); err != nil {
-		_ = tmp.Close()
-		return fmt.Errorf("encode config: %w", err)
-	}
-	if err := tmp.Sync(); err != nil {
-		_ = tmp.Close()
-		return err
-	}
-	if err := tmp.Close(); err != nil {
-		return err
-	}
-	if err := os.Rename(tmpName, filename); err != nil {
-		return err
-	}
-	return os.Chmod(filename, 0o600)
 }

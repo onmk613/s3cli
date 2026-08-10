@@ -1,5 +1,5 @@
-// info.go 实现元信息查看 Info: 桶或对象均可, 输出 JSON,
-// 桶模式下聚合 location/versioning/policy/cors 等子项 (未配置时按空值输出).
+// info.go 实现元信息查看 Info (mc stat 对齐): 桶或对象均可, 输出 JSON.
+// 支持 --recursive/-r 遍历对象与 --version-id/--vid 指定版本.
 
 package action
 
@@ -8,10 +8,23 @@ import (
 	"fmt"
 
 	myprint "s3cli/pkg/fmtutil"
+	"s3cli/pkg/s3iface"
 )
 
+// InfoOptions info/stat 命令参数 (mc stat 对齐).
+type InfoOptions struct {
+	Recursive bool   // -r: 统计/列出前缀下所有对象
+	VersionID string // --version-id/--vid: 指定对象版本
+}
+
 // Info 打印桶或对象的元信息
-func (c *Action) Info(bucket, prefix string) error {
+func (c *Action) Info(opt InfoOptions, bucket, prefix string) error {
+	if opt.VersionID != "" {
+		if prefix == "" {
+			return fmt.Errorf("--version-id requires an object key")
+		}
+		return c.infoObjectVersion(bucket, prefix, opt.VersionID)
+	}
 	if prefix == "" {
 		return c.infoBucket(bucket)
 	}
@@ -21,10 +34,39 @@ func (c *Action) Info(bucket, prefix string) error {
 		return fmt.Errorf("check s3 path: %s", FormatAPIError(err))
 	}
 	if !ok {
-		return fmt.Errorf("%s: not a file", c.S3Path(bucket, prefix))
+		if !opt.Recursive {
+			return fmt.Errorf("%s: not a file (use -r/--recursive to show all objects under it)", c.S3Path(bucket, prefix))
+		}
+		return c.infoObjectsRecursive(bucket, prefix)
 	}
 
 	return c.infoObject(bucket, prefix)
+}
+
+// infoObjectsRecursive 逐个输出前缀下对象的元信息 (mc stat -r).
+func (c *Action) infoObjectsRecursive(bucket, prefix string) error {
+	var count int
+	err := c.forEachObject(c.Ctx, bucket, prefix, func(obj s3iface.ObjectInfo) error {
+		if err := c.infoObject(bucket, obj.Key); err != nil {
+			return err
+		}
+		count++
+		return nil
+	})
+	if err != nil {
+		return err
+	}
+	myprint.PrintfBoldBlue("%d object(s) under %s\n", count, c.S3Path(bucket, prefix))
+	return nil
+}
+
+func (c *Action) infoObjectVersion(bucket, key, versionID string) error {
+	head, err := c.S3.HeadObject(c.Ctx, bucket, key, versionID)
+	if err != nil {
+		return fmt.Errorf("head object: %s", FormatAPIError(err))
+	}
+	myprint.PrintfBoldBlue("# %s info(object, version %s):\n", c.S3Path(bucket, key), versionID)
+	return printHeadInfo(c.S3Path(bucket, key), head, nil)
 }
 
 func (c *Action) infoObject(bucket, key string) error {
@@ -44,9 +86,16 @@ func (c *Action) infoObject(bucket, key string) error {
 		myprint.PrintfBoldYellow("Cannot read tags for %s: %s\n", c.S3Path(bucket, key), FormatAPIError(err))
 	}
 
+	return printHeadInfo(c.S3Path(bucket, key), head, tags)
+}
+
+// printHeadInfo 输出 HeadObject 结果的 JSON.
+func printHeadInfo(path string, head *s3iface.HeadObjectOutput, tags map[string]string) error {
+	if tags == nil {
+		tags = map[string]string{}
+	}
 	m := map[string]any{
-		"Bucket":                bucket,
-		"Key":                   key,
+		"Key":                   path,
 		"ContentLength":         head.ContentLength,
 		"ContentType":           head.ContentType,
 		"ContentEncoding":       head.ContentEncoding,

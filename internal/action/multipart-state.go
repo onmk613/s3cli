@@ -96,7 +96,7 @@ func ClearLocalMultipartState(path string) error {
 }
 
 type MpuLocalOptions struct {
-	OutPutToJSON bool
+	OutputToJSON bool
 }
 
 // MpuLocalList lists local resumable multipart states and prints them
@@ -106,7 +106,7 @@ func MpuLocalList(opt MpuLocalOptions) error {
 	if err != nil {
 		return err
 	}
-	if opt.OutPutToJSON {
+	if opt.OutputToJSON {
 
 		b, err := json.MarshalIndent(states, "", "  ")
 		if err != nil {
@@ -127,7 +127,7 @@ func MpuLocalClear(path string, opt MpuLocalOptions) error {
 	if err := ClearLocalMultipartState(path); err != nil {
 		return err
 	}
-	if opt.OutPutToJSON {
+	if opt.OutputToJSON {
 		b, err := json.MarshalIndent(map[string]string{"cleared": path}, "", "  ")
 		if err != nil {
 			return fmt.Errorf("marshal clear result: %w", err)

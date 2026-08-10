@@ -1,18 +1,15 @@
 // Package s3iface 定义 S3 操作的中立接口与数据类型 (DTO).
 //
-// s3iface 不依赖任何具体 S3 后端实现 (既不依赖自建 HTTP 客户端 s3api,
+// s3iface 不依赖任何具体 S3 后端实现 (既不依赖自建 HTTP 客户端 api,
 // 也不依赖官方 AWS SDK). 它只定义:
 //   - 操作接口 S3Operations (桶/对象/分片/预签名等全部底层操作)
 //   - 各操作的输入输出 DTO 类型 (Options / Output)
 //   - 桶子资源配置类型 (CORS / 加密 / 生命周期 / 通知 / 标签 / 版本)
 //   - 分页器接口 (ListObjectsV2Paginator / ListObjectVersionsPaginator)
 //
-// 两个后端各自实现 S3Operations:
-//   - s3api.Client: 自建 HTTP + SigV4 签名 (默认)
-//   - awss3.AWS:    官方 aws-sdk-go-v2
+// api.Client (自建 HTTP + SigV4 签名) 是 S3Operations 的唯一实现.
 //
-// 上层 (internal/action) 只依赖 s3iface.S3Operations; 具体后端由 build tag
-// 编译期选定 (默认 s3api, -tags aws 时为 awss3).
+// 上层 (internal/action) 只依赖 s3iface.S3Operations, 不感知具体后端.
 package s3iface
 
 import (
@@ -173,6 +170,11 @@ type GetObjectOptions struct {
 	ResponseContentDisposition string
 	ResponseCacheControl       string
 	ResponseExpires            string
+
+	// SSE-C: 用客户提供的密钥解密已加密的对象.
+	SSECustomerAlgorithm string
+	SSECustomerKey       string
+	SSECustomerKeyMD5    string
 }
 
 // GetObjectOutput 是 GetObject 的返回结构.
@@ -205,15 +207,21 @@ type GetObjectOutput struct {
 
 // PutObjectOptions 控制 PutObject 的可选参数.
 type PutObjectOptions struct {
-	ContentType               string
-	ContentEncoding           string
-	ContentDisposition        string
-	ContentLanguage           string
-	CacheControl              string
-	StorageClass              string
-	Metadata                  map[string]string
-	ServerSideEncryption      string
-	SSEKMSKeyID               string
+	ContentType          string
+	ContentEncoding      string
+	ContentDisposition   string
+	ContentLanguage      string
+	CacheControl         string
+	StorageClass         string
+	Metadata             map[string]string
+	Tagging              string // 'k1=v1&k2=v2'
+	ServerSideEncryption string
+	SSEKMSKeyID          string
+	// SSE-C (客户提供密钥): 算法固定 AES256; Key 为 base64 编码的 32 字节原始密钥;
+	// KeyMD5 为 base64 编码的密钥 MD5.
+	SSECustomerAlgorithm      string
+	SSECustomerKey            string
+	SSECustomerKeyMD5         string
 	ObjectLockMode            string
 	ObjectLockRetainUntilDate string
 	ObjectLockLegalHold       string
@@ -238,10 +246,42 @@ type CopyObjectOptions struct {
 	ContentType          string
 	ServerSideEncryption string
 	SSEKMSKeyID          string
-	IfMatch              string
-	IfNoneMatch          string
-	IfModifiedSince      string
-	IfUnmodifiedSince    string
+	// 目标端 SSE-C (加密写入目标对象)
+	SSECustomerAlgorithm string
+	SSECustomerKey       string
+	SSECustomerKeyMD5    string
+	// 源端 SSE-C (解密用 SSE-C 加密的源对象)
+	SourceSSECustomerAlgorithm string
+	SourceSSECustomerKey       string
+	SourceSSECustomerKeyMD5    string
+	IfMatch                    string
+	IfNoneMatch                string
+	IfModifiedSince            string
+	IfUnmodifiedSince          string
+}
+
+// UploadPartCopyOptions 控制 UploadPartCopy (服务端分片复制, 用于 >5GB 对象的服务端拷贝).
+// 通过 CopySourceRange 从源对象截取一段作为一个分片, 服务端零下载完成大对象拷贝.
+type UploadPartCopyOptions struct {
+	SrcVersionID    string // 源对象版本
+	CopySourceRange string // 源字节范围 "bytes=start-end", 复制大对象分片时必填
+
+	// 源端 SSE-C (解密源对象)
+	SourceSSECustomerAlgorithm string
+	SourceSSECustomerKey       string
+	SourceSSECustomerKeyMD5    string
+	// 目标端 SSE-C (加密目标分片)
+	SSECustomerAlgorithm string
+	SSECustomerKey       string
+	SSECustomerKeyMD5    string
+}
+
+// UploadPartCopyOutput 是 UploadPartCopy 的返回结构.
+type UploadPartCopyOutput struct {
+	ETag                 string
+	LastModified         time.Time
+	ServerSideEncryption string
+	SSEKMSKeyID          string
 }
 
 // CopyObjectOutput 是 CopyObject 的返回结构.

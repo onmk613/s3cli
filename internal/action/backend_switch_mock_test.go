@@ -2,7 +2,7 @@
 // 内存版最小 S3 兼容服务 mockS3Server, 以及 runParityScenarios 操作断言集.
 //
 // 该文件不依赖任何具体后端实现, 仅依赖中立的 s3iface 接口, 因此无 build tag,
-// 在默认 (s3api) 与 -tags aws 两种构建下均参与编译.
+// 提供内存版最小 S3 兼容服务 mockS3Server.
 
 package action
 
@@ -25,8 +25,9 @@ import (
 // mockS3Server 提供 ListBuckets / ListObjectsV2 (含分页) / Head / Get / Put / Delete /
 // DeleteObjects 的最小实现, 并支持目录前缀探测 (prefix + "/").
 type mockS3Server struct {
-	mu      sync.Mutex
-	objects map[string]string // key -> body
+	mu       sync.Mutex
+	objects  map[string]string // key -> body
+	policies map[string][]byte // bucket -> policy JSON
 }
 
 func newMockS3Server() *mockS3Server {
@@ -39,6 +40,9 @@ func newMockS3Server() *mockS3Server {
 		"paginate/k3":   "3",
 		"paginate/k4":   "4",
 		"paginate/k5":   "5",
+	}, policies: map[string][]byte{
+		// download 预定义策略, 供 policy get 输出测试使用
+		"mybucket": []byte(`{"Version":"2012-10-17","Statement":[{"Action":["s3:GetBucketLocation"],"Effect":"Allow","Principal":{"AWS":["*"]},"Resource":["arn:aws:s3:::mybucket"]},{"Action":["s3:ListBucket"],"Effect":"Allow","Principal":{"AWS":["*"]},"Resource":["arn:aws:s3:::mybucket"]},{"Action":["s3:GetObject"],"Effect":"Allow","Principal":{"AWS":["*"]},"Resource":["arn:aws:s3:::mybucket/*"]}]}`),
 	}}
 }
 
@@ -61,6 +65,39 @@ func (m *mockS3Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		// ListBuckets
 		w.Header().Set("Content-Type", "application/xml")
 		_, _ = w.Write([]byte(`<?xml version="1.0" encoding="UTF-8"?><ListAllMyBucketsResult xmlns="http://s3.amazonaws.com/doc/2006-03-01/"><Buckets><Bucket><Name>mybucket</Name><CreationDate>2024-01-01T00:00:00.000Z</CreationDate></Bucket></Buckets></ListAllMyBucketsResult>`))
+
+	case q.Has("policy"):
+		// Bucket policy
+		switch r.Method {
+		case http.MethodGet:
+			m.mu.Lock()
+			body, ok := m.policies[bucket]
+			m.mu.Unlock()
+			if !ok {
+				httpError(w, http.StatusNotFound, "NoSuchBucketPolicy", "The bucket policy does not exist")
+				return
+			}
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write(body)
+		case http.MethodPut:
+			body, err := io.ReadAll(r.Body)
+			if err != nil {
+				httpError(w, http.StatusBadRequest, "InvalidRequest", err.Error())
+				return
+			}
+			m.mu.Lock()
+			m.policies[bucket] = body
+			m.mu.Unlock()
+			w.WriteHeader(http.StatusNoContent)
+		case http.MethodDelete:
+			m.mu.Lock()
+			delete(m.policies, bucket)
+			m.mu.Unlock()
+			w.WriteHeader(http.StatusNoContent)
+		default:
+			httpError(w, http.StatusBadRequest, "InvalidRequest", "unsupported policy method")
+		}
+		return
 
 	case q.Get("list-type") == "2":
 		// ListObjectsV2
@@ -157,6 +194,16 @@ func (m *mockS3Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("ETag", `"etag"`)
 		w.WriteHeader(http.StatusOK)
 
+	case r.Method == http.MethodGet && q.Has("tagging"):
+		// GetBucketTagging: 固定返回一条标签
+		w.Header().Set("Content-Type", "application/xml")
+		_, _ = w.Write([]byte(`<?xml version="1.0" encoding="UTF-8"?><Tagging><TagSet><Tag><Key>env</Key><Value>prod</Value></Tag></TagSet></Tagging>`))
+
+	case r.Method == http.MethodGet && q.Has("uploads"):
+		// ListMultipartUploads: 固定返回一条进行中的上传
+		w.Header().Set("Content-Type", "application/xml")
+		_, _ = w.Write([]byte(`<?xml version="1.0" encoding="UTF-8"?><ListMultipartUploadsResult><Bucket>mybucket</Bucket><Upload><Key>big/upload.bin</Key><UploadId>upload-123</UploadId><Initiated>2024-01-02T03:04:05.000Z</Initiated></Upload></ListMultipartUploadsResult>`))
+
 	case r.Method == http.MethodGet:
 		m.mu.Lock()
 		body, ok := m.objects[key]
@@ -207,7 +254,7 @@ func containsStr(list []string, s string) bool {
 }
 
 // runParityScenarios 用同一套操作断言跑单个后端, 验证 action 层与该后端的兼容性.
-// 各后端测试文件 (backend_switch_test.go / backend_switch_aws_test.go) 分别调用.
+// 由 api 后端测试文件 (backend_switch_test.go) 调用.
 func runParityScenarios(t *testing.T, name string, backend s3iface.S3Operations) {
 	t.Helper()
 	t.Run(name, func(t *testing.T) {
@@ -270,7 +317,7 @@ func runParityScenarios(t *testing.T, name string, backend s3iface.S3Operations)
 
 		// 4b. 错误映射: 后端必须产出可识别的 *s3iface.ErrorResponse.
 		// 注意: HEAD 无响应体, 官方 SDK 只能按状态码映射为 "NotFound";
-		// 自建 s3api 按对象名推断为 "NoSuchKey". action 层对两者同等处理.
+		// 自建 api 按对象名推断为 "NoSuchKey". action 层对两者同等处理.
 		_, err = c.S3.HeadObject(c.Ctx, "mybucket", "missing.txt", "")
 		var apiErr *s3iface.ErrorResponse
 		if err == nil || !errors.As(err, &apiErr) {
@@ -329,7 +376,7 @@ func runParityScenarios(t *testing.T, name string, backend s3iface.S3Operations)
 		}
 
 		// 9. action 层列举 (ListObjects) 不报错
-		if err := c.ListObjects("mybucket", "dir/", true); err != nil {
+		if err := c.ListObjects(ListOptions{Recursive: true}, "mybucket", "dir/"); err != nil {
 			t.Fatalf("ListObjects: %v", err)
 		}
 	})

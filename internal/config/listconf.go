@@ -1,32 +1,18 @@
 package config
 
 import (
-	"fmt"
-	"os"
+	myprint "s3cli/pkg/fmtutil"
+	"slices"
 	"sort"
 	"strings"
-
-	myprint "s3cli/pkg/fmtutil"
 )
 
-// ListAliasConf 列出配置文件中的所有别名
+// ListAliasConf 列出配置文件中的所有别名 (alias list)。
+// alias 非空时只列出指定名称的别名。
 func ListAliasConf(alias []string) error {
-	ensureConfPath()
-
-	info, err := os.Stat(ConfPath)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return fmt.Errorf("config file not found: %s (run `s3cli alias set <name>` to create one)", ConfPath)
-		}
-		return fmt.Errorf("stat config %s: %w", ConfPath, err)
-	}
-	if info.Size() == 0 {
-		return fmt.Errorf("config file is empty: %s", ConfPath)
-	}
-
-	aliases, _, err := loadRaw()
-	if err != nil {
-		return fmt.Errorf("load config %s: %w", ConfPath, err)
+	// 读取配置文件
+	if err := readConfig(G.C); err != nil {
+		return err
 	}
 
 	// 过滤掉 core 字段全空的别名 (等价于 INI 版本里 "跳过空 section" 的逻辑),
@@ -36,7 +22,7 @@ func ListAliasConf(alias []string) error {
 		s    Static
 	}
 	var entries []entry
-	for name, s := range aliases {
+	for name, s := range G.S {
 		if strings.TrimSpace(s.HostBase) == "" &&
 			strings.TrimSpace(s.AccessKey) == "" &&
 			strings.TrimSpace(s.SecretKey) == "" {
@@ -47,7 +33,7 @@ func ListAliasConf(alias []string) error {
 
 	if len(entries) == 0 {
 		myprint.PrintlnYellow("no aliases configured.")
-		myprint.Println("Hint: run `s3cli alias set <name>` to create one.")
+		myprint.Println("Hint: run `s3cli alias set <name> URL ACCESSKEY SECRETKEY` to create one.")
 		return nil
 	}
 
@@ -56,11 +42,11 @@ func ListAliasConf(alias []string) error {
 	})
 
 	myprint.PrintfDim("Config:")
-	myprint.Printf(" %s\n", ConfPath)
+	myprint.Printf(" %s\n", G.C)
 	myprint.Println()
 
 	for i, e := range entries {
-		if len(alias) > 0 && !stringInSlice(e.name, alias) {
+		if len(alias) > 0 && !slices.Contains(alias, e.name) {
 			continue
 		}
 
@@ -82,7 +68,7 @@ func ListAliasConf(alias []string) error {
 			if val == "" {
 				continue
 			}
-			if f.key == "secret_key" && !G.F.Quiet {
+			if f.key == "secret_key" && !G.F.ShowSecret {
 				val = maskSecret(val)
 			}
 			myprint.Printf("  ")
@@ -98,19 +84,11 @@ func ListAliasConf(alias []string) error {
 	return nil
 }
 
-func stringInSlice(s string, list []string) bool {
-	for _, item := range list {
-		if s == item {
-			return true
-		}
-	}
-	return false
-}
-
 // maskSecret 把密钥打码为 "****尾4位" (长度 <= 4 时全打码)。
 func maskSecret(s string) string {
-	if len(s) <= 4 {
+	r := []rune(s)
+	if len(r) <= 4 {
 		return "****"
 	}
-	return "****" + s[len(s)-4:]
+	return "****" + string(r[len(r)-4:])
 }

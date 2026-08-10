@@ -1,7 +1,6 @@
 package cmd
 
 import (
-	"context"
 	"testing"
 
 	"github.com/spf13/cobra"
@@ -13,10 +12,10 @@ func TestTransferCommandsExposeExpectedFlags(t *testing.T) {
 		flags []string
 		check func() []string
 	}{
-		{"get", []string{"recursive", "concurrency", "part-size", "range"}, func() []string {
+		{"get", []string{"recursive", "concurrency", "range"}, func() []string {
 			c := NewGetCmd()
 			var got []string
-			for _, f := range []string{"recursive", "concurrency", "part-size", "range"} {
+			for _, f := range []string{"recursive", "concurrency", "range"} {
 				if c.Flags().Lookup(f) != nil {
 					got = append(got, f)
 				}
@@ -52,15 +51,43 @@ func TestTransferCommandsExposeExpectedFlags(t *testing.T) {
 	}
 }
 
-func TestCommandContextsAndCancellation(t *testing.T) {
-	ctx := newCmdContext(ParseS3PathAndArgs)
-	if ctx.Global == nil || ctx.ArgParseMode != ParseS3PathAndArgs {
-		t.Fatalf("context = %#v", ctx)
+func TestTransferCommandsUseArgParseAnnotations(t *testing.T) {
+	if got := NewGetCmd().Annotations[AnnoArgParseMode]; got != LastLocalFileOrPath {
+		t.Errorf("get annotation = %q, want %q", got, LastLocalFileOrPath)
 	}
-	cancelled, cancel := context.WithCancel(context.Background())
-	cancel()
-	if !isCanceled(cancelled) {
-		t.Fatal("cancelled context should be recognized")
+	if got := NewPutCmd().Annotations[AnnoArgParseMode]; got != FirstLocalFileOrPath {
+		t.Errorf("put annotation = %q, want %q", got, FirstLocalFileOrPath)
+	}
+	if got := EventSetCmd().Annotations[AnnoArgParseMode]; got != FirstLocalFileOrPath {
+		t.Errorf("bucket event set annotation = %q, want %q", got, FirstLocalFileOrPath)
+	}
+}
+
+func TestPolicyGetCmdJSONFlag(t *testing.T) {
+	if got := PolicyGetCmd().Flags().Lookup("json"); got == nil {
+		t.Fatal("policy get missing --json flag")
+	}
+}
+
+func TestSplitArgsModes(t *testing.T) {
+	cmd := &cobra.Command{}
+
+	cmd.Annotations = FirstLocalFileOrPathMode
+	s3Args, opts, err := splitArgs(cmd, []string{"local-file", "a:b", "c:d"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if opts[LocalFileOrPath] != "local-file" || len(s3Args) != 2 || s3Args[0] != "a:b" || s3Args[1] != "c:d" {
+		t.Fatalf("FirstLocalFileOrPathMode: s3Args=%v opts=%v", s3Args, opts)
+	}
+
+	cmd.Annotations = LastLocalFileOrPathMode
+	s3Args, opts, err = splitArgs(cmd, []string{"a:b", "local-file"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if opts[LocalFileOrPath] != "local-file" || len(s3Args) != 1 || s3Args[0] != "a:b" {
+		t.Fatalf("LastLocalFileOrPathMode: s3Args=%v opts=%v", s3Args, opts)
 	}
 }
 

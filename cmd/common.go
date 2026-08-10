@@ -4,144 +4,107 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"s3cli/internal/action"
 	"s3cli/internal/client"
 	"s3cli/internal/s3path"
-
-	"s3cli/internal/action"
-	myprint "s3cli/pkg/fmtutil"
 
 	"github.com/spf13/cobra"
 )
 
-// errAlreadyDisplayed 是一个哨兵错误：表示错误已通过 displayError 输出给用户，
-// 上层（NewRootCmd）不应再次打印，只需据此返回非零退出码。
-var errAlreadyDisplayed = errors.New("error already displayed")
-
-// isCanceled 判断错误是否由用户主动取消（Ctrl+C）引起。
-func isCanceled(ctx context.Context) bool {
-	return errors.Is(ctx.Err(), context.Canceled)
-}
-
-// formatUserError 将内部 error 转换为对用户友好地显示信息。
-func formatUserError(err error) error {
-	if err == nil {
-		return nil
-	}
-	// 对 S3 API 错误 (s3api.ErrorResponse) 做友好格式化
-	return action.FormatAPIError(err)
-}
-
-// displayError 向用户输出错误（统一入口）。
-func displayError(err error) {
-	myprint.PrintlnBoldRed(formatUserError(err))
-}
-
-// parseClient 封装 client 解析 + cancel + 错误展示，返回构造好的 S3Client。
-func parseClient(ctx context.Context, arg string) (action.Action, *s3path.Path, error) {
-	s3client, sp, err := client.ParsePathAndNewClient(ctx, arg)
-	if err != nil {
-		if errors.Is(err, s3path.ErrAliasOnly) && s3client != nil {
-			return action.Action{S3: s3client, Alias: sp.Alias, Ctx: ctx}, sp, err
-		}
-		return action.Action{}, sp, err
-	}
-	return action.Action{S3: s3client, Alias: sp.Alias, Ctx: ctx}, sp, nil
-}
-
-// handleErr 统一处理：cancel 返回 (nil, true) 表示应静默退出；否则展示错误。
-func wrapDisplayed(err error) error {
-	displayError(err)
-	return fmt.Errorf("%w: %w", errAlreadyDisplayed, err)
-}
-
-type ActionFunc func(S3 action.Action, opts *Context, s3path *s3path.Path) error
-
-// ArgParseMode 定义 args 参数的格式
-type ArgParseMode int
+var AllowAliasOnly bool
 
 const (
-	ParseS3OnlyPath    ArgParseMode = iota // 所有 args 都是 S3 路径
-	ParseArgsAndS3Path                     // args[0] 是参数，args[1:] 是 S3 路径, 一般设置某个配置或者上传文件
-	ParseS3PathAndArgs                     // args[0] 是 S3 路径，args[1] 是参数, 下载
-	// ParseTwoS3Paths                             // 用于 cp/mv: args[0] 和 args[1] 都是 S3 路径
+	AnnoArgParseMode = "ArgParseMode"
+	LocalFileOrPath  = "LocalFileOrPath"
+
+	OnlyS3Path           = "OnlyS3Path"
+	FirstLocalFileOrPath = "FirstLocalFileOrPath"
+	LastLocalFileOrPath  = "LastLocalFileOrPath"
 )
 
-// Context 承载跨命令共享的"全局"选项和路径解析模式。
-type Context struct {
-	Global       *GlobalOptions
-	ArgParseMode ArgParseMode
-}
+// The First one
+// The last one
 
-// ensureInit 保证 Global 指针非 nil。
-func (c *Context) ensureInit() *Context {
-	if c.Global == nil {
-		c.Global = &GlobalOptions{}
+type ArgParseMode map[string]string
+
+var (
+	OnlyS3PathMode           = ArgParseMode{AnnoArgParseMode: OnlyS3Path}
+	FirstLocalFileOrPathMode = ArgParseMode{AnnoArgParseMode: FirstLocalFileOrPath}
+	LastLocalFileOrPathMode  = ArgParseMode{AnnoArgParseMode: LastLocalFileOrPath}
+)
+
+// ActionFunc 默认, args[] 中只有s3path, ls/cat等等
+type ActionFunc func(S3 action.Action, dst *s3path.Path) error
+
+// ActionFuncWithMode 有一个args不是s3path, put/get等等需要传入本地路径, 不做s3Path解析
+type ActionFuncWithMode func(S3 action.Action, dst *s3path.Path, opts ArgParseMode) error
+
+// TwoS3ActionFunc 用于需要两个 S3 路径的操作（cp/mv/mirror）
+type TwoS3ActionFunc func(src, dst action.Action, srcPath, dstPath *s3path.Path) error
+
+// splitArgs 按 annotation 把 args 切成「s3 路径列表」+「附加参数」
+func splitArgs(cmd *cobra.Command, args []string) ([]string, ArgParseMode, error) {
+	opts := ArgParseMode{}
+
+	switch mode := cmd.Annotations[AnnoArgParseMode]; mode {
+	case "", OnlyS3Path:
+		return args, opts, nil
+
+	case FirstLocalFileOrPath: // 首参非 s3 路径，如 put localfile s3://...
+		if len(args) < 2 {
+			return nil, nil, fmt.Errorf("%s: 至少需要 2 个参数, 实际 %d", cmd.CommandPath(), len(args))
+		}
+		opts[LocalFileOrPath] = args[0]
+		return args[1:], opts, nil
+
+	case LastLocalFileOrPath: // 末参非 s3 路径，如 get s3://... localdir
+		if len(args) < 2 {
+			return args, opts, nil // 单参数时视为纯 s3 路径（沿用原语义）
+		}
+		opts[LocalFileOrPath] = args[len(args)-1]
+		return args[:len(args)-1], opts, nil
+
+	default:
+		return nil, nil, fmt.Errorf("%s: 不支持的 %s=%q（双 s3 路径请用 NewRunETwoPaths）",
+			cmd.CommandPath(), AnnoArgParseMode, mode)
 	}
-	return c
 }
 
-// newCmdContext 创建已初始化的 Context，可选指定 args 解析模式。
-func newCmdContext(mode ...ArgParseMode) Context {
-	c := Context{}
-	c.ensureInit()
-	if len(mode) > 0 {
-		c.ArgParseMode = mode[0]
+// ── 统一收尾 ──────────────────────────────────────────
+// 双重 %w：errors.Is 识别 errAlreadyDisplayed 抑制重复打印，
+// errors.As 穿透到原始错误以便 exitCodeForError 还原语义化退出码。
+func wrapErrs(errs []error) error {
+	if len(errs) == 0 {
+		return nil
 	}
-	return c
+	return fmt.Errorf("%w: %w", errAlreadyDisplayed, errs[0])
 }
 
-// GlobalOptions 所有子命令通用的全局选项。
-type GlobalOptions struct {
-	AllowAliasOnly bool   // 是否允许仅输入 alias
-	ListAll        bool   // ls --all
-	Quiet          bool   //  --quiet
-	Force          bool   // rb --force
-	Recursive      bool   // get/put/rm/cp/mv -r
-	Args           string // 某个必须在命令行中的参数, 可以指某个文件, 也可以是某个字符串
-}
-
-// NewRunE 为"单 S3 路径"命令构造 cobra RunE。
-func NewRunE(fn ActionFunc, opts *Context) func(cmd *cobra.Command, args []string) error {
-	if opts == nil {
-		opts = &Context{}
-	}
-	opts.ensureInit()
-
+// ── 唯一的实现 ────────────────────────────────────────
+func NewRunEWithMode(fn ActionFuncWithMode) func(*cobra.Command, []string) error {
 	return func(cmd *cobra.Command, args []string) error {
-		var s3PathArg []string
+		ctx := cmd.Context()
 
-		switch opts.ArgParseMode {
-		case ParseS3OnlyPath:
-			s3PathArg = args
-		case ParseArgsAndS3Path:
-			opts.Global.Args = args[0]
-			s3PathArg = args[1:]
-		case ParseS3PathAndArgs:
-			if len(args) >= 2 {
-				opts.Global.Args = args[len(args)-1]
-				s3PathArg = args[:len(args)-1]
-			} else {
-				s3PathArg = args
-			}
-		default:
-			panic("NewRunE: unsupported ArgParseMode (use NewRunETwoPaths for ParseTwoS3Paths)")
+		s3Args, opts, err := splitArgs(cmd, args)
+		if err != nil {
+			return err // 用法错误，未打印过，交给上层统一输出 + usage
 		}
 
 		var errs []error
-		for _, arg := range s3PathArg {
-			S3, sp, err := parseClient(cmd.Context(), arg)
-			if err != nil {
-				if isCanceled(cmd.Context()) {
-					return nil
-				}
-				if !(opts.Global.AllowAliasOnly && errors.Is(err, s3path.ErrAliasOnly)) {
-					displayError(err)
-					errs = append(errs, err)
-					continue
-				}
+		for _, arg := range s3Args {
+			if isCanceled(ctx) {
+				return nil
 			}
-			if err := fn(S3, opts, sp); err != nil {
-				if isCanceled(cmd.Context()) {
+
+			S3, sp, err := parseClient(ctx, arg)
+			if err != nil && !(AllowAliasOnly && errors.Is(err, s3path.ErrAliasOnly)) {
+				displayError(err)
+				errs = append(errs, err)
+				continue
+			}
+
+			if err := fn(S3, sp, opts); err != nil {
+				if isCanceled(ctx) {
 					return nil
 				}
 				displayError(err)
@@ -149,25 +112,64 @@ func NewRunE(fn ActionFunc, opts *Context) func(cmd *cobra.Command, args []strin
 				continue
 			}
 		}
-		if len(errs) > 0 {
-			// 用 %w 同时携带哨兵与首个原始错误：errors.Is 仍能识别 errAlreadyDisplayed
-			// 以抑制重复打印，errors.As 又能让 exitCodeForError 还原 404/403/取消 等退出码。
-			return fmt.Errorf("%w: %w", errAlreadyDisplayed, errs[0])
+		return wrapErrs(errs)
+	}
+}
+
+// NewRunE 用于「args 全是 s3 路径」的命令（ls / cat / rm …）
+func NewRunE(fn ActionFunc) func(*cobra.Command, []string) error {
+	return NewRunEWithMode(func(S3 action.Action, sp *s3path.Path, _ ArgParseMode) error {
+		return fn(S3, sp)
+	})
+}
+
+// NewRunELocal 供不解析 S3 路径的本地命令使用，统一 cancel 与错误展示语义。
+func NewRunELocal(fn func(cmd *cobra.Command, args []string) error) func(*cobra.Command, []string) error {
+	return func(cmd *cobra.Command, args []string) error {
+		if err := fn(cmd, args); err != nil {
+			if isCanceled(cmd.Context()) {
+				return nil
+			}
+			return wrapDisplayed(err)
 		}
 		return nil
 	}
 }
 
-// TwoS3ActionFunc 用于需要两个 S3 路径的操作（cp/mv/diff/mirror）。
-type TwoS3ActionFunc func(src, dst action.Action, srcPath, dstPath *s3path.Path, opts *Context) error
+// NewRunEMixedPair 供两个参数各自可能是本地路径或 S3 路径的命令（diff）使用，
+// 统一参数解析、cancel 与错误包装。
+func NewRunEMixedPair[T any](parse func(ctx context.Context, arg string) (T, error), run func(a, b T) error) func(*cobra.Command, []string) error {
+	return func(cmd *cobra.Command, args []string) error {
+		ctx := cmd.Context()
+		if len(args) != 2 {
+			return fmt.Errorf("expected 2 arguments, got %d", len(args))
+		}
+		a, err := parse(ctx, args[0])
+		if err != nil {
+			if isCanceled(ctx) {
+				return nil
+			}
+			return fmt.Errorf("parse %q: %w", args[0], err)
+		}
+		b, err := parse(ctx, args[1])
+		if err != nil {
+			if isCanceled(ctx) {
+				return nil
+			}
+			return fmt.Errorf("parse %q: %w", args[1], err)
+		}
+		if err := run(a, b); err != nil {
+			if isCanceled(ctx) || action.IsCanceled(err) {
+				return nil
+			}
+			return err
+		}
+		return nil
+	}
+}
 
 // NewRunETwoPaths 为双 S3 路径命令构造 RunE。
-func NewRunETwoPaths(fn TwoS3ActionFunc, opts *Context) func(cmd *cobra.Command, args []string) error {
-	if opts == nil {
-		opts = &Context{}
-	}
-	opts.ensureInit()
-
+func NewRunETwoPaths(fn TwoS3ActionFunc) func(cmd *cobra.Command, args []string) error {
 	return func(cmd *cobra.Command, args []string) error {
 		srcS3, srcPath, err := parseClient(cmd.Context(), args[0])
 		if err != nil {
@@ -183,7 +185,7 @@ func NewRunETwoPaths(fn TwoS3ActionFunc, opts *Context) func(cmd *cobra.Command,
 			}
 			return wrapDisplayed(err)
 		}
-		if err := fn(srcS3, dstS3, srcPath, dstPath, opts); err != nil {
+		if err := fn(srcS3, dstS3, srcPath, dstPath); err != nil {
 			if isCanceled(cmd.Context()) {
 				return nil
 			}
@@ -191,4 +193,22 @@ func NewRunETwoPaths(fn TwoS3ActionFunc, opts *Context) func(cmd *cobra.Command,
 		}
 		return nil
 	}
+}
+
+// parseClient 封装 client 解析 + cancel + 错误展示，返回构造好的 S3Client。
+func parseClient(ctx context.Context, arg string) (action.Action, *s3path.Path, error) {
+	s3client, sp, err := client.ParsePathAndNewClient(arg)
+	if err != nil {
+		if errors.Is(err, s3path.ErrAliasOnly) && s3client != nil {
+			return action.Action{S3: s3client, Alias: sp.Alias, Ctx: ctx}, sp, err
+		}
+		return action.Action{}, sp, err
+	}
+	return action.Action{S3: s3client, Alias: sp.Alias, Ctx: ctx}, sp, nil
+}
+
+// handleErr 统一处理：cancel 返回 (nil, true) 表示应静默退出；否则展示错误。
+func wrapDisplayed(err error) error {
+	displayError(err)
+	return fmt.Errorf("%w: %w", errAlreadyDisplayed, err)
 }

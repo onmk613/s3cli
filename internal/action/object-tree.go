@@ -12,10 +12,12 @@ import (
 	"s3cli/pkg/s3iface"
 )
 
-// TreeOptions tree 命令参数
+// TreeOptions tree 命令参数 (mc tree 对齐).
 type TreeOptions struct {
 	MaxDepth int  // 最大展示层级 (0 = 不限制)
 	ShowSize bool // 是否在叶子上显示文件大小
+	Files    bool // -f: 是否展示文件 (默认仅目录)
+	JSON     bool // --json: 输出整棵树 JSON
 }
 
 func (c *Action) TreeObjects(opt TreeOptions, bucket, prefix string) error {
@@ -42,6 +44,18 @@ func (c *Action) TreeObjects(opt TreeOptions, bucket, prefix string) error {
 
 	header := c.S3Path(bucket, prefix)
 	header = strings.TrimSuffix(header, "/")
+
+	if opt.JSON {
+		countTree(root, &fileCount, &dirCount, &totalSize, opt, 1)
+		return printJSONLine(map[string]any{
+			"path":        header,
+			"directories": dirCount,
+			"files":       fileCount,
+			"totalSize":   totalSize,
+			"tree":        root.toJSON(),
+		})
+	}
+
 	myprint.Println(header)
 	root.print("", opt, 1, &fileCount, &dirCount, &totalSize)
 
@@ -91,6 +105,43 @@ func (n *treeNode) sortedChildren() []*treeNode {
 	return out
 }
 
+// countTree 统计树中的目录/文件数与文件总大小 (与文本模式 print 的计数口径一致:
+// MaxDepth 处仍计入该层目录, 但不深入其子级)。
+func countTree(n *treeNode, fileCount, dirCount *int, totalSize *int64, opt TreeOptions, depth int) {
+	for _, c := range n.sortedChildren() {
+		if c.isFile {
+			if opt.Files {
+				*fileCount++
+				*totalSize += c.size
+			}
+			continue
+		}
+		*dirCount++
+		if opt.MaxDepth > 0 && depth >= opt.MaxDepth {
+			continue
+		}
+		countTree(c, fileCount, dirCount, totalSize, opt, depth+1)
+	}
+}
+
+// toJSON 把节点转为稳定的 JSON 结构:
+// 目录 {"name","type":"dir","children":[...]}, 文件 {"name","type":"file","size"}。
+func (n *treeNode) toJSON() map[string]any {
+	m := map[string]any{"name": n.name, "type": "dir"}
+	if n.isFile {
+		m["type"] = "file"
+		m["size"] = n.size
+		return m
+	}
+	children := n.sortedChildren()
+	childJSON := make([]map[string]any, 0, len(children))
+	for _, c := range children {
+		childJSON = append(childJSON, c.toJSON())
+	}
+	m["children"] = childJSON
+	return m
+}
+
 func (n *treeNode) print(prefix string, opt TreeOptions, depth int,
 	fileCount, dirCount *int, totalSize *int64) {
 
@@ -105,6 +156,9 @@ func (n *treeNode) print(prefix string, opt TreeOptions, depth int,
 		}
 
 		if c.isFile {
+			if !opt.Files {
+				continue
+			}
 			*fileCount++
 			*totalSize += c.size
 			if opt.ShowSize {

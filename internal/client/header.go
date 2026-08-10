@@ -6,20 +6,14 @@ import (
 	"strings"
 )
 
-// customHeaderTransport 在请求发出前注入自定义 HTTP header。
-type customHeaderTransport struct {
+// headerTransport 在请求发出前注入自定义 HTTP header。
+type headerTransport struct {
 	base    http.RoundTripper
 	headers http.Header
 }
 
-// parseHeaders 把 ["Key: Value", "Key2=Value2"] 解析为 http.Header。
-// 支持 ":" 或 "=" 作为分隔符(取最先出现的那个); key 不能为空。
-// 同名 key 多次出现会追加为多值 header。
-func parseHeaders(items []string) (http.Header, error) {
-	if len(items) == 0 {
-		return nil, nil
-	}
-	h := http.Header{}
+func newHeaderTransport(base http.RoundTripper, items []string) (http.RoundTripper, error) {
+	headers := http.Header{}
 	for _, raw := range items {
 		ci := strings.IndexByte(raw, ':')
 		ei := strings.IndexByte(raw, '=')
@@ -33,31 +27,20 @@ func parseHeaders(items []string) (http.Header, error) {
 		case ei >= 0:
 			sep = ei
 		default:
-			return nil, fmt.Errorf("invalid header %q, expected format key:value or key=value", raw)
+			return base, fmt.Errorf("invalid header %q, expected format key:value or key=value", raw)
 		}
 
 		key := strings.TrimSpace(raw[:sep])
 		val := strings.TrimSpace(raw[sep+1:])
 		if key == "" {
-			return nil, fmt.Errorf("invalid header %q, key is empty", raw)
+			return base, fmt.Errorf("invalid header %q, key is empty", raw)
 		}
-		h.Add(key, val)
+		headers.Add(key, val)
 	}
-	return h, nil
+	return &headerTransport{base: base, headers: headers}, nil
 }
 
-// newCustomHeaderTransport 当 headers 为空时返回 base 本身(零开销)。
-func newCustomHeaderTransport(base http.RoundTripper, headers http.Header) http.RoundTripper {
-	if base == nil {
-		base = http.DefaultTransport
-	}
-	if len(headers) == 0 {
-		return base
-	}
-	return &customHeaderTransport{base: base, headers: headers}
-}
-
-func (t *customHeaderTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+func (t *headerTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	// 克隆请求, 避免修改调用方持有的 *http.Request(SDK 可能重试)。
 	clone := req.Clone(req.Context())
 	for k, vs := range t.headers {

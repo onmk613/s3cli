@@ -29,6 +29,10 @@ func (pt *Tracker) AddTotal(n int64) {
 
 	pt.mu.Lock()
 	defer pt.mu.Unlock()
+	// 持锁后二次检查: 防止 Stop 在无锁读与加锁之间完成, 导致汇总行之后又渲染一帧
+	if pt.stopped.Load() {
+		return
+	}
 	pt.render(false)
 }
 
@@ -39,14 +43,18 @@ func (pt *Tracker) AddTotalDone(n int64, msg string) {
 	if pt.stopped.Load() {
 		return
 	}
+
+	pt.mu.Lock()
+	defer pt.mu.Unlock()
+	// 持锁后二次检查: 防止 Stop 在无锁读与加锁之间完成, 导致汇总行之后又渲染一帧
+	if pt.stopped.Load() {
+		return
+	}
 	if pt.quiet.Load() {
 		// 直接输出原始信息
 		_, _ = fmt.Fprintln(os.Stdout, colorize(colorDone, fmt.Sprintf("Done: %s", msg)))
 		return
 	}
-
-	pt.mu.Lock()
-	defer pt.mu.Unlock()
 	pt.render(false)
 }
 
@@ -61,6 +69,10 @@ func (pt *Tracker) AddTotalSize(sz int64) {
 	}
 	pt.mu.Lock()
 	defer pt.mu.Unlock()
+	// 持锁后二次检查: 防止 Stop 在无锁读与加锁之间完成, 导致汇总行之后又渲染一帧
+	if pt.stopped.Load() {
+		return
+	}
 	pt.render(false)
 }
 
@@ -73,6 +85,10 @@ func (pt *Tracker) AddTotalSizeDone(sz int64) {
 
 	pt.mu.Lock()
 	defer pt.mu.Unlock()
+	// 持锁后二次检查: 防止 Stop 在无锁读与加锁之间完成, 导致汇总行之后又渲染一帧
+	if pt.stopped.Load() {
+		return
+	}
 	pt.render(false)
 }
 
@@ -89,6 +105,10 @@ func (pt *Tracker) AddFailed(n int64, msg string) {
 	// 单次持锁：同时追加失败信息与渲染，避免重复加解锁
 	pt.mu.Lock()
 	defer pt.mu.Unlock()
+	// 持锁后二次检查: 防止 Stop 在无锁读与加锁之间完成, 导致汇总行之后又渲染一帧
+	if pt.stopped.Load() {
+		return
+	}
 	if msg != "" {
 		pt.failedStrings = append(pt.failedStrings, msg)
 	}

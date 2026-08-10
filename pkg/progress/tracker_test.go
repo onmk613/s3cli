@@ -1,7 +1,11 @@
 package progress
 
 import (
+	"bytes"
+	"io"
+	"os"
 	"strings"
+	"sync"
 	"testing"
 )
 
@@ -130,3 +134,76 @@ func TestRenderThrottleDoesNotPanic(t *testing.T) {
 
 // 确认 colorize 辅助被覆盖 (render 间接调用)
 var _ = strings.Contains
+
+// TestStopPreventsPostSummaryFrames 回归 P1-BUG-5:
+// 并发 Add* 与 Stop 交错时, Stop 的汇总摘要行之后不得再出现任何输出
+// (旧实现无锁读 stopped 与后续渲染/打印之间存在 TOCTOU 窗口)。
+// quiet 模式的 "Done:" 原始行路径无渲染节流, 是旧 bug 最易触发的路径,
+// 因此两种模式都覆盖。
+func TestStopPreventsPostSummaryFrames(t *testing.T) {
+	for _, quiet := range []bool{true, false} {
+		name := "render"
+		if quiet {
+			name = "quiet"
+		}
+		t.Run(name, func(t *testing.T) {
+			oldStdout := os.Stdout
+			r, w, err := os.Pipe()
+			if err != nil {
+				t.Fatal(err)
+			}
+			os.Stdout = w
+			defer func() { os.Stdout = oldStdout }()
+
+			// 并发排空管道: 防止 worker 在 Stop 前输出过多把 64KB 管道写满,
+			// 导致 Stop 的摘要行也阻塞、测试死锁。
+			var buf bytes.Buffer
+			drained := make(chan struct{})
+			go func() {
+				_, _ = io.Copy(&buf, r)
+				close(drained)
+			}()
+
+			pt := New()
+			// 测试环境无终端: New 会置 quiet。按用例强制走目标路径。
+			pt.quiet.Store(quiet)
+			pt.width = 80
+			pt.Start()
+
+			const workers = 4
+			const perWorker = 20000
+			var wg sync.WaitGroup
+			for i := 0; i < workers; i++ {
+				wg.Add(1)
+				go func() {
+					defer wg.Done()
+					for j := 0; j < perWorker; j++ {
+						pt.AddTotal(1)
+						pt.AddTotalDone(1, "item")
+					}
+				}()
+			}
+			// 与并发 Add 交错调用 Stop
+			pt.Stop()
+			wg.Wait()
+
+			_ = w.Close()
+			<-drained
+			os.Stdout = oldStdout
+			out := buf.Bytes()
+
+			// 汇总摘要行包含 "Uploading: N/M total (...)" (带颜色转义);
+			// 进度条帧里只有 " Uploading " (无冒号), 故 "Uploading:" 唯一指向摘要行。
+			idx := bytes.Index(out, []byte("Uploading:"))
+			if idx < 0 {
+				t.Fatalf("summary line not found in output: %q", out)
+			}
+			if rest := bytes.Index(out[idx:], []byte(clearLine)); rest >= 0 {
+				t.Fatalf("progress frame rendered after Stop summary: %q", out[idx:])
+			}
+			if rest := bytes.Index(out[idx:], []byte("Done: item")); rest >= 0 {
+				t.Fatalf("raw Done line rendered after Stop summary: %q", out[idx:])
+			}
+		})
+	}
+}
