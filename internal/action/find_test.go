@@ -280,8 +280,10 @@ func TestNormalizeFindTypeErrors(t *testing.T) {
 }
 
 // TestParseTimeLocalZone 验证无时区绝对时间按本地时区解析 (而非 UTC).
+// 注意: time.Local.String() 恒为 "Local", 不能用它判断本地是否 UTC;
+// 本地时区为 UTC 的机器 (如 GitHub Actions runner) 上该用例语义不成立, 按偏移跳过。
 func TestParseTimeLocalZone(t *testing.T) {
-	if time.Local.String() == "UTC" {
+	if _, offset := time.Now().Zone(); offset == 0 {
 		t.Skip("requires non-UTC local timezone")
 	}
 	tm, err := parseTime("2026-08-06")

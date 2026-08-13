@@ -676,6 +676,9 @@ func globToRegex(g string) string {
 // parseTime 支持 RFC3339 / "2006-01-02" / "2006-01-02 15:04:05".
 // 无时区的输入按本地时区解析 (与用户直觉一致, 避免被当作 UTC 产生 8 小时偏差).
 func parseTime(s string) (time.Time, error) {
+	// 全部按本地时区解析 (ParseInLocation): 裸日期 "2006-01-02" 表示本地零点,
+	// 若用 time.Parse 会落回 UTC, 导致 --newer-than/--older-than 阈值偏移。
+	// 注意保持 time.Local, 勿改回 time.Parse。
 	layouts := []string{time.RFC3339, "2006-01-02 15:04:05", "2006-01-02"}
 	for _, l := range layouts {
 		if t, err := time.ParseInLocation(l, s, time.Local); err == nil {
