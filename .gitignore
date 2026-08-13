@@ -1,8 +1,10 @@
 .DS_Store
 .vscode/
 .idea/
-.github/
 .reasonix/
+.tmp-gocache/
+.e2e-debug/
+.e2e-tmp.*
 vendor/
 docs/
 bin/

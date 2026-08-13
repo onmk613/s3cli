@@ -10,9 +10,11 @@ package action
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os"
+	"strings"
 	"time"
 
 	"s3cli/pkg/s3iface"
@@ -122,7 +124,18 @@ func (c *Action) uploadMultipartFile(ctx context.Context, bucket, key, localPath
 	if state != nil && state.PartSize == partSize {
 		uploadID = state.UploadID
 		listed, listErr := c.S3.ListParts(ctx, bucket, key, uploadID, 0, int(maxMultipartParts))
-		if listErr == nil {
+		if listErr != nil {
+			if !isNoSuchUploadError(listErr) {
+				// 保留本地状态文件以便稍后重试 (断点续传不因瞬时故障丢失),
+				// 同时提示用户可用 mpu local-clear 丢弃失效的本地状态。
+				return fmt.Errorf("list resumable multipart parts: %w (hint: run `s3cli mpu local-clear` to discard the local state if the upload was aborted server-side)", listErr)
+			}
+			// NoSuchUpload: 服务端该分片上传已不存在 (被 Abort / 过期清理)。
+			// 自愈 —— 放弃旧 uploadID, 走下方重建分支重新 CreateMultipartUpload
+			// 并保存新状态文件后继续, 而不是让整个上传直接失败。
+			uploadID = ""
+			parts = nil
+		} else {
 			for index, part := range listed.Parts {
 				if part.PartNumber != index+1 {
 					uploadID = ""
@@ -131,9 +144,6 @@ func (c *Action) uploadMultipartFile(ctx context.Context, bucket, key, localPath
 				}
 				parts = append(parts, s3iface.CompletedPart{PartNumber: part.PartNumber, ETag: part.ETag})
 			}
-		} else {
-			// Preserve the state so a transient ListParts failure remains resumable.
-			return fmt.Errorf("list resumable multipart parts: %w", listErr)
 		}
 	}
 	if uploadID == "" {
@@ -187,4 +197,12 @@ func (c *Action) uploadMultipartFile(ctx context.Context, bucket, key, localPath
 		return fmt.Errorf("remove completed multipart state: %w", err)
 	}
 	return nil
+}
+
+// isNoSuchUploadError 判断错误是否为 S3 的 NoSuchUpload (指定的分片上传不存在)。
+// 断点续传自愈依赖它: 服务端 upload 被 Abort/过期后, ListParts 会返回该错误,
+// 此时应放弃旧 uploadID 重新创建, 而不是让整个上传失败。
+func isNoSuchUploadError(err error) bool {
+	var apiErr *s3iface.ErrorResponse
+	return errors.As(err, &apiErr) && strings.Contains(apiErr.Code, "NoSuchUpload")
 }

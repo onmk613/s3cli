@@ -10,6 +10,8 @@ import (
 	"fmt"
 	"os"
 	"strings"
+
+	"s3cli/pkg/i18n"
 )
 
 // loadAWSConfigFile 读取 AWS 配置文件 (CORS/Lifecycle/Policy 等)
@@ -23,7 +25,7 @@ func loadAWSConfigFile(path string) ([]byte, string, error) {
 	data = bytes.TrimPrefix(data, []byte{0xEF, 0xBB, 0xBF})
 	trimmed := bytes.TrimSpace(data)
 	if len(trimmed) == 0 {
-		return nil, "", fmt.Errorf("file %s is empty", path)
+		return nil, "", fmt.Errorf(i18n.T("file %s is empty", "文件 %s 为空"), path)
 	}
 
 	switch trimmed[0] {
@@ -32,7 +34,7 @@ func loadAWSConfigFile(path string) ([]byte, string, error) {
 	case '<':
 		return data, "xml", nil
 	}
-	return data, "", fmt.Errorf("unsupported format in %s: must be JSON or XML", path)
+	return data, "", fmt.Errorf(i18n.T("unsupported format in %s: must be JSON or XML", "%s 中的格式不受支持：必须是 JSON 或 XML"), path)
 }
 
 // unmarshalAWS 自动按 JSON 或 XML 反序列化到任意 SDK 类型

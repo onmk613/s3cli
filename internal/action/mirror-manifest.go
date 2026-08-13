@@ -5,11 +5,13 @@ package action
 
 import (
 	"bufio"
-	"fmt"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
 	"sync"
+
+	"s3cli/pkg/i18n"
 )
 
 // mirrorManifest is append-only: a key is recorded only after its copy
@@ -24,7 +26,7 @@ type mirrorManifest struct {
 func openMirrorManifest(path string, resume bool) (*mirrorManifest, error) {
 	if path == "" {
 		if resume {
-			return nil, fmt.Errorf("mirror --resume requires --manifest")
+			return nil, errors.New(i18n.T("mirror --resume requires --manifest", "mirror --resume 需要指定 --manifest"))
 		}
 		return nil, nil
 	}

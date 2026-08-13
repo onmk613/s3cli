@@ -14,8 +14,10 @@ import (
 // 调用方可以通过 errors.Is(err, ErrAliasOnly) 来判断并做特殊处理。
 var ErrAliasOnly = errors.New("alias only: no bucket or key specified")
 
-// AliasNameRegex 校验 alias 名
-var AliasNameRegex = regexp.MustCompile(`^[A-Za-z0-9][a-zA-Z0-9_\-.]{1,63}[A-Za-z0-9]$`)
+// AliasNameRegex 校验 alias 名。
+// 1 个字符的短别名亦合法 (字母/数字); 2 个及以上须以字母数字开头结尾,
+// 中间允许字母数字、下划线、连字符与点。
+var AliasNameRegex = regexp.MustCompile(`^[A-Za-z0-9]([a-zA-Z0-9_\-.]{0,62}[A-Za-z0-9])?$`)
 
 // BucketNameRegex 校验 bucket 名
 var BucketNameRegex = regexp.MustCompile(`^[A-Za-z0-9][a-zA-Z0-9_\-.]{1,61}[A-Za-z0-9]$`)
@@ -71,6 +73,10 @@ func Parse(s string) (*Path, error) {
 
 	// 去掉尾部 "/", 但保留中间分隔符
 	key = strings.TrimSuffix(key, "/")
+
+	// 去掉开头的 "/" (如 "a:b//c" 的 key 会残留前导斜杠),
+	// 路径语法以尾斜杠表达目录语义, 前导斜杠无意义且会破坏前缀匹配。
+	key = strings.TrimLeft(key, "/")
 
 	if key == "" {
 		trailing = false

@@ -23,16 +23,16 @@ func snapshotHooks(t *testing.T) {
 		syncFile     func(*os.File) error
 		closeFile    func(*os.File) error
 		rename       func(string, string) error
-		chmodPath    func(string, os.FileMode) error
+		syncDirFn    func(string) error
 	}{
 		isTerminal, readPassword, userHomeDir, osStat,
 		mkdirAll, createTemp, chmodFile, encodeTOML,
-		syncFile, closeFile, rename, chmodPath,
+		syncFile, closeFile, rename, syncDirFn,
 	}
 	t.Cleanup(func() {
 		isTerminal, readPassword, userHomeDir, osStat = old.isTerminal, old.readPassword, old.userHomeDir, old.osStat
 		mkdirAll, createTemp, chmodFile, encodeTOML = old.mkdirAll, old.createTemp, old.chmodFile, old.encodeTOML
-		syncFile, closeFile, rename, chmodPath = old.syncFile, old.closeFile, old.rename, old.chmodPath
+		syncFile, closeFile, rename, syncDirFn = old.syncFile, old.closeFile, old.rename, old.syncDirFn
 	})
 }
 

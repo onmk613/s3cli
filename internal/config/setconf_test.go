@@ -50,6 +50,32 @@ func TestSetAliasConfArgs(t *testing.T) {
 	}
 }
 
+// TestSetAliasStaticValidation 非交互路径应对必填字段做 trim + 非空校验,
+// 空凭证不再静默落盘。
+func TestSetAliasStaticValidation(t *testing.T) {
+	tempConfPath(t)
+
+	for _, args := range [][]string{
+		{"  ", "https://h", "ak", "sk"}, // 空别名
+		{"a", "  ", "ak", "sk"},         // 空 host base
+		{"a", "https://h", "  ", "sk"},  // 空 access key
+		{"a", "https://h", "ak", "  "},  // 空 secret key
+	} {
+		if err := SetAliasConf(args); err == nil {
+			t.Errorf("SetAliasConf(%q) should error", args)
+		}
+	}
+
+	// 值两侧空白应被 trim 后写入
+	if err := SetAliasConf([]string{"t", " https://h ", " ak ", " sk ", " tok "}); err != nil {
+		t.Fatal(err)
+	}
+	got := G.S["t"]
+	if got.HostBase != "https://h" || got.AccessKey != "ak" || got.SecretKey != "sk" || got.SessionToken != "tok" {
+		t.Errorf("fields not trimmed: %+v", got)
+	}
+}
+
 func TestSetAliasInteractive(t *testing.T) {
 	path := tempConfPath(t)
 

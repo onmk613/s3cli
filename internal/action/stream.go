@@ -99,11 +99,20 @@ func RunStream(ctx context.Context, cfg StreamConfig) error {
 	// 扫描协程：在派发任务时累加 total，使进度条的分母随发现的任务增长，
 	// 而 done 永远滞后于 total，避免 done≈total 时百分比/ETA 来回抖动。
 	// 若已有 Count 协程负责累加，则此处只派发不累加，避免重复计数。
+	//
+	// scanWg 纳入外层转发协程、内层 Scan 协程以及取消时排空 relay 的 drain
+	// 协程：RunStream 返回前统一等待扫描链路全部结束，杜绝返回后仍有后台
+	// 扫描 IO/协程泄漏（如目录遍历继续 walk、分页请求仍 in-flight）。
+	var scanWg sync.WaitGroup
+	scanWg.Add(1)
 	go func() {
+		defer scanWg.Done()
 		defer close(jobs)
 		// 包一层 channel，扫描器每写入一个 job 就累加一次 total。
 		relay := make(chan StreamJob, cfg.Concurrency*2)
+		scanWg.Add(1)
 		go func() {
+			defer scanWg.Done()
 			defer close(relay)
 			if err := cfg.Scan(ctx, relay); err != nil {
 				scanErr <- err
@@ -118,7 +127,10 @@ func RunStream(ctx context.Context, cfg StreamConfig) error {
 			case jobs <- j:
 			case <-ctx.Done():
 				// 提前退出时排空 relay, 否则内部 Scan 协程会永远阻塞在写入上。
+				// drain 协程纳入 scanWg, 由 RunStream 返回前统一等待。
+				scanWg.Add(1)
 				go func() {
+					defer scanWg.Done()
 					for range relay {
 					}
 				}()
@@ -178,6 +190,10 @@ func RunStream(ctx context.Context, cfg StreamConfig) error {
 	// 不再有协程向终端渲染进度条。
 	cancelCount()
 	countWg.Wait()
+
+	// 等待扫描协程 (外层转发 + 内层 Scan + 取消时排空 relay 的 drain) 全部结束,
+	// 再检查扫描错误并返回, 杜绝 RunStream 返回后仍有后台 IO/协程泄漏。
+	scanWg.Wait()
 
 	// 检查扫描错误
 	select {

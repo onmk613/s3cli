@@ -40,3 +40,17 @@ func TestTrackerBuildBarCapsProgress(t *testing.T) {
 		t.Fatalf("bar = %q", got)
 	}
 }
+
+func TestStringWidthCJK(t *testing.T) {
+	// 中文按显示列 2 计, 而非 UTF-8 字节数 3
+	if got := stringWidth("中文"); got != 4 {
+		t.Errorf("stringWidth(中文) = %d, want 4", got)
+	}
+	if got := stringWidth("abc"); got != 3 {
+		t.Errorf("stringWidth(abc) = %d, want 3", got)
+	}
+	// ANSI 序列不占宽度 (复用 fmtutil.DisplayWidth 内的剥离逻辑)
+	if got := stringWidth("\x1b[32m中\x1b[0m"); got != 2 {
+		t.Errorf("stringWidth with ANSI+CJK = %d, want 2", got)
+	}
+}

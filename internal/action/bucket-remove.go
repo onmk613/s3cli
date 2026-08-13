@@ -4,7 +4,9 @@ package action
 
 import (
 	"fmt"
+
 	myprint "s3cli/pkg/fmtutil"
+	"s3cli/pkg/i18n"
 	"s3cli/pkg/s3iface"
 )
 
@@ -15,7 +17,7 @@ type RemoveBucketOptions struct {
 // RemoveBuckets 删除桶; force=true 时先清空桶内全部对象与版本 (不可恢复) 再删桶.
 func (c *Action) RemoveBuckets(opt RemoveBucketOptions, bucket string) error {
 	if opt.Force {
-		myprint.PrintfBoldYellow("WARNING: --force will permanently delete all objects/versions in %s\n", c.S3Path(bucket, ""))
+		myprint.PrintfBoldYellow(i18n.T("WARNING: --force will permanently delete all objects/versions in %s\n", "警告：--force 将永久删除 %s 中的所有对象/版本\n"), c.S3Path(bucket, ""))
 		if err := c.deleteAllObjects(bucket); err != nil {
 			return fmt.Errorf("force-delete objects in %s: %v", bucket, err)
 		}
@@ -25,7 +27,7 @@ func (c *Action) RemoveBuckets(opt RemoveBucketOptions, bucket string) error {
 		return fmt.Errorf("delete bucket %s: %s", bucket, FormatAPIError(err))
 	}
 
-	myprint.PrintfBoldGreen("Bucket %s deleted for %s\n", c.Alias, bucket)
+	myprint.PrintfBoldGreen(i18n.T("Bucket %s deleted for %s\n", "已为 %s 删除存储桶 %s\n"), c.Alias, bucket)
 	return nil
 }
 

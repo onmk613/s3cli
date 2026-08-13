@@ -123,22 +123,20 @@ func (c *Client) ListObjectsV2(ctx context.Context, bucket string, opts *ListObj
 
 // ListObjectsV2Paginator 封装 ListObjectsV2 的自动分页逻辑.
 type ListObjectsV2Paginator struct {
-	client    *Client
-	bucket    string
-	opts      *ListObjectsV2Options
-	token     string
-	hasMore   bool
-	firstPage bool
+	client  *Client
+	bucket  string
+	opts    *ListObjectsV2Options
+	token   string
+	hasMore bool
 }
 
 // NewListObjectsV2Paginator 创建一个分页器.
 func NewListObjectsV2Paginator(client *Client, bucket string, opts *ListObjectsV2Options) *ListObjectsV2Paginator {
 	return &ListObjectsV2Paginator{
-		client:    client,
-		bucket:    bucket,
-		opts:      opts,
-		firstPage: true,
-		hasMore:   true,
+		client:  client,
+		bucket:  bucket,
+		opts:    opts,
+		hasMore: true,
 	}
 }
 
@@ -164,7 +162,6 @@ func (p *ListObjectsV2Paginator) NextPage(ctx context.Context) (*ListObjectsV2Ou
 		return nil, err
 	}
 
-	p.firstPage = false
 	if out.IsTruncated && out.NextContinuationToken != "" {
 		p.token = out.NextContinuationToken
 		p.hasMore = true

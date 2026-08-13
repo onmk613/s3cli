@@ -294,7 +294,26 @@ func saveAlias(section string, conf Static) error {
 }
 
 // setAliasStatic 非交互写入单个别名的核心字段；其余字段通过值拷贝保留旧值。
+// 字段值统一 TrimSpace, 并对必填字段做非空校验 —— 此前空凭证会落盘,
+// 到使用时才由 api.New 报出误导性错误。
 func setAliasStatic(section, hostBase, accessKey, secretKey, sessionToken string) error {
+	section = strings.TrimSpace(section)
+	hostBase = strings.TrimSpace(hostBase)
+	accessKey = strings.TrimSpace(accessKey)
+	secretKey = strings.TrimSpace(secretKey)
+	sessionToken = strings.TrimSpace(sessionToken)
+
+	switch {
+	case section == "":
+		return errors.New("alias name cannot be empty")
+	case hostBase == "":
+		return errors.New("host base (URL) cannot be empty")
+	case accessKey == "":
+		return errors.New("access key cannot be empty")
+	case secretKey == "":
+		return errors.New("secret key cannot be empty")
+	}
+
 	if err := readConfig(G.C); err != nil {
 		// 配置文件不存在时, 建新文件
 		if !errors.Is(err, ErrConfigNotFoundOrEmpty) {

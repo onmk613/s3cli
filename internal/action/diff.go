@@ -20,6 +20,7 @@ import (
 	"sync/atomic"
 
 	myprint "s3cli/pkg/fmtutil"
+	"s3cli/pkg/i18n"
 	"s3cli/pkg/s3iface"
 )
 
@@ -89,7 +90,7 @@ func ParseDiffArg(ctx context.Context, arg string, aliasExists func(string) bool
 				return nil, err
 			}
 			if sp.Bucket == "" {
-				return nil, fmt.Errorf("diff: s3 path %q must contain a bucket", arg)
+				return nil, fmt.Errorf(i18n.T("diff: s3 path %q must contain a bucket", "diff：S3 路径 %q 必须包含存储桶"), arg)
 			}
 			cli, err := makeClient(sp)
 			if err != nil {
@@ -118,7 +119,7 @@ func ParseDiffArg(ctx context.Context, arg string, aliasExists func(string) bool
 // Diff 比较两端。自动识别“文件 vs 目录”。
 func Diff(opt DiffOptions) error {
 	if opt.A == nil || opt.B == nil {
-		return fmt.Errorf("diff: both A and B endpoints are required")
+		return errors.New(i18n.T("diff: both A and B endpoints are required", "diff：A 和 B 两个端点都必须提供"))
 	}
 	if opt.Mode == "" {
 		opt.Mode = DiffModeMD5
@@ -137,7 +138,7 @@ func Diff(opt DiffOptions) error {
 	}
 
 	if aIsDir != bIsDir {
-		return fmt.Errorf("diff: cannot compare a file against a directory (A=%s, B=%s)",
+		return fmt.Errorf(i18n.T("diff: cannot compare a file against a directory (A=%s, B=%s)", "diff：无法将文件与目录比较（A=%s，B=%s）"),
 			describeKind(aIsDir), describeKind(bIsDir))
 	}
 
@@ -146,16 +147,16 @@ func Diff(opt DiffOptions) error {
 	}
 
 	if !opt.Recursive {
-		return fmt.Errorf("diff: both sides are directories; pass --recursive")
+		return errors.New(i18n.T("diff: both sides are directories; pass --recursive", "diff：两侧都是目录；请加 --recursive"))
 	}
 	return diffDirectories(opt)
 }
 
 func describeKind(isDir bool) string {
 	if isDir {
-		return "directory"
+		return i18n.T("directory", "目录")
 	}
-	return "file"
+	return i18n.T("file", "文件")
 }
 
 // endpointIsDir 判断一个端点是“目录”还是“文件”。
@@ -205,16 +206,16 @@ func diffSingleFile(a, b *DiffEndpoint, mode DiffMode, jsonOut bool) error {
 		var differ, identical []string
 		switch {
 		case ea.Size != eb.Size:
-			differ = append(differ, fmt.Sprintf("%s vs %s (size %s vs %s)",
+			differ = append(differ, fmt.Sprintf(i18n.T("%s vs %s (size %s vs %s)", "%s 与 %s（大小 %s 与 %s）"),
 				a.String(), b.String(), FormatBytes(ea.Size), FormatBytes(eb.Size)))
 		case mode == DiffModeSize:
-			identical = append(identical, fmt.Sprintf("%s vs %s (size %s)",
+			identical = append(identical, fmt.Sprintf(i18n.T("%s vs %s (size %s)", "%s 与 %s（大小 %s）"),
 				a.String(), b.String(), FormatBytes(ea.Size)))
 		case mode == DiffModeQuick && ea.Mtime != eb.Mtime:
-			differ = append(differ, fmt.Sprintf("%s vs %s (mtime %d vs %d)",
+			differ = append(differ, fmt.Sprintf(i18n.T("%s vs %s (mtime %d vs %d)", "%s 与 %s（mtime %d 与 %d）"),
 				a.String(), b.String(), ea.Mtime, eb.Mtime))
 		case mode == DiffModeQuick:
-			identical = append(identical, fmt.Sprintf("%s vs %s (size %s, mtime match)",
+			identical = append(identical, fmt.Sprintf(i18n.T("%s vs %s (size %s, mtime match)", "%s 与 %s（大小 %s，mtime 一致）"),
 				a.String(), b.String(), FormatBytes(ea.Size)))
 		default: // MD5 模式：流式对比
 			equal, err := compareContent(a, "", b, "")
@@ -222,9 +223,9 @@ func diffSingleFile(a, b *DiffEndpoint, mode DiffMode, jsonOut bool) error {
 				return err
 			}
 			if !equal {
-				differ = append(differ, fmt.Sprintf("%s vs %s (content)", a.String(), b.String()))
+				differ = append(differ, fmt.Sprintf(i18n.T("%s vs %s (content)", "%s 与 %s（内容不同）"), a.String(), b.String()))
 			} else {
-				identical = append(identical, fmt.Sprintf("%s vs %s (size %s, md5 match)",
+				identical = append(identical, fmt.Sprintf(i18n.T("%s vs %s (size %s, md5 match)", "%s 与 %s（大小 %s，md5 一致）"),
 					a.String(), b.String(), FormatBytes(ea.Size)))
 			}
 		}
@@ -232,24 +233,24 @@ func diffSingleFile(a, b *DiffEndpoint, mode DiffMode, jsonOut bool) error {
 	}
 
 	if ea.Size != eb.Size {
-		myprint.PrintfRed("DIFFER  %s  vs  %s  (size %s vs %s)\n",
+		myprint.PrintfRed(i18n.T("DIFFER  %s  vs  %s  (size %s vs %s)\n", "DIFFER  %s 与 %s（大小 %s 与 %s）\n"),
 			a.String(), b.String(),
 			FormatBytes(ea.Size), FormatBytes(eb.Size))
 		return errDiffer
 	}
 
 	if mode == DiffModeSize {
-		myprint.PrintfGreen("OK      %s  vs  %s  (size %s)\n",
+		myprint.PrintfGreen(i18n.T("OK      %s  vs  %s  (size %s)\n", "OK      %s 与 %s（大小 %s）\n"),
 			a.String(), b.String(), FormatBytes(ea.Size))
 		return nil
 	}
 	if mode == DiffModeQuick {
 		if ea.Mtime != eb.Mtime {
-			myprint.PrintfRed("DIFFER  %s  vs  %s  (mtime %d vs %d)\n",
+			myprint.PrintfRed(i18n.T("DIFFER  %s  vs  %s  (mtime %d vs %d)\n", "DIFFER  %s 与 %s（mtime %d 与 %d）\n"),
 				a.String(), b.String(), ea.Mtime, eb.Mtime)
 			return errDiffer
 		}
-		myprint.PrintfGreen("OK      %s  vs  %s  (size %s, mtime match)\n",
+		myprint.PrintfGreen(i18n.T("OK      %s  vs  %s  (size %s, mtime match)\n", "OK      %s 与 %s（大小 %s，mtime 一致）\n"),
 			a.String(), b.String(), FormatBytes(ea.Size))
 		return nil
 	}
@@ -260,16 +261,16 @@ func diffSingleFile(a, b *DiffEndpoint, mode DiffMode, jsonOut bool) error {
 		return err
 	}
 	if !equal {
-		myprint.PrintfRed("DIFFER  %s  vs  %s  (content)\n", a.String(), b.String())
+		myprint.PrintfRed(i18n.T("DIFFER  %s  vs  %s  (content)\n", "DIFFER  %s 与 %s（内容不同）\n"), a.String(), b.String())
 		return errDiffer
 	}
-	myprint.PrintfGreen("OK      %s  vs  %s  (size %s, md5 match)\n",
+	myprint.PrintfGreen(i18n.T("OK      %s  vs  %s  (size %s, md5 match)\n", "OK      %s 与 %s（大小 %s，md5 一致）\n"),
 		a.String(), b.String(), FormatBytes(ea.Size))
 	return nil
 }
 
 // errDiffer 用于让上层（命令）以非零退出码退出。
-var errDiffer = fmt.Errorf("differences found")
+var errDiffer = errors.New(i18n.T("differences found", "存在差异"))
 
 // IsDifferErr 命令层用它来识别“存在差异”这一非错误异常。
 func IsDifferErr(err error) bool { return errors.Is(err, errDiffer) }
@@ -320,7 +321,7 @@ func diffDirectories(opt DiffOptions) error {
 		}
 		// size 先比
 		if ea.Size != eb.Size {
-			addDiffer(fmt.Sprintf("%s  (size %s vs %s)",
+			addDiffer(fmt.Sprintf(i18n.T("%s  (size %s vs %s)", "%s（大小 %s 与 %s）"),
 				rel, FormatBytes(ea.Size), FormatBytes(eb.Size)))
 			continue
 		}
@@ -329,7 +330,7 @@ func diffDirectories(opt DiffOptions) error {
 			addIdentical(rel)
 		case DiffModeQuick:
 			if ea.Mtime != eb.Mtime {
-				addDiffer(fmt.Sprintf("%s  (mtime %d vs %d)", rel, ea.Mtime, eb.Mtime))
+				addDiffer(fmt.Sprintf(i18n.T("%s  (mtime %d vs %d)", "%s（mtime %d 与 %d）"), rel, ea.Mtime, eb.Mtime))
 			} else {
 				addIdentical(rel)
 			}
@@ -347,13 +348,13 @@ func diffDirectories(opt DiffOptions) error {
 				}
 				if err != nil {
 					failed.Add(1)
-					addDiffer(fmt.Sprintf("%s  (error: %v)", rel, err))
+					addDiffer(fmt.Sprintf(i18n.T("%s  (error: %v)", "%s（错误：%v）"), rel, err))
 					return
 				}
 				if equal {
 					addIdentical(rel)
 				} else {
-					addDiffer(fmt.Sprintf("%s  (content)", rel))
+					addDiffer(fmt.Sprintf(i18n.T("%s  (content)", "%s（内容不同）"), rel))
 				}
 			}(rel)
 		}
@@ -387,33 +388,33 @@ func diffDirectories(opt DiffOptions) error {
 			return err
 		}
 	} else {
-		myprint.PrintfDim("--- A: %s\n", opt.A.String())
-		myprint.PrintfDim("+++ B: %s\n", opt.B.String())
-		myprint.PrintfDim("mode=%s, concurrency=%d\n", opt.Mode, opt.Concurrency)
+		myprint.PrintfDim(i18n.T("--- A: %s\n", "--- A：%s\n"), opt.A.String())
+		myprint.PrintfDim(i18n.T("+++ B: %s\n", "+++ B：%s\n"), opt.B.String())
+		myprint.PrintfDim(i18n.T("mode=%s, concurrency=%d\n", "模式=%s，并发数=%d\n"), opt.Mode, opt.Concurrency)
 		myprint.Println()
 		for _, k := range differ {
-			myprint.PrintfRed("DIFFER %s\n", k)
+			myprint.PrintfRed(i18n.T("DIFFER %s\n", "DIFFER %s\n"), k)
 		}
 		for _, k := range onlyA {
-			myprint.PrintfYellow("ONLY-A %s\n", k)
+			myprint.PrintfYellow(i18n.T("ONLY-A %s\n", "ONLY-A %s\n"), k)
 		}
 		for _, k := range onlyB {
-			myprint.PrintfYellow("ONLY-B %s\n", k)
+			myprint.PrintfYellow(i18n.T("ONLY-B %s\n", "ONLY-B %s\n"), k)
 		}
 		if !opt.BriefOnly {
 			for _, k := range identical {
-				myprint.PrintfGreen("OK     %s\n", k)
+				myprint.PrintfGreen(i18n.T("OK     %s\n", "OK     %s\n"), k)
 			}
 		}
 
 		myprint.Println()
-		myprint.PrintfBoldCyan("Summary: identical=%d differ=%d only-A=%d only-B=%d\n",
+		myprint.PrintfBoldCyan(i18n.T("Summary: identical=%d differ=%d only-A=%d only-B=%d\n", "汇总：identical=%d differ=%d only-A=%d only-B=%d\n"),
 			len(identical), len(differ), len(onlyA), len(onlyB))
 	}
 
 	// 先报比较失败（I/O 错误 ≠ 内容不同），再报差异，保证退出语义正确。
 	if failed.Load() > 0 {
-		return fmt.Errorf("%d file(s) failed to compare", failed.Load())
+		return fmt.Errorf(i18n.T("%d file(s) failed to compare", "%d 个文件比较失败"), failed.Load())
 	}
 	if len(differ)+len(onlyA)+len(onlyB) > 0 {
 		return errDiffer

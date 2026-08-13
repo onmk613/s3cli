@@ -7,6 +7,7 @@ package action
 import (
 	"bufio"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -15,6 +16,7 @@ import (
 	"strings"
 
 	myprint "s3cli/pkg/fmtutil"
+	"s3cli/pkg/i18n"
 	"s3cli/pkg/s3iface"
 )
 
@@ -39,17 +41,17 @@ func (c *Action) GetObject(opt GetOptions, bucket, prefix, localPath string) err
 	}
 	if opt.VersionID != "" {
 		if opt.Recursive {
-			return fmt.Errorf("--version-id cannot be used with -r/--recursive")
+			return errors.New(i18n.T("--version-id cannot be used with -r/--recursive", "--version-id 不能与 -r/--recursive 一起使用"))
 		}
 		if opt.Range != "" {
-			return fmt.Errorf("--version-id cannot be used with --range")
+			return errors.New(i18n.T("--version-id cannot be used with --range", "--version-id 不能与 --range 一起使用"))
 		}
 		ok, err := c.IsS3File(bucket, prefix)
 		if err != nil {
 			return fmt.Errorf("check s3 path: %s", FormatAPIError(err))
 		}
 		if !ok {
-			return fmt.Errorf("source is not a single object")
+			return errors.New(i18n.T("source is not a single object", "源不是单个对象"))
 		}
 		return c.downloadSingleFile(opt, bucket, prefix, localPath)
 	}
@@ -59,10 +61,10 @@ func (c *Action) GetObject(opt GetOptions, bucket, prefix, localPath string) err
 	}
 	if !ok || prefix == "" {
 		if !opt.Recursive {
-			return fmt.Errorf("source is a directory; use -r/--recursive")
+			return errors.New(i18n.T("source is a directory; use -r/--recursive", "源是目录；请使用 -r/--recursive"))
 		}
 		if opt.Range != "" {
-			return fmt.Errorf("--range cannot be used with --recursive")
+			return errors.New(i18n.T("--range cannot be used with --recursive", "--range 不能与 --recursive 一起使用"))
 		}
 		return c.downloadDirectory(opt, bucket, prefix, localPath)
 	}
@@ -72,7 +74,7 @@ func (c *Action) GetObject(opt GetOptions, bucket, prefix, localPath string) err
 // catToStdout 把对象内容流式写到 stdout (get -), 替代旧 cat 命令.
 func (c *Action) catToStdout(opt GetOptions, bucket, key string) error {
 	if key == "" {
-		return fmt.Errorf("stdout output requires a single object key")
+		return errors.New(i18n.T("stdout output requires a single object key", "stdout 输出需要指定单个对象 key"))
 	}
 	gopts := &s3iface.GetObjectOptions{VersionID: opt.VersionID}
 	if rng := buildRangeFromGet(opt); rng != "" {
@@ -150,7 +152,7 @@ func (c *Action) downloadDirectory(opt GetOptions, bucket, key, localPath string
 				if pathErr != nil {
 					// 单个异常 key (如含 ".." 的路径穿越) 警告并跳过,
 					// 不中断整个目录下载。
-					myprint.PrintfYellow("skip %s: %v\n", objKey, pathErr)
+					myprint.PrintfYellow(i18n.T("skip %s: %v\n", "跳过 %s：%v\n"), objKey, pathErr)
 					return nil
 				}
 				jobs <- StreamJob{
@@ -188,15 +190,15 @@ func (c *Action) downloadSingleFile(opt GetOptions, bucket, key, localPath strin
 	// 默认不覆盖: 本地文件已存在则跳过, 仅 --overwrite 时强制下载。
 	if !opt.Overwrite {
 		if info, statErr := os.Stat(localFilePath); statErr == nil && !info.IsDir() {
-			myprint.Printf("skip: %s already exists\n", localFilePath)
+			myprint.Printf(i18n.T("skip: %s already exists\n", "跳过：%s 已存在\n"), localFilePath)
 			return nil
 		}
 	}
 
-	myprint.Printf("get: %s --> %s ", c.S3Path(bucket, key), localFilePath)
+	myprint.Printf(i18n.T("get: %s --> %s ", "下载：%s --> %s "), c.S3Path(bucket, key), localFilePath)
 	size, err := c.downloadFile(key, localFilePath, bucket, nil, opt.VersionID)
 	if err != nil {
-		myprint.PrintlnRed("FAILED")
+		myprint.PrintlnRed(i18n.T("FAILED", "失败"))
 		return fmt.Errorf("download: %s", FormatAPIError(err))
 	}
 	myprint.Printf("(%s)\n", FormatBytes(size))
@@ -238,7 +240,7 @@ func (c *Action) rangeGetObject(bucket, key, localFilePath, rng, versionID strin
 	if err := os.Rename(tmpPath, localFilePath); err != nil {
 		return fmt.Errorf("replace file: %w", err)
 	}
-	myprint.Printf("get: %s [%s] --> %s (%s)\n",
+	myprint.Printf(i18n.T("get: %s [%s] --> %s (%s)\n", "下载：%s [%s] --> %s（%s）\n"),
 		c.S3Path(bucket, key), rng, localFilePath, FormatBytes(written))
 	return nil
 }
@@ -307,7 +309,7 @@ func determineLocalBasePath(localPath, bucket, key string) (string, error) {
 			return "", fmt.Errorf("stat path: %w", err)
 		}
 		if err == nil && !info.IsDir() {
-			return "", fmt.Errorf("%s is not a directory", localPath)
+			return "", fmt.Errorf(i18n.T("%s is not a directory", "%s 不是目录"), localPath)
 		}
 		return localPath, nil
 	}
@@ -332,7 +334,7 @@ func determineLocalFilePath(localPath, key string) (string, error) {
 		parent := filepath.Dir(localPath)
 		if parent != "." && parent != "/" {
 			if fileInfo, err := os.Stat(parent); err != nil || !fileInfo.IsDir() {
-				return "", fmt.Errorf("parent directory %s does not exist", parent)
+				return "", fmt.Errorf(i18n.T("parent directory %s does not exist", "父目录 %s 不存在"), parent)
 			}
 		}
 		return localPath, nil
@@ -363,7 +365,7 @@ func buildLocalFilePath(s3Key, s3Prefix, localBasePath string) (string, error) {
 func safeJoinLocal(base, relSlash string) (string, error) {
 	for _, seg := range strings.Split(relSlash, "/") {
 		if seg == ".." {
-			return "", fmt.Errorf("refusing to write outside %s: object key %q contains '..'", base, relSlash)
+			return "", fmt.Errorf(i18n.T("refusing to write outside %s: object key %q contains '..'", "拒绝写入 %s 之外：对象 key %q 包含 '..'"), base, relSlash)
 		}
 	}
 	return filepath.Join(base, relSlash), nil

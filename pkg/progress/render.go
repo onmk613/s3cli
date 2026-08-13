@@ -51,8 +51,8 @@ func (pt *Tracker) AddTotalDone(n int64, msg string) {
 		return
 	}
 	if pt.quiet.Load() {
-		// 直接输出原始信息
-		_, _ = fmt.Fprintln(os.Stdout, colorize(colorDone, fmt.Sprintf("Done: %s", msg)))
+		// 直接输出原始信息; quiet 下不输出 ANSI 颜色码
+		_, _ = fmt.Fprintln(pt.out, pt.colorizeIf(colorDone, fmt.Sprintf("Done: %s", msg)))
 		return
 	}
 	pt.render(false)
@@ -140,5 +140,5 @@ func (pt *Tracker) render(force bool) {
 
 	// 清空当前行并打印进度条显示的字符串（合并为一次 write，减少 syscall）
 	bar := pt.buildBar(pt.width)
-	_, _ = fmt.Fprint(os.Stdout, clearLine+bar)
+	_, _ = fmt.Fprint(pt.out, clearLine+bar)
 }

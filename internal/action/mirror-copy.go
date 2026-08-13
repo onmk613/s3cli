@@ -5,6 +5,7 @@
 package action
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"strings"
@@ -120,7 +121,10 @@ func copyMultipartCrossEndpoint(
 
 	defer func() {
 		if err != nil {
-			_ = tgt.S3.AbortMultipartUpload(tgt.Ctx, tgtBucket, tgtKey, uploadID)
+			// 清理必须用 WithoutCancel: 跨端分片复制失败/取消 (Ctrl+C) 时
+			// tgt.Ctx 可能已被取消, 直接传它会连 AbortMultipartUpload 一起取消,
+			// 导致服务端残留分片上传。与 multipart-transfer.go 的做法保持一致。
+			_ = tgt.S3.AbortMultipartUpload(context.WithoutCancel(tgt.Ctx), tgtBucket, tgtKey, uploadID)
 		}
 	}()
 

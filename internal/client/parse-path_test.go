@@ -14,22 +14,43 @@ func TestNewClient(t *testing.T) {
 	defer func() { config.G, config.G.C, S3Clients = oldG, oldC, oldCache }()
 	config.G = &config.Config{}
 	config.G.C = ""
-	S3Clients = &kvcache.Cache[string, s3iface.S3Operations]{}
+	S3Clients = &kvcache.Cache[string, cachedBackend]{}
 
 	valid := config.Static{HostBase: "https://s3.example.com", AccessKey: "a", SecretKey: "s"}
 
-	t.Run("cache hit returns cached client", func(t *testing.T) {
+	t.Run("cache hit with same static returns cached client", func(t *testing.T) {
 		base, err := newS3Client(valid, config.Flags{})
 		if err != nil {
 			t.Fatal(err)
 		}
-		S3Clients.Set("preloaded", base)
-		got, err := NewClient("preloaded", config.Static{})
+		S3Clients.Set("preloaded", cachedBackend{client: base, static: valid})
+		got, err := NewClient("preloaded", valid)
 		if err != nil {
 			t.Fatal(err)
 		}
 		if got != s3iface.S3Operations(base) {
 			t.Error("expected the preloaded client back")
+		}
+	})
+
+	t.Run("cache hit with changed static rebuilds client", func(t *testing.T) {
+		base, err := newS3Client(valid, config.Flags{})
+		if err != nil {
+			t.Fatal(err)
+		}
+		S3Clients.Set("stale", cachedBackend{client: base, static: valid})
+		changed := valid
+		changed.AccessKey = "new-ak"
+		got, err := NewClient("stale", changed)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got == s3iface.S3Operations(base) {
+			t.Error("expected a rebuilt client after static change")
+		}
+		cached, ok := S3Clients.Get("stale")
+		if !ok || cached.static != changed {
+			t.Error("cache should store the updated static")
 		}
 	})
 
@@ -59,7 +80,7 @@ func TestParsePathAndNewClient(t *testing.T) {
 	defer func() { config.G, config.G.C, S3Clients = oldG, oldC, oldCache }()
 	config.G = &config.Config{}
 	config.G.C = ""
-	S3Clients = &kvcache.Cache[string, s3iface.S3Operations]{}
+	S3Clients = &kvcache.Cache[string, cachedBackend]{}
 
 	t.Run("unknown alias", func(t *testing.T) {
 		config.G.S = nil
@@ -99,22 +120,39 @@ func TestParsePathAndNewClient(t *testing.T) {
 		}
 	})
 
-	t.Run("cached alias returns client", func(t *testing.T) {
-		config.G.S = map[string]config.Static{
-			"cached": {HostBase: "https://s3.example.com", AccessKey: "a", SecretKey: "s"},
+	t.Run("cached alias returns same client", func(t *testing.T) {
+		static := config.Static{HostBase: "https://s3.example.com", AccessKey: "a", SecretKey: "s"}
+		config.G.S = map[string]config.Static{"cached": static}
+		c1, _, err := ParsePathAndNewClient("cached:bucket")
+		if err != nil || c1 == nil {
+			t.Fatalf("first call err=%v client=%v", err, c1)
 		}
-		c1, _, _ := ParsePathAndNewClient("cached:bucket")
-		if c1 == nil {
-			t.Fatal("first call nil")
-		}
-		// 第二次应命中缓存 (即使清空 config 也仍返回)
-		config.G.S = nil
+		// 第二次应命中缓存并返回同一实例
 		c2, _, err := ParsePathAndNewClient("cached:bucket")
 		if err != nil {
 			t.Fatalf("second call err: %v", err)
 		}
-		if c2 == nil {
-			t.Error("cached call nil")
+		if c1 != c2 {
+			t.Error("expected cached client instance")
+		}
+	})
+
+	t.Run("alias config change rebuilds client", func(t *testing.T) {
+		static := config.Static{HostBase: "https://s3.example.com", AccessKey: "a", SecretKey: "s"}
+		config.G.S = map[string]config.Static{"mutable": static}
+		c1, _, err := ParsePathAndNewClient("mutable:bucket")
+		if err != nil || c1 == nil {
+			t.Fatalf("first call err=%v client=%v", err, c1)
+		}
+		changed := static
+		changed.AccessKey = "rotated"
+		config.G.S = map[string]config.Static{"mutable": changed}
+		c2, _, err := ParsePathAndNewClient("mutable:bucket")
+		if err != nil {
+			t.Fatalf("second call err: %v", err)
+		}
+		if c1 == c2 {
+			t.Error("expected a rebuilt client after config change")
 		}
 	})
 

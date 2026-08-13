@@ -2,6 +2,7 @@ package progress
 
 import (
 	"fmt"
+	"io"
 	"os"
 	"sync"
 	"sync/atomic"
@@ -25,7 +26,8 @@ const (
 
 type Tracker struct {
 	mu    sync.Mutex
-	width int // 终端宽度（缓存，避免每次渲染都调用 ioctl）
+	width int       // 终端宽度（缓存，避免每次渲染都调用 ioctl）
+	out   io.Writer // 输出目标（默认 os.Stdout），渲染帧/原始行/汇总行均写入此处
 
 	// 显示节奏控制（均在 mu 保护下）
 	lastRender     int64     // 上次渲染的 unix nano，用于节流
@@ -51,6 +53,7 @@ type Tracker struct {
 // New 创建一个新的进度条
 func New() *Tracker {
 	pt := &Tracker{
+		out:            os.Stdout,
 		style:          DefaultStyle(),
 		label:          "Uploading",
 		color:          DefaultColors(),
@@ -64,6 +67,18 @@ func New() *Tracker {
 		pt.quiet.Store(true)
 	}
 	return pt
+}
+
+// SetOutput 设置输出目标（默认 os.Stdout）。设置后渲染帧、quiet 模式的
+// 原始行与 Stop 的汇总行都写入 w；失败明细仍写 stderr。并发安全。
+// 传 nil 时回退为 os.Stdout。
+func (pt *Tracker) SetOutput(w io.Writer) {
+	if w == nil {
+		w = os.Stdout
+	}
+	pt.mu.Lock()
+	pt.out = w
+	pt.mu.Unlock()
 }
 
 // SetStyle 自定义进度条填充物
@@ -141,6 +156,7 @@ func (pt *Tracker) Stop() {
 	doneColor := pt.color
 	failedStrings := append([]string(nil), pt.failedStrings...)
 	f := pt.failed.Load()
+	out := pt.out
 	pt.mu.Unlock()
 
 	// 计算统计信息
@@ -165,19 +181,19 @@ func (pt *Tracker) Stop() {
 		summary += fmt.Sprintf(", %d failed", f)
 	}
 
-	// 如果设置了颜色输出
-	if doneColor != nil && doneColor.Done != "" {
-		summary = doneColor.Done + summary + ansiReset
+	// 统一颜色开关: quiet 或全局关色时输出纯文本
+	if doneColor != nil {
+		summary = pt.colorizeIf(doneColor.Done, summary)
 	}
 
 	// 换行打印统计信息
-	_, _ = fmt.Fprintln(os.Stdout, "\n "+summary)
+	_, _ = fmt.Fprintln(out, "\n "+summary)
 
-	// 打印失败任务列表
+	// 打印失败任务列表（失败明细固定写 stderr; 同样遵循统一颜色开关）
 	for _, s := range failedStrings {
 		str := fmt.Sprintf(" failed: %s", s)
-		if doneColor != nil && doneColor.Error != "" {
-			str = doneColor.Error + str + ansiReset
+		if doneColor != nil {
+			str = pt.colorizeIf(doneColor.Error, str)
 		}
 		_, _ = fmt.Fprintln(os.Stderr, str)
 	}

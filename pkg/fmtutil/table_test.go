@@ -124,6 +124,19 @@ func TestDisplayWidthStripsANSI(t *testing.T) {
 	}
 }
 
+func TestDisplayWidthExported(t *testing.T) {
+	// 导出版与内部 displayWidth 语义一致, 供 progress 等包复用
+	if got := DisplayWidth("中文"); got != 4 {
+		t.Errorf("DisplayWidth(中文) = %d, want 4", got)
+	}
+	if got := DisplayWidth("abc"); got != 3 {
+		t.Errorf("DisplayWidth(abc) = %d, want 3", got)
+	}
+	if got := DisplayWidth("\x1b[32mgreen\x1b[0m"); got != 5 {
+		t.Errorf("DisplayWidth with ANSI = %d, want 5", got)
+	}
+}
+
 func TestRenderToPlain(t *testing.T) {
 	tb := NewTable("A", "B")
 	tb.AddRow(CC("x", Green), C("y"))

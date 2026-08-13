@@ -8,6 +8,7 @@ import (
 	"fmt"
 
 	myprint "s3cli/pkg/fmtutil"
+	"s3cli/pkg/i18n"
 	s3iface "s3cli/pkg/s3iface"
 )
 
@@ -33,21 +34,21 @@ func (c *Action) MakeBuckets(opt MakeBucketOptions, bucket string) error {
 	}); err != nil {
 		var apiErr *s3iface.ErrorResponse
 		if opt.IgnoreExisting && errors.As(err, &apiErr) && (apiErr.Code == "BucketAlreadyOwnedByYou" || apiErr.Code == "BucketAlreadyExists") {
-			myprint.PrintfDim("Bucket %s already exists (ignored)\n", bucket)
+			myprint.PrintfDim(i18n.T("Bucket %s already exists (ignored)\n", "存储桶 %s 已存在（已忽略）\n"), bucket)
 			return nil
 		}
 		return err
 	}
-	myprint.PrintfBoldGreen("Bucket %s created for %s\n", bucket, c.Alias)
+	myprint.PrintfBoldGreen(i18n.T("Bucket %s created for %s\n", "已创建存储桶 %s（%s）\n"), bucket, c.Alias)
 
 	// 配置 CORS / Policy / Lifecycle / Versioning / Quota
 	var errs []error
 	step := func(name string, fn func() error) {
 		if err := fn(); err != nil {
-			myprint.PrintfBoldYellow("set %s: %v\n", name, err)
+			myprint.PrintfBoldYellow(i18n.T("set %s: %v\n", "设置 %s：%v\n"), name, err)
 			errs = append(errs, fmt.Errorf("set %s: %w", name, err))
 		} else {
-			myprint.PrintfBoldGreen("set %s: success\n", name)
+			myprint.PrintfBoldGreen(i18n.T("set %s: success\n", "设置 %s：成功\n"), name)
 		}
 	}
 

@@ -39,7 +39,6 @@ func LifecycleListCmd() *cobra.Command {
 	cmd.Flags().BoolVar(&opt.Expiry, "expiry", false, i18n.T("Display only expiration fields", "只显示过期相关字段"))
 	cmd.Flags().BoolVar(&opt.Transition, "transition", false, i18n.T("Display only transition fields", "只显示转换相关字段"))
 	cmd.Flags().BoolVar(&opt.JSON, "json", false, jsonOutputDesc())
-	cmd.ValidArgsFunction = AutoCompleteBucket
 	return cmd
 }
 
@@ -70,7 +69,6 @@ func LifecycleSetCmd() *cobra.Command {
 		}
 		return S3.SetLifecycleRule(opt, dst.Bucket)
 	})
-	cmd.ValidArgsFunction = AutoCompleteBucket
 	return cmd
 }
 
@@ -90,7 +88,6 @@ func LifecycleRemoveCmd() *cobra.Command {
 	cmd.Flags().StringVar(&opt.ID, "id", "", i18n.T("ID of the lifecycle rule to remove", "要删除的生命周期规则 ID"))
 	cmd.Flags().BoolVar(&opt.All, "all", false, i18n.T("Remove all lifecycle rules of the bucket (requires --force)", "删除存储桶的所有生命周期规则（需配合 --force）"))
 	cmd.Flags().BoolVar(&opt.Force, "force", false, i18n.T("Force removal (required with --all)", "强制删除（配合 --all 使用）"))
-	cmd.ValidArgsFunction = AutoCompleteBucket
 	return cmd
 }
 

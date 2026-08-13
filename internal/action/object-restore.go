@@ -4,9 +4,11 @@
 package action
 
 import (
+	"errors"
 	"fmt"
 
 	myprint "s3cli/pkg/fmtutil"
+	"s3cli/pkg/i18n"
 	"s3cli/pkg/s3iface"
 )
 
@@ -20,7 +22,7 @@ type RestoreOptions struct {
 // Restore 请求恢复归档对象.
 func (c *Action) Restore(opt RestoreOptions, bucket, key string) error {
 	if key == "" {
-		return fmt.Errorf("restore requires an object key, not a bare bucket")
+		return errors.New(i18n.T("restore requires an object key, not a bare bucket", "restore 需要指定对象 key，而非裸存储桶"))
 	}
 	if opt.Days <= 0 {
 		opt.Days = 1
@@ -38,6 +40,6 @@ func (c *Action) Restore(opt RestoreOptions, bucket, key string) error {
 	if tier == "" {
 		tier = "Standard"
 	}
-	myprint.PrintfBoldGreen("Restore initiated for %s (days=%d, tier=%s)\n", c.S3Path(bucket, key), opt.Days, tier)
+	myprint.PrintfBoldGreen(i18n.T("Restore initiated for %s (days=%d, tier=%s)\n", "已为 %s 发起恢复（天数=%d，层级=%s）\n"), c.S3Path(bucket, key), opt.Days, tier)
 	return nil
 }

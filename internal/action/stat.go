@@ -6,6 +6,7 @@ package action
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"sort"
@@ -13,6 +14,7 @@ import (
 	"time"
 
 	myprint "s3cli/pkg/fmtutil"
+	"s3cli/pkg/i18n"
 	"s3cli/pkg/s3iface"
 )
 
@@ -27,7 +29,7 @@ type StatOptions struct {
 func (c *Action) StatObjects(opt StatOptions, bucket, prefix string) error {
 	if opt.VersionID != "" {
 		if prefix == "" {
-			return fmt.Errorf("--version-id requires an object key")
+			return errors.New(i18n.T("--version-id requires an object key", "--version-id 需要指定对象 key"))
 		}
 		return c.statObject(bucket, prefix, opt.VersionID, opt)
 	}
@@ -44,7 +46,7 @@ func (c *Action) StatObjects(opt StatOptions, bucket, prefix string) error {
 		return fmt.Errorf("check s3 path: %s", FormatAPIError(err))
 	}
 	if !ok {
-		return fmt.Errorf("%s: not a file (use -r/--recursive to stat all objects under it)", c.S3Path(bucket, prefix))
+		return fmt.Errorf(i18n.T("%s: not a file (use -r/--recursive to stat all objects under it)", "%s：不是文件（使用 -r/--recursive 查看其下所有对象）"), c.S3Path(bucket, prefix))
 	}
 	return c.statObject(bucket, prefix, "", opt)
 }
@@ -69,7 +71,7 @@ func (c *Action) statRecursive(bucket, prefix string, opt StatOptions) error {
 		return err
 	}
 	if count == 0 {
-		myprint.PrintfBoldYellow("%s: no objects found\n", c.S3Path(bucket, prefix))
+		myprint.PrintfBoldYellow(i18n.T("%s: no objects found\n", "%s：未找到对象\n"), c.S3Path(bucket, prefix))
 	}
 	return nil
 }
@@ -94,13 +96,13 @@ func (c *Action) statObject(bucket, key, versionID string, opt StatOptions) erro
 		})
 	}
 
-	myprint.PrintfBoldBlue("%-10s: %s\n", "Name", pathBase(key))
-	myprint.Printf("%-10s: %s\n", "Date", head.LastModified.Local().Format("2006-01-02 15:04:05 MST"))
-	myprint.Printf("%-10s: %s\n", "Size", FormatBytes(head.ContentLength))
-	myprint.Printf("%-10s: %s\n", "ETag", head.ETag)
-	myprint.Printf("%-10s: %s\n", "Type", "file")
+	myprint.PrintfBoldBlue("%-10s: %s\n", i18n.T("Name", "名称"), pathBase(key))
+	myprint.Printf("%-10s: %s\n", i18n.T("Date", "日期"), head.LastModified.Local().Format("2006-01-02 15:04:05 MST"))
+	myprint.Printf("%-10s: %s\n", i18n.T("Size", "大小"), FormatBytes(head.ContentLength))
+	myprint.Printf("%-10s: %s\n", i18n.T("ETag", "ETag"), head.ETag)
+	myprint.Printf("%-10s: %s\n", i18n.T("Type", "类型"), i18n.T("file", "文件"))
 	if len(meta) > 0 {
-		myprint.Printf("%-10s:\n", "Metadata")
+		myprint.Printf("%-10s:\n", i18n.T("Metadata", "元数据"))
 		keys := make([]string, 0, len(meta))
 		for k := range meta {
 			keys = append(keys, k)
@@ -192,11 +194,14 @@ func (c *Action) statBucket(bucket string, opt StatOptions) error {
 
 	// 用量: 对象数/总大小 (递归列举), 版本数 (版本列举)
 	var totalSize, objCount, verCount int64
-	_ = c.forEachObject(c.Ctx, bucket, "", func(o s3iface.ObjectInfo) error {
+	// 列举失败 (如无 ListBucket 权限) 必须上报, 否则用量会静默显示为 0。
+	if err := c.forEachObject(c.Ctx, bucket, "", func(o s3iface.ObjectInfo) error {
 		totalSize += o.Size
 		objCount++
 		return nil
-	})
+	}); err != nil {
+		return err
+	}
 	verPager := c.S3.NewListObjectVersionsPaginator(bucket, &s3iface.ListObjectVersionsOptions{})
 	for verPager.HasMorePages() {
 		if page, err := verPager.NextPage(c.Ctx); err == nil {
@@ -224,25 +229,25 @@ func (c *Action) statBucket(bucket string, opt StatOptions) error {
 		})
 	}
 
-	myprint.PrintfBoldBlue("%-10s: %s\n", "Name", bucket)
+	myprint.PrintfBoldBlue("%-10s: %s\n", i18n.T("Name", "名称"), bucket)
 	dateStr := "N/A"
 	if !createdAt.IsZero() {
 		dateStr = createdAt.Local().Format("2006-01-02 15:04:05 MST")
 	}
-	myprint.Printf("%-10s: %s\n", "Date", dateStr)
-	myprint.Printf("%-10s: %s\n", "Size", "N/A")
-	myprint.Printf("%-10s: %s\n", "Type", "folder")
+	myprint.Printf("%-10s: %s\n", i18n.T("Date", "日期"), dateStr)
+	myprint.Printf("%-10s: %s\n", i18n.T("Size", "大小"), "N/A")
+	myprint.Printf("%-10s: %s\n", i18n.T("Type", "类型"), i18n.T("folder", "文件夹"))
 	myprint.Println("")
-	myprint.PrintfBoldBlue("Properties:\n")
-	myprint.Printf("  Versioning: %s\n", versioning)
-	myprint.Printf("  Location: %s\n", location)
-	myprint.Printf("  Anonymous: %s\n", anonymous)
-	myprint.Printf("  ILM: %s\n", ilm)
+	myprint.PrintfBoldBlue("%s", i18n.T("Properties:\n", "属性：\n"))
+	myprint.Printf(i18n.T("  Versioning: %s\n", "  版本控制：%s\n"), versioning)
+	myprint.Printf(i18n.T("  Location: %s\n", "  区域：%s\n"), location)
+	myprint.Printf(i18n.T("  Anonymous: %s\n", "  匿名访问：%s\n"), anonymous)
+	myprint.Printf(i18n.T("  ILM: %s\n", "  ILM：%s\n"), ilm)
 	myprint.Println("")
-	myprint.PrintfBoldBlue("Usage:\n")
-	myprint.Printf("      Total size: %s\n", FormatBytes(totalSize))
-	myprint.Printf("   Objects count: %d\n", objCount)
-	myprint.Printf("  Versions count: %d\n", verCount)
+	myprint.PrintfBoldBlue("%s", i18n.T("Usage:\n", "用量：\n"))
+	myprint.Printf(i18n.T("      Total size: %s\n", "      总大小：%s\n"), FormatBytes(totalSize))
+	myprint.Printf(i18n.T("   Objects count: %d\n", "   对象数：%d\n"), objCount)
+	myprint.Printf(i18n.T("  Versions count: %d\n", "  版本数：%d\n"), verCount)
 	return nil
 }
 

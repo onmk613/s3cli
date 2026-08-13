@@ -21,6 +21,16 @@ func SetWriter(w io.Writer) {
 	std.SetWriter(w)
 }
 
+// ColorEnabled 返回全局 std 当前是否启用颜色输出。
+// 依据 mode（auto/always/never）与输出目标是否为终端判断，
+// 与包内 Printf/Println 等输出函数的着色决策保持一致；
+// 内部加锁读取，并发安全。供其它包（如 pkg/progress）统一颜色开关。
+func ColorEnabled() bool {
+	std.mu.Lock()
+	defer std.mu.Unlock()
+	return !std.noColorLocked()
+}
+
 // ------- 默认(无色)输出函数 -------
 
 func Printf(format string, a ...any) {

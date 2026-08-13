@@ -7,7 +7,9 @@ import (
 	"strings"
 )
 
-// ParseBytes 解析固定格式字符串为字节数
+// ParseBytes 解析固定格式字符串为字节数。
+// 支持小数（如 "1.5GB"），结果四舍五入取整；整数输入行为与之前一致。
+// 数值 * 倍数超出 int64 范围时返回明确错误。
 func ParseBytes(s string) (int64, error) {
 	s = strings.TrimSpace(s)
 	if s == "" {
@@ -37,14 +39,23 @@ func ParseBytes(s string) (int64, error) {
 	}
 
 	upper = strings.TrimSpace(upper)
-	val, err := strconv.ParseInt(upper, 10, 64)
+	// 用 ParseFloat 以支持小数; 整数输入（如 "1024"）解析结果不变
+	val, err := strconv.ParseFloat(upper, 64)
 	if err != nil {
 		return 0, fmt.Errorf("invalid size %q: %w", s, err)
 	}
 	if val < 0 {
 		return 0, fmt.Errorf("invalid size %q: must be non-negative", s)
 	}
-	return val * m, nil
+
+	// val*倍数 可能溢出 int64: 先用 float64 计算再检查范围。
+	// 注意 float64(math.MaxInt64) 会进位到 2^63, 因此以 2^63 为界
+	// （2^63 在 float64 中精确表示; 任何 >= 2^63 的结果都超出 int64）。
+	result := val * float64(m)
+	if math.IsNaN(result) || result >= float64(1<<63) || result < 0 {
+		return 0, fmt.Errorf("invalid size %q: value out of range", s)
+	}
+	return int64(math.Round(result)), nil
 }
 
 // FormatBytes 格式化字节数

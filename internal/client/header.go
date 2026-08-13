@@ -3,17 +3,23 @@ package client
 import (
 	"fmt"
 	"net/http"
+	"strconv"
 	"strings"
 )
 
 // headerTransport 在请求发出前注入自定义 HTTP header。
+// Host 与 Content-Length 是 http.Request 的结构字段, 写在 Header map 里会被
+// http.Client 忽略 (静默无效); 这里单独处理, 保证用户意图真正生效。
 type headerTransport struct {
-	base    http.RoundTripper
-	headers http.Header
+	base          http.RoundTripper
+	headers       http.Header
+	host          string
+	contentLength int64
+	hasContentLen bool
 }
 
 func newHeaderTransport(base http.RoundTripper, items []string) (http.RoundTripper, error) {
-	headers := http.Header{}
+	t := &headerTransport{base: base, headers: http.Header{}}
 	for _, raw := range items {
 		ci := strings.IndexByte(raw, ':')
 		ei := strings.IndexByte(raw, '=')
@@ -35,9 +41,21 @@ func newHeaderTransport(base http.RoundTripper, items []string) (http.RoundTripp
 		if key == "" {
 			return base, fmt.Errorf("invalid header %q, key is empty", raw)
 		}
-		headers.Add(key, val)
+		switch http.CanonicalHeaderKey(key) {
+		case "Host":
+			t.host = val
+		case "Content-Length":
+			n, err := strconv.ParseInt(val, 10, 64)
+			if err != nil || n < 0 {
+				return base, fmt.Errorf("invalid header %q: Content-Length must be a non-negative integer", raw)
+			}
+			t.contentLength = n
+			t.hasContentLen = true
+		default:
+			t.headers.Add(key, val)
+		}
 	}
-	return &headerTransport{base: base, headers: headers}, nil
+	return t, nil
 }
 
 func (t *headerTransport) RoundTrip(req *http.Request) (*http.Response, error) {
@@ -48,6 +66,12 @@ func (t *headerTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 		for _, v := range vs {
 			clone.Header.Add(k, v)
 		}
+	}
+	if t.host != "" {
+		clone.Host = t.host
+	}
+	if t.hasContentLen {
+		clone.ContentLength = t.contentLength
 	}
 	return t.base.RoundTrip(clone)
 }

@@ -86,10 +86,20 @@ func (c *Client) PresignedURL(ctx context.Context, bucket, key string, opts *Pre
 	amzDate := t.Format(iso8601Format)
 	scopeDate := t.Format(yyyymmddFormat)
 
+	// 签名 region: 优先使用 bucket 的缓存 region (来自此前的 region 重定向或
+	// GetBucketLocation 探测), 与 Do 的签名逻辑保持一致; 未命中时用配置 region。
+	// 否则 bucket 实际 region 与配置不同时, 生成的预签名 URL 会 403。
+	signingRegion := c.region
+	if bucket != "" {
+		if v, ok := c.bucketLocCache.Get(bucket); ok {
+			signingRegion = v
+		}
+	}
+
 	// 设置签名所需的 query 参数
 	q := targetURL.Query()
 	q.Set("X-Amz-Algorithm", signV4Algorithm)
-	q.Set("X-Amz-Credential", c.accessKey+"/"+scopeDate+"/"+c.region+"/"+serviceS3+"/"+"aws4_request")
+	q.Set("X-Amz-Credential", c.accessKey+"/"+scopeDate+"/"+signingRegion+"/"+serviceS3+"/"+"aws4_request")
 	q.Set("X-Amz-Date", amzDate)
 	if c.sessionToken != "" {
 		q.Set("X-Amz-Security-Token", c.sessionToken)
@@ -108,7 +118,7 @@ func (c *Client) PresignedURL(ctx context.Context, bucket, key string, opts *Pre
 	// 第二遍构建才是用于签名的 canonical request (query 签名方式, payload = "UNSIGNED-PAYLOAD")
 	canonicalRequest, _ := buildCanonicalRequest(req, unsignedPayload)
 
-	scope := strings.Join([]string{scopeDate, c.region, serviceS3, "aws4_request"}, "/")
+	scope := strings.Join([]string{scopeDate, signingRegion, serviceS3, "aws4_request"}, "/")
 	stringToSign := strings.Join([]string{
 		signV4Algorithm,
 		amzDate,
@@ -116,7 +126,7 @@ func (c *Client) PresignedURL(ctx context.Context, bucket, key string, opts *Pre
 		sumSHA256Hex([]byte(canonicalRequest)),
 	}, "\n")
 
-	signingKey := deriveSigningKey(c.secretKey, scopeDate, c.region)
+	signingKey := deriveSigningKey(c.secretKey, scopeDate, signingRegion)
 	signature := hexHMAC(signingKey, stringToSign)
 
 	// 仅 X-Amz-Signature 在签名后追加

@@ -82,3 +82,33 @@ func TestPackageLevelPrintFunctionsNoPanic(t *testing.T) {
 	PrintfBoldCyan("cyan")
 	PrintfDim("dim")
 }
+
+func TestColorEnabled(t *testing.T) {
+	// 保存并恢复全局 std 状态, 避免影响其它用例
+	std.mu.Lock()
+	oldOut, oldMode, oldTerm := std.out, std.mode, std.outIsTerminal
+	std.mu.Unlock()
+	defer func() {
+		std.mu.Lock()
+		std.out, std.mode, std.outIsTerminal = oldOut, oldMode, oldTerm
+		std.mu.Unlock()
+	}()
+
+	var buf bytes.Buffer // 非 *os.File -> 非终端
+	SetWriter(&buf)
+
+	SetColor(false) // 强制关色
+	if ColorEnabled() {
+		t.Error("SetColor(false) should disable color")
+	}
+
+	SetColor(true) // 强制开色
+	if !ColorEnabled() {
+		t.Error("SetColor(true) should enable color")
+	}
+
+	SetColorAuto() // auto + 非终端 -> 自动关色
+	if ColorEnabled() {
+		t.Error("auto + non-terminal should disable color")
+	}
+}

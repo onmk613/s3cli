@@ -4,11 +4,12 @@
 package action
 
 import (
-	"fmt"
+	"errors"
 	"sort"
 	"strings"
 
 	myprint "s3cli/pkg/fmtutil"
+	"s3cli/pkg/i18n"
 	"s3cli/pkg/s3iface"
 )
 
@@ -22,7 +23,7 @@ type TreeOptions struct {
 
 func (c *Action) TreeObjects(opt TreeOptions, bucket, prefix string) error {
 	if bucket == "" {
-		return fmt.Errorf("tree requires a bucket")
+		return errors.New(i18n.T("tree requires a bucket", "tree 需要指定存储桶"))
 	}
 
 	root := &treeNode{name: "", children: map[string]*treeNode{}}
@@ -59,9 +60,9 @@ func (c *Action) TreeObjects(opt TreeOptions, bucket, prefix string) error {
 	myprint.Println(header)
 	root.print("", opt, 1, &fileCount, &dirCount, &totalSize)
 
-	myprint.Printf("\n%d directories, %d files (", dirCount, fileCount)
+	myprint.Printf(i18n.T("\n%d directories, %d files (", "\n%d 个目录，%d 个文件（"), dirCount, fileCount)
 	myprint.PrintfCyan("%s", FormatBytes(totalSize))
-	myprint.Printf(")\n")
+	myprint.Print(i18n.T(")\n", "）\n"))
 	return nil
 }
 

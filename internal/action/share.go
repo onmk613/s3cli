@@ -8,6 +8,7 @@ import (
 	"time"
 
 	myprint "s3cli/pkg/fmtutil"
+	"s3cli/pkg/i18n"
 	"s3cli/pkg/s3iface"
 )
 
@@ -28,11 +29,11 @@ func (c *Action) Share(opt ShareOptions, bucket, key string) error {
 	// 统一校验过期时间: v4 对 <=0 会静默取 15 分钟、v2 直接报错,
 	// 在入口处拒绝, 保证同一 flag 两种签名行为一致。
 	if opt.ExpireSeconds <= 0 {
-		return fmt.Errorf("--expire must be positive seconds, got %d", opt.ExpireSeconds)
+		return fmt.Errorf(i18n.T("--expire must be positive seconds, got %d", "--expire 必须为正的秒数，当前为 %d"), opt.ExpireSeconds)
 	}
 	// v4 预签名最长 7 天; 提前在这里报错, 而不是生成到一半才失败。
 	if !opt.SignV2 && opt.ExpireSeconds > 604800 {
-		return fmt.Errorf("--expire %ds exceeds v4 signature maximum of 7 days (604800s)", opt.ExpireSeconds)
+		return fmt.Errorf(i18n.T("--expire %ds exceeds v4 signature maximum of 7 days (604800s)", "--expire %ds 超过 v4 签名的 7 天（604800s）上限"), opt.ExpireSeconds)
 	}
 
 	if method == "GET" || method == "HEAD" {
@@ -41,7 +42,7 @@ func (c *Action) Share(opt ShareOptions, bucket, key string) error {
 			return fmt.Errorf("check s3 path: %s", FormatAPIError(err))
 		}
 		if !ok {
-			return fmt.Errorf("%s: not a file", c.S3Path(bucket, key))
+			return fmt.Errorf(i18n.T("%s: not a file", "%s：不是文件"), c.S3Path(bucket, key))
 		}
 	}
 

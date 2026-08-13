@@ -29,6 +29,9 @@ const (
 	BucketLookupCustom = "custom"
 	BucketPlaceholder  = "%(bucket)"
 	RegionPlaceholder  = "%(region)"
+
+	// DefaultTLSMinVersion 是别名 TLS 最低版本的默认值 (与 Go 默认一致)。
+	DefaultTLSMinVersion = "1.2"
 )
 
 // G 是进程级运行时配置：别名表 + CLI 全局开关。
@@ -71,6 +74,10 @@ type Static struct {
 	DefaultMimeType      string `toml:"default_mime_type"`
 	MultipartChunkSizeMb int    `toml:"multipart_chunk_size_mb"`
 	MaxRetries           int    `toml:"max_retries"`
+
+	// TLS 最低版本: 1.0 / 1.1 / 1.2 / 1.3, 缺省 1.2。
+	// 老式自建 S3 端点可能只支持 1.0/1.1, 可显式放宽 (no_verify_ssl 不降低协议版本)。
+	TLSMinVersion string `toml:"tls_min_version"`
 }
 
 // ResolveBucketLookup 解析 bucket_lookup 配置，返回模式和模板。

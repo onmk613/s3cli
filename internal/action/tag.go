@@ -17,7 +17,7 @@ func (c *Action) SetTag(bucket, prefix string, tagStr map[string]string) error {
 		if err := c.S3.SetBucketTagging(c.Ctx, bucket, tags); err != nil {
 			return fmt.Errorf("set bucket tag: %s", FormatAPIError(err))
 		}
-		myprint.PrintfBoldGreen("Tag set for %s (%d tags)\n", c.S3Path(bucket, prefix), len(tags))
+		myprint.PrintfBoldGreen(i18n.T("Tag set for %s (%d tags)\n", "已为 %s 设置标签（%d 个）\n"), c.S3Path(bucket, prefix), len(tags))
 		return nil
 	}
 
@@ -25,7 +25,7 @@ func (c *Action) SetTag(bucket, prefix string, tagStr map[string]string) error {
 		return fmt.Errorf("set object tag: %s", FormatAPIError(err))
 	}
 
-	myprint.PrintfBoldGreen("Tag set for %s (%d tags)\n", c.S3Path(bucket, prefix), len(tags))
+	myprint.PrintfBoldGreen(i18n.T("Tag set for %s (%d tags)\n", "已为 %s 设置标签（%d 个）\n"), c.S3Path(bucket, prefix), len(tags))
 	return nil
 }
 
@@ -61,11 +61,11 @@ func (c *Action) GetTag(opt TagOptions, bucket, prefix string) error {
 		})
 	}
 	if len(tags) == 0 {
-		myprint.PrintfCyan("# %s: no tags\n", c.S3Path(bucket, prefix))
+		myprint.PrintfCyan(i18n.T("# %s: no tags\n", "# %s：无标签\n"), c.S3Path(bucket, prefix))
 		return nil
 	}
 
-	myprint.PrintfBoldBlue("# %s tags:\n", c.S3Path(bucket, prefix))
+	myprint.PrintfBoldBlue(i18n.T("# %s tags:\n", "# %s 标签：\n"), c.S3Path(bucket, prefix))
 	tbl := myprint.NewTable(i18n.T("Key", "键"), i18n.T("Value", "值"))
 	for _, t := range tags {
 		tbl.AddRow(
@@ -89,7 +89,7 @@ func (c *Action) DelTag(bucket, prefix string) error {
 		}
 	}
 
-	myprint.PrintfBoldGreen("Tags deleted for %s\n", c.S3Path(bucket, prefix))
+	myprint.PrintfBoldGreen(i18n.T("Tags deleted for %s\n", "已删除 %s 的标签\n"), c.S3Path(bucket, prefix))
 	return nil
 }
 

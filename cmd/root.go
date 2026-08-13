@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
+	"s3cli/internal/action"
 	"s3cli/internal/config"
 	myprint "s3cli/pkg/fmtutil"
 	"s3cli/pkg/i18n"
@@ -124,6 +125,10 @@ func resolveLangPref(args []string) string {
 
 // NewRootCmd 创建根命令并执行，注册所有子命令
 func NewRootCmd() {
+	// langFlag 接收 --lang 标志值；语言已在命令构建前解析生效，
+	// 该变量仅用于让标志出现在帮助中并参与环境变量绑定。
+	var langFlag string
+
 	// 语言必须在命令构建之前确定，帮助/描述文案在构造时即被渲染。
 	langPref := resolveLangPref(os.Args)
 	i18n.Resolve(langPref)
@@ -194,14 +199,20 @@ func NewRootCmd() {
 
 	err := rootCmd.Execute()
 	if err != nil {
+		// 语义化退出码: exitCodeForError 按错误类型还原 130(取消)/4(不存在)/
+		// 5(无权限)/6(diff 差异)/1(兜底)。此前恒 os.Exit(1), 定义成了死代码。
+		if action.IsCanceled(err) {
+			// 用户主动取消 (Ctrl+C): 不打印错误, 128+SIGINT 退出
+			os.Exit(exitCanceled)
+		}
+		if action.IsDifferErr(err) {
+			// diff 发现差异: 不是错误, 不打印, 用退出码 6 告知脚本
+			os.Exit(exitDiffer)
+		}
 		// errAlreadyDisplayed 表示错误已在 RunE 内部输出给用户，不再重复打印。
 		if !errors.Is(err, errAlreadyDisplayed) {
 			myprint.PrintlnBoldRed(err.Error())
 		}
-		os.Exit(1)
+		os.Exit(exitCodeForError(err))
 	}
 }
-
-// langFlag 接收 --lang 标志值；语言已在命令构建前解析生效，
-// 该变量仅用于让标志出现在帮助中并参与环境变量绑定。
-var langFlag string

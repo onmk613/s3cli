@@ -5,6 +5,8 @@ import (
 	"math"
 	"strings"
 	"time"
+
+	"s3cli/pkg/fmtutil"
 )
 
 // buildBar 构建进度条字符串
@@ -91,9 +93,9 @@ func (pt *Tracker) buildBar(wd int) string {
 	// 6. 宽度极窄时的安全降级
 	if barArea < 5 {
 		if labelWidth > 0 && wd >= labelWidth+rightWidth+marginWidth+1 {
-			return colorize(pt.color.Stats, fmt.Sprintf(" %s %s ", pt.label, rightStr))
+			return pt.colorizeIf(pt.color.Stats, fmt.Sprintf(" %s %s ", pt.label, rightStr))
 		}
-		return colorize(pt.color.Stats, fmt.Sprintf(" %s ", rightStr))
+		return pt.colorizeIf(pt.color.Stats, fmt.Sprintf(" %s ", rightStr))
 	}
 
 	// 7. 生成进度条主体
@@ -115,7 +117,7 @@ func (pt *Tracker) buildBar(wd int) string {
 
 	sb.WriteString(" ") // 2. 右侧留空 1 格
 
-	return colorize(pt.color.Stats, sb.String())
+	return pt.colorizeIf(pt.color.Stats, sb.String())
 }
 
 // buildStyledBar 按给定样式绘制进度条主体（含边框与着色）。
@@ -182,6 +184,17 @@ func colorize(color, s string) string {
 	return color + s + ansiReset
 }
 
+// colorizeIf 按统一颜色开关决定是否给文本着色：
+// 仅当 !quiet 且全局 fmtutil.ColorEnabled() 时包裹 ANSI 颜色码，
+// 其余情况（quiet 模式 / 全局 --no-color / 非终端）原样返回纯文本。
+// 所有进度条着色调用点（渲染帧、quiet 原始行、Stop 汇总与失败明细）均应走此方法。
+func (pt *Tracker) colorizeIf(color, s string) string {
+	if color == "" || pt.quiet.Load() || !fmtutil.ColorEnabled() {
+		return s
+	}
+	return color + s + ansiReset
+}
+
 // formatDuration 将 time.Duration 格式化为易读字符串
 // 示例：1h2m3s / 2m3s / 3s
 func formatDuration(d time.Duration) string {
@@ -203,38 +216,13 @@ func formatDuration(d time.Duration) string {
 	return fmt.Sprintf("%ds", seconds)
 }
 
-// stringWidth 计算字符串在终端中的实际显示列宽（去除 ANSI 序列并处理多字节字符）
+// stringWidth 计算字符串在终端中的实际显示列宽。
+// 复用 fmtutil.DisplayWidth：内部先剥离 ANSI 转义序列，再按
+// Unicode East Asian Width 计算（CJK 全角/宽字符记 2 列），
+// 避免直接 len() 把 UTF-8 字节数当成列数（如中文 3 字节却只占 2 列）。
+// barArea = 终端宽 - 各组件显示列宽, 因此宽度口径必须与实际渲染一致。
 func stringWidth(s string) int {
-	// 快速路径：不含 ANSI 转义符时无需分配，直接返回字节长度
-	// （label / rightStr 通常为纯 ASCII/UTF-8 文本，占位即字节数对应的列数）
-	if !strings.ContainsRune(s, '\x1b') {
-		return len(s)
-	}
-	// 如果字符串包含 ANSI 颜色代码，需要先去除 ANSI 代码再计算宽度
-	cleanStr := stripANSI(s)
-	// 如果含有中文等 East Asian 字符，可以使用 runewidth.StringWidth(cleanStr)
-	// 若全是 ASCII 字母/数字/符号，直接用 len(cleanStr) 即可
-	return len(cleanStr)
-}
-
-// stripANSI 简单的 ANSI 转义序列剥离函数
-func stripANSI(str string) string {
-	var b strings.Builder
-	inSequence := false
-	for _, r := range str {
-		if r == '\x1b' {
-			inSequence = true
-			continue
-		}
-		if inSequence {
-			if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') {
-				inSequence = false
-			}
-			continue
-		}
-		b.WriteRune(r)
-	}
-	return b.String()
+	return fmtutil.DisplayWidth(s)
 }
 
 func formatBytes(bytes int64) string {

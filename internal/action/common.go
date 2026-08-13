@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"s3cli/internal/s3path"
+	"s3cli/pkg/i18n"
 	"s3cli/pkg/s3iface"
 	"strings"
 )
@@ -62,7 +63,7 @@ func (c *Action) IsS3File(bucket, key string) (bool, error) {
 			// 对象不存在：可能是目录前缀，继续探测。
 			return c.checkIfDirectory(bucket, key)
 		case "AccessDenied", "Forbidden", "403":
-			return false, fmt.Errorf("access denied to bucket '%s'", bucket)
+			return false, fmt.Errorf(i18n.T("access denied to bucket '%s'", "拒绝访问存储桶 '%s'"), bucket)
 		}
 	}
 	return false, fmt.Errorf("s3 error: %w", err)
@@ -89,10 +90,19 @@ func (c *Action) objectExists(ctx context.Context, bucket, key string) (bool, er
 
 // checkIfDirectory 在 HeadObject 返回 404 后判断 key 是否为目录前缀。
 // 返回 (false, nil) 表示是目录前缀（非文件），(false, err) 表示路径不存在。
+//
+// 目录判定只接受 "key + /" 开头的前缀探测:
+//   - key 先去掉尾部 "/", 避免 key="dir/" 时拼出 "dir//" 的错误前缀
+//     (与 DestStateOf 的 probe 处理一致);
+//   - 曾有一层"裸 key 前缀"兜底 (Prefix=key, MaxKeys=1), 会把同名的
+//     其他对象误判为目录 —— 例如 key="report" 而实际只存在 "report-2023.pdf"
+//     时, 裸前缀探测命中 "report-2023.pdf", 于是把不存在的 "report" 当成目录。
+//     该兜底与 key+"/" 探测等价 (命中裸前缀的 key 若不匹配 "key/..." 则既非
+//     目录也非 key 本身), 因此整体移除, 只保留 key+"/" 探测。
 func (c *Action) checkIfDirectory(bucket, key string) (bool, error) {
-	// 1) 先按标准目录探测：prefix = key + "/"。
+	probe := strings.TrimSuffix(key, "/")
 	listResp, err := c.S3.ListObjectsV2(c.Ctx, bucket, &s3iface.ListObjectsV2Options{
-		Prefix:    key + "/",
+		Prefix:    probe + "/",
 		Delimiter: "/",
 		MaxKeys:   1,
 	})
@@ -102,20 +112,7 @@ func (c *Action) checkIfDirectory(bucket, key string) (bool, error) {
 	if len(listResp.CommonPrefixes) > 0 || len(listResp.Contents) > 0 {
 		return false, nil
 	}
-
-	// 2) 兜底：用裸 key 作为前缀探测（覆盖无尾斜杠的伪目录前缀，
-	//    例如 key="dir/name" 实际匹配 "dir/name/..." 或 "dir/name-xxx"）。
-	listResp2, err := c.S3.ListObjectsV2(c.Ctx, bucket, &s3iface.ListObjectsV2Options{
-		Prefix:  key,
-		MaxKeys: 1,
-	})
-	if err != nil {
-		return false, err
-	}
-	if len(listResp2.Contents) > 0 {
-		return false, nil
-	}
-	return false, fmt.Errorf("path '%s' does not exist in bucket '%s'", key, bucket)
+	return false, fmt.Errorf(i18n.T("path '%s' does not exist in bucket '%s'", "路径 '%s' 在存储桶 '%s' 中不存在"), key, bucket)
 }
 
 // DestStateOf 判断目标 key 当前的状态：文件 / 目录 / 不存在。
@@ -141,7 +138,7 @@ func (c *Action) DestStateOf(bucket, key string) (s3path.DestState, error) {
 		case "NoSuchKey", "NotFound", "404":
 			// 继续探测目录
 		case "AccessDenied", "Forbidden", "403":
-			return s3path.DestNone, fmt.Errorf("access denied to bucket '%s'", bucket)
+			return s3path.DestNone, fmt.Errorf(i18n.T("access denied to bucket '%s'", "拒绝访问存储桶 '%s'"), bucket)
 		default:
 			return s3path.DestNone, fmt.Errorf("s3 error: %w", err)
 		}

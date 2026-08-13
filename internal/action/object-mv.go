@@ -5,12 +5,14 @@ package action
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"path"
 	"s3cli/internal/s3path"
 	"strings"
 
 	myprint "s3cli/pkg/fmtutil"
+	"s3cli/pkg/i18n"
 	"s3cli/pkg/s3iface"
 )
 
@@ -25,7 +27,7 @@ func (c *Action) Mv(opt CopyOptions, srcBucket, srcKey, destBucket, destKey stri
 		return fmt.Errorf("check source: %s", FormatAPIError(err))
 	}
 	if !srcIsFile && !opt.Recursive {
-		return fmt.Errorf("source is a directory; use -r/--recursive")
+		return errors.New(i18n.T("source is a directory; use -r/--recursive", "源是目录；请使用 -r/--recursive"))
 	}
 
 	// 单文件源：规则 5/6
@@ -34,7 +36,7 @@ func (c *Action) Mv(opt CopyOptions, srcBucket, srcKey, destBucket, destKey stri
 		if err := c.mvObject(opt, srcBucket, srcKey, destBucket, dst); err != nil {
 			return err
 		}
-		myprint.PrintfGreen("mv: %s -> %s\n", c.S3Path(srcBucket, srcKey), c.S3Path(destBucket, dst))
+		myprint.PrintfGreen(i18n.T("mv: %s -> %s\n", "移动：%s -> %s\n"), c.S3Path(srcBucket, srcKey), c.S3Path(destBucket, dst))
 		return nil
 	}
 
@@ -67,10 +69,16 @@ func (c *Action) mvDirStreaming(opt CopyOptions, srcBucket, srcKey, destBucket, 
 		Label:       "mv",
 		NoProgress:  opt.NoProgress,
 		Count: func(ctx context.Context, add func(n, size int64)) error {
-			return c.countS3Prefix(ctx, srcBucket, srcKey, false, add)
+			// 预统计同样跳过目录占位对象, 与 Scan/Count 的计数口径一致。
+			return c.countS3Prefix(ctx, srcBucket, srcKey, true, add)
 		},
 		Scan: func(ctx context.Context, jobs chan<- StreamJob) error {
 			return c.forEachObject(ctx, srcBucket, srcKey, func(obj s3iface.ObjectInfo) error {
+				// 跳过 0 字节的目录占位对象 ("dir/" 形态), 与 get 的扫描一致:
+				// 这类对象没有内容可移动, 复制过去只会留下无意义的目录标记。
+				if strings.HasSuffix(obj.Key, "/") && obj.Size == 0 {
+					return nil
+				}
 				dst := buildDestKey(obj.Key, srcKey, destPrefix, appendRel)
 				jobs <- StreamJob{
 					Src:  obj.Key,

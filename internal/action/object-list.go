@@ -227,7 +227,7 @@ func (c *Action) listObjectsV2(bucket, prefix string, opt ListOptions) error {
 			}
 			return nil
 		}
-		myprint.PrintfBoldBlue("[%s] %d object(s), %s\n", c.S3Path(bucket, prefix), count, FormatBytes(totalSize))
+		myprint.PrintfBoldBlue(i18n.T("[%s] %d object(s), %s\n", "[%s] %d 个对象，%s\n"), c.S3Path(bucket, prefix), count, FormatBytes(totalSize))
 	}
 	return nil
 }
@@ -321,7 +321,7 @@ func (c *Action) listObjectVersionsAsLs(bucket, prefix string, opt ListOptions) 
 			}
 			return nil
 		}
-		myprint.PrintfBoldBlue("[%s] %d version(s), %s\n", c.S3Path(bucket, prefix), count, FormatBytes(totalSize))
+		myprint.PrintfBoldBlue(i18n.T("[%s] %d version(s), %s\n", "[%s] %d 个版本，%s\n"), c.S3Path(bucket, prefix), count, FormatBytes(totalSize))
 	}
 	return nil
 }
@@ -366,7 +366,7 @@ func (c *Action) listIncompleteUploads(bucket, prefix string, opt ListOptions) e
 		if opt.JSON {
 			return nil
 		}
-		myprint.PrintfBoldYellow("%s: no in-progress multipart uploads\n", c.S3Path(bucket, prefix))
+		myprint.PrintfBoldYellow(i18n.T("%s: no in-progress multipart uploads\n", "%s：没有进行中的分段上传\n"), c.S3Path(bucket, prefix))
 		return nil
 	}
 	if !opt.JSON {
@@ -383,7 +383,7 @@ func (c *Action) listIncompleteUploads(bucket, prefix string, opt ListOptions) e
 			}
 			return nil
 		}
-		myprint.PrintfBoldBlue("[%s] %d in-progress upload(s)\n", c.S3Path(bucket, prefix), count)
+		myprint.PrintfBoldBlue(i18n.T("[%s] %d in-progress upload(s)\n", "[%s] %d 个进行中的上传\n"), c.S3Path(bucket, prefix), count)
 	}
 	return nil
 }

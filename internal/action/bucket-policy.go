@@ -21,6 +21,7 @@ import (
 	"strings"
 
 	myprint "s3cli/pkg/fmtutil"
+	"s3cli/pkg/i18n"
 	"s3cli/pkg/s3iface"
 )
 
@@ -42,7 +43,7 @@ func (c *Action) SetPolicy(opt PolicyOptions, bucket string) error {
 		return c.setPolicyFromFile(opt.ConfigFile, bucket)
 	}
 	if opt.Permission == "" {
-		return fmt.Errorf("policy set: either --type TYPE or --from-file FILE is required")
+		return errors.New(i18n.T("policy set: either --type TYPE or --from-file FILE is required", "设置策略：必须指定 --type TYPE 或 --from-file FILE"))
 	}
 	return c.applyCannedPolicy(opt.Permission, bucket, opt.Prefix)
 }
@@ -60,7 +61,7 @@ func (c *Action) setPolicyFromFile(policyFile, bucket string) error {
 		return FormatAPIError(err)
 	}
 
-	myprint.PrintfBoldGreen("Policy set for %s\n", c.S3Path(bucket, ""))
+	myprint.PrintfBoldGreen(i18n.T("Policy set for %s\n", "已为 %s 设置策略\n"), c.S3Path(bucket, ""))
 	return nil
 }
 
@@ -77,8 +78,8 @@ func (c *Action) GetPolicy(opt GetPolicyOptions, bucket string) error {
 		// 无策略等价于 private, 默认输出直接展示类型; --json 无原始 JSON 可输出, 保持报错.
 		var apiErr *s3iface.ErrorResponse
 		if !opt.JSON && errors.As(err, &apiErr) && apiErr.Code == "NoSuchBucketPolicy" {
-			myprint.PrintfBoldBlue("# %s policy:\n", c.S3Path(bucket, ""))
-			myprint.PrintlnGreen("type: private")
+			myprint.PrintfBoldBlue(i18n.T("# %s policy:\n", "# %s 策略：\n"), c.S3Path(bucket, ""))
+			myprint.PrintlnGreen(i18n.T("type: private", "类型：private"))
 			return nil
 		}
 		return FormatAPIError(err)
@@ -97,8 +98,8 @@ func (c *Action) GetPolicy(opt GetPolicyOptions, bucket string) error {
 	if err != nil {
 		return err
 	}
-	myprint.PrintfBoldBlue("# %s policy:\n", c.S3Path(bucket, ""))
-	myprint.PrintfGreen("type: %s\n", typ)
+	myprint.PrintfBoldBlue(i18n.T("# %s policy:\n", "# %s 策略：\n"), c.S3Path(bucket, ""))
+	myprint.PrintfGreen(i18n.T("type: %s\n", "类型：%s\n"), typ)
 	return nil
 }
 
@@ -108,7 +109,7 @@ func (c *Action) DelPolicy(bucket string) error {
 		return FormatAPIError(err)
 	}
 
-	myprint.PrintfBoldGreen("Policy deleted for %s: success\n", c.S3Path(bucket, ""))
+	myprint.PrintfBoldGreen(i18n.T("Policy deleted for %s: success\n", "已删除 %s 的策略：成功\n"), c.S3Path(bucket, ""))
 	return nil
 }
 
@@ -128,7 +129,7 @@ func normalizePermission(name string) (string, error) {
 	case "public", "public-read-write":
 		return "public", nil
 	}
-	return "", fmt.Errorf("unknown permission %q: allowed values are [private, download, upload, public]", name)
+	return "", fmt.Errorf(i18n.T("unknown permission %q: allowed values are [private, download, upload, public]", "未知权限 %q：允许的值有 [private, download, upload, public]"), name)
 }
 
 // anonStatement / anonPolicy 描述匿名访问策略的 JSON 结构.
@@ -224,7 +225,7 @@ func buildAnonymousPolicy(perm, bucket, prefix string) ([]byte, error) {
 	case "public":
 		stmts = []anonStatement{common, readBucket, rwObj}
 	default:
-		return nil, fmt.Errorf("unknown permission %q", perm)
+		return nil, fmt.Errorf(i18n.T("unknown permission %q", "未知权限 %q"), perm)
 	}
 
 	return json.Marshal(anonPolicy{Version: "2012-10-17", Statements: stmts})
@@ -246,7 +247,7 @@ func (c *Action) applyCannedPolicy(name, bucket, prefix string) error {
 				return FormatAPIError(err)
 			}
 		}
-		myprint.PrintfBoldGreen("Policy removed (private) for %s\n", c.S3Path(bucket, ""))
+		myprint.PrintfBoldGreen(i18n.T("Policy removed (private) for %s\n", "已移除 %s 的策略（private）\n"), c.S3Path(bucket, ""))
 		return nil
 	}
 
@@ -257,11 +258,11 @@ func (c *Action) applyCannedPolicy(name, bucket, prefix string) error {
 	if err := c.S3.SetBucketPolicy(c.Ctx, bucket, data); err != nil {
 		return FormatAPIError(err)
 	}
-	scope := "whole bucket"
+	scope := i18n.T("whole bucket", "整个存储桶")
 	if prefix != "" {
-		scope = "prefix " + prefix
+		scope = fmt.Sprintf(i18n.T("prefix %s", "前缀 %s"), prefix)
 	}
-	myprint.PrintfBoldGreen("Policy %s set for %s (%s)\n", perm, c.S3Path(bucket, ""), scope)
+	myprint.PrintfBoldGreen(i18n.T("Policy %s set for %s (%s)\n", "策略 %s 已设置于 %s（%s）\n"), perm, c.S3Path(bucket, ""), scope)
 	return nil
 }
 

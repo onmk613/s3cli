@@ -4,10 +4,12 @@
 package action
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 
 	myprint "s3cli/pkg/fmtutil"
+	"s3cli/pkg/i18n"
 	"s3cli/pkg/s3iface"
 )
 
@@ -42,7 +44,7 @@ func (c *Action) SetEncryption(opt EncryptionOptions, bucket string) error {
 		}
 		if algo == "aws:kms" || algo == "aws:kms:dsse" {
 			if opt.KMSKeyID == "" {
-				return fmt.Errorf("--kms-key-id is required when --algorithm is %s", algo)
+				return fmt.Errorf(i18n.T("--kms-key-id is required when --algorithm is %s", "--algorithm 为 %s 时必须指定 --kms-key-id"), algo)
 			}
 			rule.ApplyServerSideEncryptionByDefault.KMSMasterKeyID = opt.KMSKeyID
 			if opt.BucketKey {
@@ -54,14 +56,14 @@ func (c *Action) SetEncryption(opt EncryptionOptions, bucket string) error {
 	}
 
 	if len(cfg.Rules) == 0 {
-		return fmt.Errorf("no encryption rules configured")
+		return errors.New(i18n.T("no encryption rules configured", "未配置加密规则"))
 	}
 
 	if err := c.S3.SetBucketEncryption(c.Ctx, bucket, &cfg); err != nil {
 		return fmt.Errorf("set encryption %s: %s", bucket, FormatAPIError(err))
 	}
 
-	myprint.PrintfBoldGreen("Encryption set for %s %s (%d rules)\n", c.Alias, bucket, len(cfg.Rules))
+	myprint.PrintfBoldGreen(i18n.T("Encryption set for %s %s (%d rules)\n", "已为 %s %s 设置加密（%d 条规则）\n"), c.Alias, bucket, len(cfg.Rules))
 	return nil
 }
 
@@ -76,6 +78,6 @@ func (c *Action) GetEncryption(bucket string) error {
 
 // DelEncryption 删除 bucket 默认加密配置
 func (c *Action) DelEncryption(bucket string) error {
-	return c.deleteBucketConfig(bucket, "encryption", "Encryption deleted for %s %s\n",
+	return c.deleteBucketConfig(bucket, "encryption", i18n.T("Encryption deleted for %s %s\n", "已为 %s %s 删除加密配置\n"),
 		func() error { return c.S3.DeleteBucketEncryption(c.Ctx, bucket) })
 }

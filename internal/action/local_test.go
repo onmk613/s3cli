@@ -23,14 +23,14 @@ func TestLocalMultipartStateDir(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got != filepath.Join(os.Getenv("HOME"), ".s3cli", "mpu") {
+	if got != filepath.Join(os.Getenv("HOME"), ".s3cli-mpu") {
 		t.Errorf("got %q", got)
 	}
 }
 
 func TestListLocalMultipartStates(t *testing.T) {
 	home := setupMpuHome(t)
-	mpuDir := filepath.Join(home, ".s3cli", "mpu")
+	mpuDir := filepath.Join(home, ".s3cli-mpu")
 	os.MkdirAll(mpuDir, 0o700)
 
 	// 目录不存在时返回空
@@ -72,7 +72,7 @@ func TestListLocalMultipartStates(t *testing.T) {
 
 func TestClearLocalMultipartState(t *testing.T) {
 	home := setupMpuHome(t)
-	mpuDir := filepath.Join(home, ".s3cli", "mpu")
+	mpuDir := filepath.Join(home, ".s3cli-mpu")
 	os.MkdirAll(mpuDir, 0o700)
 	valid := filepath.Join(mpuDir, "x.json")
 	os.WriteFile(valid, []byte("{}"), 0o600)

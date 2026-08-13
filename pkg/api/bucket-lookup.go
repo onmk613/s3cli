@@ -6,6 +6,7 @@ package api
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"net/http"
 	"net/url"
@@ -48,6 +49,12 @@ func (c *Client) resolveURL(ctx context.Context, bucketName, objectName string, 
 		}
 		base, err := c.lookupFn.ResolveCustomEndpoint(bucketName, region)
 		if err != nil {
+			return nil, err
+		}
+		// 运行期二次校验: 配置期 validateCustomTemplate 只用固定测试值 (如
+		// "test-bucket") 校验模板, 真实 bucket 名 (如含 "..") 替换进模板后可能
+		// 拼出非法 host, 这里在构造请求 URL 前校验。
+		if err := validateResolvedCustomEndpoint(base, bucketName); err != nil {
 			return nil, err
 		}
 		return buildURLFromBase(base, objectName, queryValues)
@@ -103,6 +110,20 @@ func (c *Client) probeBucketLocation(ctx context.Context, bucket string) (string
 		return "", err
 	}
 	return result.LocationConstraint, nil
+}
+
+// validateResolvedCustomEndpoint 校验自定义寻址模板输出的 URL (此时占位符已替换为
+// 真实 bucket / region)。失败返回带 bucket 名与模板输出信息的明确错误。
+func validateResolvedCustomEndpoint(u *url.URL, bucketName string) error {
+	raw := u.String()
+	parsed, err := url.Parse(raw)
+	if err != nil {
+		return fmt.Errorf("custom endpoint template produced invalid URL for bucket %q: %v", bucketName, err)
+	}
+	if parsed.Host == "" || strings.Contains(parsed.Host, "..") {
+		return fmt.Errorf("custom endpoint template produced invalid URL for bucket %q: %q (host must be non-empty and must not contain \"..\")", bucketName, raw)
+	}
+	return nil
 }
 
 // buildURL 根据寻址方式拼接最终请求 URL.

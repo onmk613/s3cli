@@ -2,6 +2,7 @@ package fmtutil
 
 import (
 	"fmt"
+	"strings"
 	"testing"
 )
 
@@ -22,7 +23,11 @@ func TestParseBytes(t *testing.T) {
 		{"1GB", 1 << 30},
 		{"1TB", 1 << 40},
 		{"1PB", 1 << 50},
+		{"1.5GB", 1610612736},          // 1.5 * 2^30
+		{"0.5K", 512},                  // 小数四舍五入
+		{"8191P", 9222246136947933184}, // 恰好落在 int64 范围内的最大 PB 数
 		{"-1", 0},
+		{"-1.5GB", 0},
 	}
 
 	for _, tt := range tests {
@@ -32,6 +37,35 @@ func TestParseBytes(t *testing.T) {
 				t.Errorf("ParseBytes(%q) = %d, want %d", tt.input, result, tt.expected)
 			}
 		})
+	}
+}
+
+func TestParseBytesOverflow(t *testing.T) {
+	// val*倍数 超出 int64 范围时必须返回明确错误
+	cases := []string{
+		"999999999999PB",       // ~1.1e27 远超 int64 上限
+		"8192P",                // 2^63, 刚好越界
+		"1e18G",                // 指数写法
+		"9223372036854775807B", // ParseFloat 无法精确表示 MaxInt64, 视为越界
+		"1e308",
+	}
+	for _, input := range cases {
+		_, err := ParseBytes(input)
+		if err == nil {
+			t.Errorf("ParseBytes(%q) should error (out of range)", input)
+			continue
+		}
+		if !strings.Contains(err.Error(), "out of range") {
+			t.Errorf("ParseBytes(%q) error = %v, want mention of out of range", input, err)
+		}
+	}
+}
+
+func TestParseBytesInvalid(t *testing.T) {
+	for _, input := range []string{"abc", "1.2.3", ""} {
+		if _, err := ParseBytes(input); err == nil {
+			t.Errorf("ParseBytes(%q) should error", input)
+		}
 	}
 }
 

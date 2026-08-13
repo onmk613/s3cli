@@ -32,7 +32,7 @@ func Cf(format string, a ...any) Cell { return Cell{Text: fmt.Sprintf(format, a.
 // Table 轻量文本表格渲染器：
 //   - 表头 + 分隔线 + 数据行，按内容自动计算列宽
 //   - 支持 CJK 全角/宽字符宽度计算，中文表头对齐不偏移
-//   - 单元格可单独着色，颜色开关遵循全局 myprint 设置（--no-color / 非终端自动禁用）
+//   - 单元格可单独着色，颜色开关遵循全局 Printer/std 设置（--no-color / 非终端自动禁用）
 //   - 不做边框、不换行、不合并单元格
 type Table struct {
 	header   []string
@@ -131,7 +131,7 @@ func (t *Table) overLimit(cells []Cell) bool {
 	return t.bufBytes >= plainByteLimit
 }
 
-// Render 渲染到全局标准输出（颜色遵循全局 myprint 开关）。
+// Render 渲染到全局标准输出（颜色遵循全局 Printer/std 开关）。
 // 已切换为流式输出时无动作 (行已逐条写出).
 func (t *Table) Render() {
 	if t.plain {
@@ -316,6 +316,11 @@ func displayWidth(s string) int {
 	}
 	return w
 }
+
+// DisplayWidth 计算字符串的终端显示宽度，语义与内部 displayWidth 相同
+// （先剥离 ANSI 转义序列，CJK 全角/宽字符按 2 列计，组合符号按 0 计），
+// 供包外（如 pkg/progress 的进度条宽度计算）复用。
+func DisplayWidth(s string) int { return displayWidth(s) }
 
 // runeWidth 返回单个 rune 的终端显示宽度。
 // 依据 Unicode East Asian Width 手工整理, 组合符号经 unicode.Mn/Me 归零,

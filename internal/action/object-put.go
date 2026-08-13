@@ -5,6 +5,7 @@ package action
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"mime"
 	"os"
@@ -13,6 +14,7 @@ import (
 	"strings"
 
 	myprint "s3cli/pkg/fmtutil"
+	"s3cli/pkg/i18n"
 	"s3cli/pkg/s3iface"
 )
 
@@ -37,7 +39,7 @@ func (c *Action) PutObject(opt PutOptions, bucket, prefix, localPath string, isS
 		opt.Concurrency = defaultConcurrency
 	}
 
-	// stdin 上传 (put - / put --stdin): 从标准输入读取并上传, 替代旧 pipe 命令.
+	// stdin 上传 (put -): 从标准输入读取并上传, 替代旧 pipe 命令.
 	if localPath == "-" {
 		return c.putStdin(opt, bucket, prefix)
 	}
@@ -49,7 +51,7 @@ func (c *Action) PutObject(opt PutOptions, bucket, prefix, localPath string, isS
 	}
 	if fi.IsDir() {
 		if !opt.Recursive {
-			return fmt.Errorf("%s is a directory (use -r to upload recursively)", localPath)
+			return fmt.Errorf(i18n.T("%s is a directory (use -r to upload recursively)", "%s 是目录（请使用 -r 递归上传）"), localPath)
 		}
 		return c.uploadDirStreaming(opt, bucket, prefix, localPath)
 	}
@@ -57,7 +59,7 @@ func (c *Action) PutObject(opt PutOptions, bucket, prefix, localPath string, isS
 	mimeType := detectMime(localPath, opt.DefaultMimeType)
 	if opt.ContentType != "" {
 		if _, _, err := mime.ParseMediaType(opt.ContentType); err != nil {
-			return fmt.Errorf("invalid --content-type %q: %w", opt.ContentType, err)
+			return fmt.Errorf(i18n.T("invalid --content-type %q: %w", "无效的 --content-type %q：%w"), opt.ContentType, err)
 		}
 		mimeType = opt.ContentType
 	}
@@ -79,14 +81,14 @@ func (c *Action) PutObject(opt PutOptions, bucket, prefix, localPath string, isS
 			return fmt.Errorf("check existing object: %s", FormatAPIError(existsErr))
 		}
 		if exists {
-			myprint.Printf("skip: %s already exists\n", c.S3Path(bucket, dstKey))
+			myprint.Printf(i18n.T("skip: %s already exists\n", "跳过：%s 已存在\n"), c.S3Path(bucket, dstKey))
 			return nil
 		}
 	}
 	if err := c.uploadFile(c.Ctx, opt, mimeType, bucket, dstKey, localPath, nil); err != nil {
 		return err
 	}
-	myprint.Printf("put: %s --> %s  (%s)\n", localPath, c.S3Path(bucket, dstKey), mimeType)
+	myprint.Printf(i18n.T("put: %s --> %s  (%s)\n", "上传：%s --> %s  (%s)\n"), localPath, c.S3Path(bucket, dstKey), mimeType)
 	return nil
 }
 
@@ -103,6 +105,11 @@ func (c *Action) uploadDirStreaming(opt PutOptions, bucket, key, localPath strin
 			return filepath.Walk(localPath, func(p string, info os.FileInfo, err error) error {
 				if err != nil {
 					return err
+				}
+				// 感知取消: 用户 Ctrl+C 后立刻停止遍历, 避免整个目录
+				// 被 walk 完才退出 (RunStream 会等待本协程结束)。
+				if ctx.Err() != nil {
+					return ctx.Err()
 				}
 				if info.IsDir() {
 					return nil
@@ -191,14 +198,14 @@ func detectMime(localPath string, defaultMime string) string {
 	return "binary/octet-stream"
 }
 
-// putStdin 从标准输入读取数据并上传到一个完整 key (put - / put --stdin).
+// putStdin 从标准输入读取数据并上传到一个完整 key (put -).
 // 输入大小未知, 小输入走单次 PUT, 大输入自动转分片上传.
 func (c *Action) putStdin(opt PutOptions, bucket, key string) error {
 	if key == "" {
-		return fmt.Errorf("stdin upload requires a full object key (got empty key)")
+		return errors.New(i18n.T("stdin upload requires a full object key (got empty key)", "stdin 上传需要完整的对象 key（key 为空）"))
 	}
 	if strings.HasSuffix(key, "/") {
-		return fmt.Errorf("stdin upload requires a full object key, not a directory prefix %q", key)
+		return fmt.Errorf(i18n.T("stdin upload requires a full object key, not a directory prefix %q", "stdin 上传需要完整的对象 key，而非目录前缀 %q"), key)
 	}
 
 	mimeType := opt.ContentType
@@ -219,6 +226,6 @@ func (c *Action) putStdin(opt PutOptions, bucket, key string) error {
 	if err := c.uploadUnknownSize(c.Ctx, bucket, key, os.Stdin, opt.PartSizeMB, putOpts); err != nil {
 		return fmt.Errorf("stdin upload %s: %s", c.S3Path(bucket, key), FormatAPIError(err))
 	}
-	myprint.PrintfBoldGreen("put: stdin --> %s  (%s)\n", c.S3Path(bucket, key), mimeType)
+	myprint.PrintfBoldGreen(i18n.T("put: stdin --> %s  (%s)\n", "上传：stdin --> %s  (%s)\n"), c.S3Path(bucket, key), mimeType)
 	return nil
 }

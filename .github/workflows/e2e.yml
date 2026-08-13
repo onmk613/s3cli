@@ -1,0 +1,38 @@
+name: e2e
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  unit:
+    name: 单元测试
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.26"
+      - name: gofmt 检查
+        run: test -z "$(gofmt -l cmd internal pkg)"
+      - name: go vet
+        run: go vet ./...
+      - name: go test
+        run: go test ./...
+
+  e2e:
+    name: MinIO 端到端子命令测试
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.26"
+      - name: 构建 s3cli
+        run: go build -o s3cli .
+      - name: 运行 e2e 矩阵 (自动下载并启动 MinIO, 结束后自动清理)
+        run: scripts/e2e-minio.sh
+        env:
+          S3CLI_BIN: ./s3cli

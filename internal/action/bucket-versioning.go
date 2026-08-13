@@ -7,6 +7,7 @@ import (
 	"fmt"
 
 	myprint "s3cli/pkg/fmtutil"
+	"s3cli/pkg/i18n"
 	"s3cli/pkg/s3iface"
 )
 
@@ -17,14 +18,14 @@ type VersioningOptions struct {
 // SetVersioning 设置桶版本控制状态 (Enabled / Suspended / Disabled).
 func (c *Action) SetVersioning(opt VersioningOptions, bucket string) error {
 	if opt.Status == "" {
-		return errors.New("status cannot be empty")
+		return errors.New(i18n.T("status cannot be empty", "状态不能为空"))
 	}
 
 	if err := c.S3.SetBucketVersioning(c.Ctx, bucket, s3iface.BucketVersioningStatus(opt.Status)); err != nil {
 		return fmt.Errorf("set versioning %s: %s", bucket, FormatAPIError(err))
 	}
 
-	myprint.PrintfBoldGreen("Versioning for %s set to %s\n", c.S3Path(bucket, ""), opt.Status)
+	myprint.PrintfBoldGreen(i18n.T("Versioning for %s set to %s\n", "已将 %s 的版本控制设为 %s\n"), c.S3Path(bucket, ""), opt.Status)
 	return nil
 }
 
@@ -39,6 +40,6 @@ func (c *Action) GetVersioning(bucket string) error {
 		s = "(disabled)"
 	}
 
-	myprint.PrintfBoldGreen("Versioning for %s: %s\n", c.S3Path(bucket, ""), s)
+	myprint.PrintfBoldGreen(i18n.T("Versioning for %s: %s\n", "%s 的版本控制：%s\n"), c.S3Path(bucket, ""), s)
 	return nil
 }

@@ -5,6 +5,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/BurntSushi/toml"
 )
@@ -18,8 +19,19 @@ var (
 	syncFile   = (*os.File).Sync
 	closeFile  = (*os.File).Close
 	rename     = os.Rename
-	chmodPath  = os.Chmod
+	syncDirFn  = syncDir
 )
+
+// syncDir 对目录做 fsync, 保证 rename 落盘 (否则掉电可能丢失新配置)。
+// 某些平台 (如 Windows) 不支持目录 Sync, 调用方按 best-effort 忽略错误。
+func syncDir(dir string) error {
+	d, err := os.Open(dir)
+	if err != nil {
+		return err
+	}
+	defer d.Close()
+	return d.Sync()
+}
 
 func tomlEncode(w io.Writer, v any) error {
 	return toml.NewEncoder(w).Encode(v)
@@ -64,7 +76,10 @@ func saveConfig(confPath string) error {
 	if err := rename(tmpName, confPath); err != nil {
 		return err
 	}
-	return chmodPath(confPath, 0o600)
+	// 目录 fsync: 尽力而为 (平台不支持时忽略)。临时文件在 rename 前已 chmod 0600
+	// 并 Sync, rename 会保留 inode 权限, 无需再对目标路径补一次 chmod。
+	_ = syncDirFn(dir)
+	return nil
 }
 
 // buildOutputMap 把单个别名转换为 map[string]any，跳过取默认值的字段，
@@ -75,6 +90,7 @@ func saveConfig(confPath string) error {
 //   - no_verify_ssl: 仅 true 才写 (缺省 = false)
 //   - multipart_chunk_size_mb: > 0 且 != 15 才写
 //   - max_retries: > 0 才写
+//   - tls_min_version: 非空且 != 默认 1.2 才写
 func buildOutputMap(s Static) map[string]any {
 	m := map[string]any{
 		"access_key": s.AccessKey,
@@ -101,6 +117,9 @@ func buildOutputMap(s Static) map[string]any {
 	}
 	if s.MaxRetries > 0 {
 		m["max_retries"] = s.MaxRetries
+	}
+	if v := strings.TrimSpace(s.TLSMinVersion); v != "" && v != DefaultTLSMinVersion {
+		m["tls_min_version"] = v
 	}
 	return m
 }

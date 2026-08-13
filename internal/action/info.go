@@ -5,9 +5,11 @@ package action
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 
 	myprint "s3cli/pkg/fmtutil"
+	"s3cli/pkg/i18n"
 	"s3cli/pkg/s3iface"
 )
 
@@ -21,7 +23,7 @@ type InfoOptions struct {
 func (c *Action) Info(opt InfoOptions, bucket, prefix string) error {
 	if opt.VersionID != "" {
 		if prefix == "" {
-			return fmt.Errorf("--version-id requires an object key")
+			return errors.New(i18n.T("--version-id requires an object key", "--version-id 需要指定对象 key"))
 		}
 		return c.infoObjectVersion(bucket, prefix, opt.VersionID)
 	}
@@ -35,7 +37,7 @@ func (c *Action) Info(opt InfoOptions, bucket, prefix string) error {
 	}
 	if !ok {
 		if !opt.Recursive {
-			return fmt.Errorf("%s: not a file (use -r/--recursive to show all objects under it)", c.S3Path(bucket, prefix))
+			return fmt.Errorf(i18n.T("%s: not a file (use -r/--recursive to show all objects under it)", "%s：不是文件（使用 -r/--recursive 查看其下所有对象）"), c.S3Path(bucket, prefix))
 		}
 		return c.infoObjectsRecursive(bucket, prefix)
 	}
@@ -56,7 +58,7 @@ func (c *Action) infoObjectsRecursive(bucket, prefix string) error {
 	if err != nil {
 		return err
 	}
-	myprint.PrintfBoldBlue("%d object(s) under %s\n", count, c.S3Path(bucket, prefix))
+	myprint.PrintfBoldBlue(i18n.T("%d object(s) under %s\n", "共 %d 个对象（位于 %s 下）\n"), count, c.S3Path(bucket, prefix))
 	return nil
 }
 
@@ -65,7 +67,7 @@ func (c *Action) infoObjectVersion(bucket, key, versionID string) error {
 	if err != nil {
 		return fmt.Errorf("head object: %s", FormatAPIError(err))
 	}
-	myprint.PrintfBoldBlue("# %s info(object, version %s):\n", c.S3Path(bucket, key), versionID)
+	myprint.PrintfBoldBlue(i18n.T("# %s info(object, version %s):\n", "# %s info(object，版本 %s)：\n"), c.S3Path(bucket, key), versionID)
 	return printHeadInfo(c.S3Path(bucket, key), head, nil)
 }
 
@@ -74,7 +76,7 @@ func (c *Action) infoObject(bucket, key string) error {
 	if err != nil {
 		return fmt.Errorf("head object: %s", FormatAPIError(err))
 	}
-	myprint.PrintfBoldBlue("# %s info(object):\n", c.S3Path(bucket, key))
+	myprint.PrintfBoldBlue(i18n.T("# %s info(object):\n", "# %s info(object)：\n"), c.S3Path(bucket, key))
 
 	// Tagging
 	tags := map[string]string{}
@@ -169,7 +171,7 @@ func (c *Action) infoBucket(bucket string) error {
 		return fmt.Errorf("marshal info: %w", err)
 	}
 
-	myprint.PrintfBoldBlue("# %s %s info(bucket):\n", c.Alias, bucket)
+	myprint.PrintfBoldBlue(i18n.T("# %s %s info(bucket):\n", "# %s %s info(bucket)：\n"), c.Alias, bucket)
 	myprint.PrintlnGreen(string(b))
 	return nil
 }

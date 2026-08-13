@@ -1,6 +1,7 @@
 package client
 
 import (
+	"crypto/tls"
 	"testing"
 
 	"s3cli/internal/config"
@@ -121,5 +122,52 @@ func TestApplyGlobalOverrides(t *testing.T) {
 	// 无 --host-base 时模板保留
 	if got := applyGlobalOverrides(tmpl, config.Flags{}); got.BucketLookup == "" {
 		t.Error("custom template should be preserved without host-base flag")
+	}
+}
+
+func TestTLSMinVersion(t *testing.T) {
+	cases := []struct {
+		in      string
+		want    uint16
+		wantErr bool
+	}{
+		{"", tls.VersionTLS12, false},
+		{"1.2", tls.VersionTLS12, false},
+		{"TLS1.2", tls.VersionTLS12, false},
+		{"1.0", tls.VersionTLS10, false},
+		{"1.1", tls.VersionTLS11, false},
+		{"1.3", tls.VersionTLS13, false},
+		{" 1.3 ", tls.VersionTLS13, false},
+		{"2.0", 0, true},
+		{"tls", 0, true},
+	}
+	for _, tc := range cases {
+		got, err := tlsMinVersion(tc.in)
+		if tc.wantErr {
+			if err == nil {
+				t.Errorf("tlsMinVersion(%q) should error", tc.in)
+			}
+			continue
+		}
+		if err != nil || got != tc.want {
+			t.Errorf("tlsMinVersion(%q) = (%v, %v), want (%d, nil)", tc.in, got, err, tc.want)
+		}
+	}
+}
+
+// TestNewS3ClientTLSMinVersion 别名 tls_min_version 应透传到 Transport 的 TLS 配置。
+func TestNewS3ClientTLSMinVersion(t *testing.T) {
+	cfg := config.Static{HostBase: "https://s3.example.com", AccessKey: "a", SecretKey: "s", TLSMinVersion: "1.0"}
+	c, err := newS3Client(cfg, config.Flags{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c == nil {
+		t.Fatal("nil client")
+	}
+
+	cfg.TLSMinVersion = "9.9"
+	if _, err := newS3Client(cfg, config.Flags{}); err == nil {
+		t.Error("expected error for invalid tls_min_version")
 	}
 }

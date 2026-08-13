@@ -8,6 +8,7 @@ import (
 	"fmt"
 
 	myprint "s3cli/pkg/fmtutil"
+	"s3cli/pkg/i18n"
 )
 
 // printBucketConfigJSON 把桶级配置以 pretty JSON 打印, 统一了各 GetXxx 的输出样板。
@@ -40,7 +41,7 @@ func loadJSONConfig[T any](file, label string) (*T, error) {
 		return nil, err
 	}
 	if format != "json" {
-		return nil, fmt.Errorf("%s only supports JSON format (AWS CLI compatible)", label)
+		return nil, fmt.Errorf(i18n.T("%s only supports JSON format (AWS CLI compatible)", "%s 仅支持 JSON 格式（兼容 AWS CLI）"), label)
 	}
 	var cfg T
 	if err := unmarshalAWS(data, "json", &cfg); err != nil {

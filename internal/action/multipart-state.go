@@ -47,7 +47,10 @@ func localMultipartStateDir() (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return filepath.Join(home, ".s3cli", "mpu"), nil
+	// 注意: 不能用 ~/.s3cli/mpu —— 默认配置文件 ~/.s3cli 是"文件",
+	// 其下无法创建 mpu 目录 (open ...: not a directory)。
+	// 因此状态目录独立为 ~/.s3cli-mpu。
+	return filepath.Join(home, ".s3cli-mpu"), nil
 }
 
 func ListLocalMultipartStates() ([]LocalMultipartState, error) {
@@ -91,7 +94,7 @@ func ClearLocalMultipartState(path string) error {
 		return err
 	}
 	if filepath.Dir(abs) != dir || filepath.Ext(abs) != ".json" {
-		return fmt.Errorf("refusing to remove non-state file %q", path)
+		return fmt.Errorf(i18n.T("refusing to remove non-state file %q", "拒绝删除非状态文件 %q"), path)
 	}
 	return os.Remove(abs)
 }
@@ -150,7 +153,7 @@ func MpuLocalClear(path string, opt MpuLocalOptions) error {
 		myprint.PrintlnGreen(string(b))
 		return nil
 	}
-	myprint.PrintfGreen("removed local multipart state %s\n", path)
+	myprint.PrintfGreen(i18n.T("removed local multipart state %s\n", "已删除本地分段上传状态 %s\n"), path)
 	return nil
 }
 
@@ -159,12 +162,11 @@ func multipartStatePath(localPath, bucket, key string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	home, err := os.UserHomeDir()
+	sum := sha256.Sum256([]byte(abs + "\x00" + bucket + "\x00" + key))
+	dir, err := localMultipartStateDir()
 	if err != nil {
 		return "", err
 	}
-	sum := sha256.Sum256([]byte(abs + "\x00" + bucket + "\x00" + key))
-	dir := filepath.Join(home, ".s3cli", "mpu")
 	return filepath.Join(dir, hex.EncodeToString(sum[:])+".json"), nil
 }
 

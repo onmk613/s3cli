@@ -165,6 +165,11 @@ func filterObjects(in <-chan ObjectInfo, include, exclude []string) <-chan Objec
 //
 // 优先比 ETag (已去引号). MPU 上传时 ETag 形如 "xxx-N", 两端不可比,
 // 此时退化到 size + last-modified.
+//
+// 已知局限: S3 的 LastModified 只有秒级精度, 若源/目标同一秒内先后写入
+// (或先后 mirror), 两端 mtime 相同, 即使内容不同 (且 ETag 因 MPU 不可比)
+// 也会被判定为"无需更新"而漏同步。这是 S3 元数据精度限制, 不是本函数缺陷;
+// 对一致性要求高的场景请依赖 ETag 可比 (非 MPU 上传) 或加大同步间隔。
 func needsUpdate(src, tgt ObjectInfo) bool {
 	if !strings.Contains(src.ETag, "-") && !strings.Contains(tgt.ETag, "-") &&
 		src.ETag != "" && tgt.ETag != "" {

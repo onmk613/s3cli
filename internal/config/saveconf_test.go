@@ -75,7 +75,6 @@ func TestSaveConfigErrors(t *testing.T) {
 		"syncFile":   func() { syncFile = func(*os.File) error { return errors.New("sync") } },
 		"closeFile":  func() { closeFile = func(*os.File) error { return errors.New("close") } },
 		"rename":     func() { rename = func(string, string) error { return errors.New("rename") } },
-		"chmodPath":  func() { chmodPath = func(string, os.FileMode) error { return errors.New("chmodp") } },
 	}
 	for name, inject := range injects {
 		t.Run(name, func(t *testing.T) {
@@ -126,5 +125,39 @@ func TestBuildOutputMap(t *testing.T) {
 		if _, ok := m[k]; !ok {
 			t.Errorf("missing key %q: %v", k, m)
 		}
+	}
+
+	// tls_min_version: 空/默认裁剪, 非默认保留
+	for _, v := range []string{"", DefaultTLSMinVersion} {
+		m = buildOutputMap(Static{AccessKey: "a", SecretKey: "s", HostBase: "h", TLSMinVersion: v})
+		if _, ok := m["tls_min_version"]; ok {
+			t.Errorf("tls_min_version=%q should be pruned: %v", v, m)
+		}
+	}
+	m = buildOutputMap(Static{AccessKey: "a", SecretKey: "s", HostBase: "h", TLSMinVersion: "1.0"})
+	if m["tls_min_version"] != "1.0" {
+		t.Errorf("tls_min_version = %v, want 1.0", m["tls_min_version"])
+	}
+}
+
+// TestSaveConfigSyncsDir rename 之后应 best-effort fsync 目录, 保证 rename 落盘。
+func TestSaveConfigSyncsDir(t *testing.T) {
+	snapshotHooks(t)
+	path := filepath.Join(t.TempDir(), "conf")
+	G.S = map[string]Static{"a": {HostBase: "https://a", AccessKey: "ak", SecretKey: "sk"}}
+
+	called := 0
+	syncDirFn = func(dir string) error {
+		called++
+		if dir != filepath.Dir(path) {
+			t.Errorf("syncDirFn dir = %q, want %q", dir, filepath.Dir(path))
+		}
+		return nil
+	}
+	if err := saveConfig(path); err != nil {
+		t.Fatal(err)
+	}
+	if called != 1 {
+		t.Errorf("syncDirFn called %d times, want 1", called)
 	}
 }

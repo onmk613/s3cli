@@ -116,8 +116,16 @@ func New(opts *Options) (*Client, error) {
 		lookup:         opts.BucketLookup,
 		lookupFn:       opts.BucketLookupViaURL,
 		bucketLocCache: &kvcache.Cache[string, string]{},
-		httpClient:     &http.Client{Transport: transport},
-		maxRetries:     opts.MaxRetries,
+		httpClient: &http.Client{
+			Transport: transport,
+			// 禁止自动跟随 301/307: S3 的 region 重定向需要重签 (region 变化),
+			// 默认跟随会跨 host 转发且丢失 Authorization 头 (未签名重发)。
+			// 让 Do 收到 3xx 响应后自行解析 X-Amz-Bucket-Region 并重签重发。
+			CheckRedirect: func(req *http.Request, via []*http.Request) error {
+				return http.ErrUseLastResponse
+			},
+		},
+		maxRetries: opts.MaxRetries,
 	}, nil
 }
 
@@ -201,6 +209,15 @@ func (c *Client) newRequest(ctx context.Context, method string, meta requestMeta
 	// Content-Length
 	if meta.contentLength > 0 {
 		req.ContentLength = meta.contentLength
+	} else if meta.contentBody != nil {
+		// 0 字节 body (如空对象上传): 显式替换为 http.NoBody, 保证发送
+		// "Content-Length: 0" 而非 chunked 编码。http.NewRequest 只会对实现了
+		// Len() 的空 reader (如 bytes.Reader) 自动做此转换; 其它类型 (如
+		// PutObjectStream 传入的 0 长度 *os.File) 的 ContentLength 为 0 时会被
+		// transport 视为长度未知而走 chunked, 严格服务端会拒绝。
+		req.Body = http.NoBody
+		req.ContentLength = 0
+		req.GetBody = nil
 	}
 	if meta.contentMD5Base64 != "" {
 		req.Header.Set("Content-MD5", meta.contentMD5Base64)

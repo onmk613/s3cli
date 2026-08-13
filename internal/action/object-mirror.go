@@ -10,8 +10,10 @@
 package action
 
 import (
+	"errors"
 	"fmt"
 	"s3cli/internal/s3path"
+	"s3cli/pkg/i18n"
 	"s3cli/pkg/progress"
 	"strings"
 	"sync"
@@ -88,13 +90,13 @@ func Mirror(cfg MirrorOptions) error {
 		}(manifest)
 	}
 
-	myprint.Printf("Mirroring %s -> %s ...\n",
+	myprint.Printf(i18n.T("Mirroring %s -> %s ...\n", "正在镜像 %s -> %s ...\n"),
 		plan.srcClient.S3Path(plan.srcBucket, plan.srcPrefix),
 		plan.tgtClient.S3Path(plan.tgtBucket, plan.tgtPrefix))
 	if plan.sameEP {
-		myprint.Println("Strategy: server-side CopyObject (same endpoint)")
+		myprint.Println(i18n.T("Strategy: server-side CopyObject (same endpoint)", "策略：服务端 CopyObject（同 endpoint）"))
 	} else {
-		myprint.Println("Strategy: download + upload (cross endpoint)")
+		myprint.Println(i18n.T("Strategy: download + upload (cross endpoint)", "策略：下载 + 上传（跨 endpoint）"))
 	}
 
 	// 1. 流式列举源 / 目标 (不缓存全集)
@@ -122,11 +124,11 @@ func Mirror(cfg MirrorOptions) error {
 // resolveMirrorPlan 校验入参并解析目标前缀, 返回可执行的 mirrorPlan.
 func resolveMirrorPlan(cfg MirrorOptions) (*mirrorPlan, error) {
 	if cfg.Src == nil || cfg.Tgt == nil {
-		return nil, fmt.Errorf("mirror: src and tgt are required")
+		return nil, errors.New(i18n.T("mirror: src and tgt are required", "mirror：必须提供 src 和 tgt"))
 	}
 	if cfg.Src.Client == nil || cfg.Tgt.Client == nil ||
 		cfg.Src.Client.S3 == nil || cfg.Tgt.Client.S3 == nil {
-		return nil, fmt.Errorf("mirror: src/tgt S3 client is nil")
+		return nil, errors.New(i18n.T("mirror: src/tgt S3 client is nil", "mirror：src/tgt 的 S3 client 为空"))
 	}
 	if cfg.Concurrency <= 0 {
 		cfg.Concurrency = defaultConcurrency
@@ -161,7 +163,7 @@ func resolveMirrorPlan(cfg MirrorOptions) (*mirrorPlan, error) {
 	//   - 完全相等是其中特例 (原自映射守卫)。
 	if sameEP && cfg.Src.Bucket == tgtBucket &&
 		(strings.HasPrefix(srcPrefix, tgtPrefix) || strings.HasPrefix(tgtPrefix, srcPrefix)) {
-		return nil, fmt.Errorf("mirror: source and target prefixes overlap on the same bucket (%q vs %q)", srcPrefix, tgtPrefix)
+		return nil, fmt.Errorf(i18n.T("mirror: source and target prefixes overlap on the same bucket (%q vs %q)", "mirror：同一存储桶上源与目标前缀重叠（%q 与 %q）"), srcPrefix, tgtPrefix)
 	}
 
 	return &mirrorPlan{
@@ -184,7 +186,7 @@ func (p *mirrorPlan) dryRun(actions <-chan diffAction, listErrCh chan error) err
 	for a := range actions {
 		if a.delete {
 			if p.cfg.Remove {
-				myprint.Printf("  DELETE %s\n", p.tgtClient.S3Path(p.tgtBucket, joinKey(p.tgtPrefix, a.rel)))
+				myprint.Printf(i18n.T("  DELETE %s\n", "  DELETE %s\n"), p.tgtClient.S3Path(p.tgtBucket, joinKey(p.tgtPrefix, a.rel)))
 				nDelete++
 			} else {
 				// 未加 --remove 时这些对象不会被删, 单独统计, 避免计划摘要误导。
@@ -192,7 +194,7 @@ func (p *mirrorPlan) dryRun(actions <-chan diffAction, listErrCh chan error) err
 			}
 			continue
 		}
-		myprint.Printf("  COPY   %s -> %s\n",
+		myprint.Printf(i18n.T("  COPY   %s -> %s\n", "  COPY   %s -> %s\n"),
 			p.srcClient.S3Path(p.srcBucket, joinKey(p.srcPrefix, a.rel)),
 			p.tgtClient.S3Path(p.tgtBucket, joinKey(p.tgtPrefix, a.rel)))
 		nCopy++
@@ -201,9 +203,9 @@ func (p *mirrorPlan) dryRun(actions <-chan diffAction, listErrCh chan error) err
 		return err
 	}
 	if p.cfg.Remove {
-		myprint.Printf("Plan: %d to copy, %d to delete\n", nCopy, nDelete)
+		myprint.Printf(i18n.T("Plan: %d to copy, %d to delete\n", "计划：%d 个待复制，%d 个待删除\n"), nCopy, nDelete)
 	} else {
-		myprint.Printf("Plan: %d to copy (%d extra on target, use --remove to delete)\n", nCopy, nExtra)
+		myprint.Printf(i18n.T("Plan: %d to copy (%d extra on target, use --remove to delete)\n", "计划：%d 个待复制（目标多出 %d 个，可用 --remove 删除）\n"), nCopy, nExtra)
 	}
 	return nil
 }
@@ -246,7 +248,7 @@ func (p *mirrorPlan) copyAndDelete(actions <-chan diffAction, listErrCh chan err
 
 		if p.cfg.SizeLimit > 0 && a.size > p.cfg.SizeLimit {
 			skipped.Add(1)
-			myprint.Printf("SKIP (size > limit): %s (%s)\n", a.rel, FormatBytes(a.size))
+			myprint.Printf(i18n.T("SKIP (size > limit): %s (%s)\n", "SKIP（大小超限）：%s（%s）\n"), a.rel, FormatBytes(a.size))
 			continue
 		}
 
@@ -261,7 +263,7 @@ func (p *mirrorPlan) copyAndDelete(actions <-chan diffAction, listErrCh chan err
 			if p.copyOne(pt, rel, objSize, &copied, &failed) && manifest != nil {
 				if err := manifest.mark(rel); err != nil {
 					manifestFailed.Add(1)
-					pt.AddFailed(1, fmt.Sprintf("✗ persist mirror manifest for %s: %v", rel, err))
+					pt.AddFailed(1, fmt.Sprintf(i18n.T("✗ persist mirror manifest for %s: %v", "✗ 为 %s 持久化 mirror manifest 失败：%v"), rel, err))
 				}
 			}
 		}(a.rel, a.size)
@@ -281,29 +283,35 @@ func (p *mirrorPlan) copyAndDelete(actions <-chan diffAction, listErrCh chan err
 		return err
 	}
 	if failed.Load() > 0 {
-		return fmt.Errorf("mirror finished with %d copy failures; target deletions were skipped", failed.Load())
+		return fmt.Errorf(i18n.T("mirror finished with %d copy failures; target deletions were skipped", "镜像结束，%d 个复制失败；已跳过目标端删除"), failed.Load())
 	}
 
 	// 删除目标多余对象
 	var deleted int
+	var deleteErr error // 删除失败时记录, 汇总行打印后仍返回错误 (不再静默吞掉)
 	if p.cfg.Remove && len(toDelete) > 0 {
 		if p.cfg.MaxDelete > 0 && len(toDelete) > p.cfg.MaxDelete {
-			return fmt.Errorf("mirror planned to delete %d objects, exceeding --max-delete=%d", len(toDelete), p.cfg.MaxDelete)
+			return fmt.Errorf(i18n.T("mirror planned to delete %d objects, exceeding --max-delete=%d", "镜像计划删除 %d 个对象，超过 --max-delete=%d"), len(toDelete), p.cfg.MaxDelete)
 		}
-		myprint.Printf("Deleting %d extra objects on target...\n", len(toDelete))
+		myprint.Printf(i18n.T("Deleting %d extra objects on target...\n", "正在删除目标端 %d 个多余对象...\n"), len(toDelete))
 		if err := deleteObjectsBatch(p.tgtClient, p.tgtBucket, toDelete); err != nil {
-			myprint.PrintfRed("delete error: %v\n", err)
+			deleteErr = err
+			myprint.PrintfRed(i18n.T("delete error: %v\n", "删除错误：%v\n"), err)
 		} else {
 			deleted = len(toDelete)
 		}
 	}
 
-	myprint.PrintfGreen("Mirror done in %s: copied=%d, skipped=%d, failed=%d, deleted=%d\n",
+	myprint.PrintfGreen(i18n.T("Mirror done in %s: copied=%d, skipped=%d, failed=%d, deleted=%d\n", "镜像完成，耗时 %s：copied=%d, skipped=%d, failed=%d, deleted=%d\n"),
 		time.Since(startAt).Truncate(time.Millisecond),
 		copied.Load(), skipped.Load(), failed.Load(), deleted,
 	)
 	if mf := manifestFailed.Load(); mf > 0 {
-		return fmt.Errorf("mirror: %d object(s) copied but not recorded into manifest; rerun without --resume or fix the manifest file", mf)
+		return fmt.Errorf(i18n.T("mirror: %d object(s) copied but not recorded into manifest; rerun without --resume or fix the manifest file", "mirror：%d 个对象已复制但未写入 manifest；请去掉 --resume 重跑或修复 manifest 文件"), mf)
+	}
+	// 删除失败必须上报: 目标端仍有 --remove 应清理的多余对象, 不能以成功退出。
+	if deleteErr != nil {
+		return fmt.Errorf("mirror: failed to delete %d extra object(s) on target: %w", len(toDelete), deleteErr)
 	}
 	return nil
 }

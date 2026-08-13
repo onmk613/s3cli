@@ -6,6 +6,7 @@ import (
 	"fmt"
 
 	myprint "s3cli/pkg/fmtutil"
+	"s3cli/pkg/i18n"
 	"s3cli/pkg/s3iface"
 )
 
@@ -28,7 +29,7 @@ func (c *Action) ListObjectVersions(bucket, prefix string) error {
 			myprint.PrintfDim("[%s]  ", v.LastModified.Format("2006-01-02 15:04:05"))
 			myprint.Printf("%12d   ", v.Size)
 			myprint.PrintfGreen("%s  ", c.S3Path(bucket, v.Key))
-			myprint.PrintfCyan("ID=%s\n", v.VersionID)
+			myprint.PrintfCyan(i18n.T("ID=%s\n", "ID=%s\n"), v.VersionID)
 		}
 		for _, m := range page.DeleteMarkers {
 			flag := "DEL "
@@ -40,7 +41,7 @@ func (c *Action) ListObjectVersions(bucket, prefix string) error {
 			myprint.PrintfDim("[%s]  ", m.LastModified.Format("2006-01-02 15:04:05"))
 			myprint.Printf("%12s   ", "-")
 			myprint.PrintfRed("%s  ", c.S3Path(bucket, m.Key))
-			myprint.PrintfCyan("ID=%s\n", m.VersionID)
+			myprint.PrintfCyan(i18n.T("ID=%s\n", "ID=%s\n"), m.VersionID)
 		}
 	}
 	return nil

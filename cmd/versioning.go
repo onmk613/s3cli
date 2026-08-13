@@ -8,7 +8,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// VersioningCmd 管理桶的版本控制配置 (enable/suspend/info; 兼容 set).
+// VersioningCmd 管理桶的版本控制配置 (set/info).
 func VersioningCmd() *cobra.Command {
 	versionCmd := &cobra.Command{
 		Use:   "versioning",
@@ -24,7 +24,7 @@ func VersioningSetCmd() *cobra.Command {
 	var opts action.VersioningOptions
 	cmd := &cobra.Command{
 		Use:               "set [alias:bucket] ...",
-		Short:             i18n.T("Set bucket versioning status (legacy; use enable/suspend)", "设置存储桶版本控制状态（旧入口；建议用 enable/suspend）"),
+		Short:             i18n.T("Set bucket versioning status (--status Enabled/Suspended/Disabled)", "设置存储桶版本控制状态（--status Enabled/Suspended/Disabled）"),
 		ValidArgsFunction: AutoCompleteBucket,
 		Args:              cobra.MinimumNArgs(1),
 		RunE: NewRunE(func(S3 action.Action, dst *s3path.Path) error {

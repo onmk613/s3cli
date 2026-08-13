@@ -7,6 +7,7 @@
 package action
 
 import (
+	"errors"
 	"fmt"
 	"path"
 	"regexp"
@@ -73,25 +74,25 @@ func prepareFind(opt FindOptions) (*preparedFind, error) {
 	if opt.Name != "" {
 		p.nameRe, err = regexp.Compile(globToRegex(opt.Name))
 		if err != nil {
-			return nil, fmt.Errorf("invalid --name pattern %q: %w", opt.Name, err)
+			return nil, fmt.Errorf(i18n.T("invalid --name pattern %q: %w", "无效的 --name 模式 %q：%w"), opt.Name, err)
 		}
 	}
 	if opt.Regex != "" {
 		p.regexRe, err = regexp.Compile(opt.Regex)
 		if err != nil {
-			return nil, fmt.Errorf("invalid --regex pattern %q: %w", opt.Regex, err)
+			return nil, fmt.Errorf(i18n.T("invalid --regex pattern %q: %w", "无效的 --regex 模式 %q：%w"), opt.Regex, err)
 		}
 	}
 	if opt.Path != "" {
 		p.pathRe, err = regexp.Compile(globToRegex(opt.Path))
 		if err != nil {
-			return nil, fmt.Errorf("invalid --path pattern %q: %w", opt.Path, err)
+			return nil, fmt.Errorf(i18n.T("invalid --path pattern %q: %w", "无效的 --path 模式 %q：%w"), opt.Path, err)
 		}
 	}
 	for _, ig := range opt.Ignore {
 		re, err := regexp.Compile(globToRegex(ig))
 		if err != nil {
-			return nil, fmt.Errorf("invalid --ignore pattern %q: %w", ig, err)
+			return nil, fmt.Errorf(i18n.T("invalid --ignore pattern %q: %w", "无效的 --ignore 模式 %q：%w"), ig, err)
 		}
 		p.ignoreRes = append(p.ignoreRes, re)
 	}
@@ -106,10 +107,10 @@ func prepareFind(opt FindOptions) (*preparedFind, error) {
 	}
 	// 时间过滤: 兼容时长串 ("7d10h31s") 与绝对时间 (RFC3339 / YYYY-MM-DD)
 	if p.newer, err = parseFilterTime(opt.NewerThan); err != nil {
-		return nil, fmt.Errorf("--newer-than: %w", err)
+		return nil, fmt.Errorf(i18n.T("--newer-than: %w", "--newer-than：%w"), err)
 	}
 	if p.older, err = parseFilterTime(opt.OlderThan); err != nil {
-		return nil, fmt.Errorf("--older-than: %w", err)
+		return nil, fmt.Errorf(i18n.T("--older-than: %w", "--older-than：%w"), err)
 	}
 	p.filtersActive = p.typ != "" || opt.StorageClass != "" || len(opt.Include) > 0 ||
 		len(opt.Exclude) > 0 || len(opt.Ignore) > 0 || p.nameRe != nil || p.regexRe != nil || p.pathRe != nil ||
@@ -154,18 +155,18 @@ func (fp *findPrinter) add(c *Action, bucket string, m findMatch) {
 	case m.deleteMark:
 		cells[1] = myprint.Cell{Text: "-"}
 		cells = append(cells,
-			myprint.Cell{Text: "DEL*", Color: myprint.Red},
+			myprint.Cell{Text: i18n.T("DEL*", "删除*"), Color: myprint.Red},
 			myprint.Cell{Text: c.S3Path(bucket, m.key), Color: myprint.Red},
 		)
 	case m.dirMarker:
 		cells[1] = myprint.Cell{Text: "-"}
 		cells = append(cells,
-			myprint.Cell{Text: "DIR", Color: myprint.Blue},
+			myprint.Cell{Text: i18n.T("DIR", "目录"), Color: myprint.Blue},
 			myprint.Cell{Text: c.S3Path(bucket, m.key), Color: myprint.Blue},
 		)
 	default:
 		cells = append(cells,
-			myprint.Cell{Text: "FILE", Color: myprint.Green},
+			myprint.Cell{Text: i18n.T("FILE", "文件"), Color: myprint.Green},
 			myprint.Cell{Text: c.S3Path(bucket, m.key), Color: myprint.Green},
 		)
 	}
@@ -187,7 +188,7 @@ func (fp *findPrinter) render() {
 // (开 versioning 时含 delete marker 为最新版本的对象; 未开时等价于创建时间).
 func (c *Action) FindObjects(opt FindOptions, bucket, prefix string) error {
 	if bucket == "" {
-		return fmt.Errorf("find requires a bucket")
+		return errors.New(i18n.T("find requires a bucket", "find 需要指定存储桶"))
 	}
 	p, err := prepareFind(opt)
 	if err != nil {
@@ -350,7 +351,7 @@ func printFindSummary(opt FindOptions, matched, scanned int, totalSize int64, p 
 		if opt.JSON {
 			return nil
 		}
-		myprint.PrintfYellow("\n(limit %d reached)\n", opt.Limit)
+		myprint.PrintfYellow(i18n.T("\n(limit %d reached)\n", "\n（已达 %d 条上限）\n"), opt.Limit)
 		return nil
 	}
 	if opt.JSON {
@@ -360,23 +361,23 @@ func printFindSummary(opt FindOptions, matched, scanned int, totalSize int64, p 
 		// 0 匹配时给出过滤上下文, 便于判断是"没有匹配"还是"参数/阈值设置问题".
 		var th []string
 		if !p.older.IsZero() {
-			th = append(th, fmt.Sprintf("modified before %s", p.older.Local().Format("2006-01-02 15:04:05")))
+			th = append(th, fmt.Sprintf(i18n.T("modified before %s", "修改时间早于 %s"), p.older.Local().Format("2006-01-02 15:04:05")))
 		}
 		if !p.newer.IsZero() {
-			th = append(th, fmt.Sprintf("modified after %s", p.newer.Local().Format("2006-01-02 15:04:05")))
+			th = append(th, fmt.Sprintf(i18n.T("modified after %s", "修改时间晚于 %s"), p.newer.Local().Format("2006-01-02 15:04:05")))
 		}
 		ctx := ""
 		if len(th) > 0 {
 			ctx = " (" + strings.Join(th, ", ") + ")"
 		}
-		myprint.PrintfBoldYellow("\nno objects matched%s out of %d scanned\n", ctx, scanned)
+		myprint.PrintfBoldYellow(i18n.T("\nno objects matched%s out of %d scanned\n", "\n无匹配对象%s（共扫描 %d 个）\n"), ctx, scanned)
 		return nil
 	}
 	if p.filtersActive {
-		myprint.PrintfBoldBlue("\n%d matching objects (%s) out of %d scanned\n", matched, FormatBytes(totalSize), scanned)
+		myprint.PrintfBoldBlue(i18n.T("\n%d matching objects (%s) out of %d scanned\n", "\n%d 个匹配对象（%s），共扫描 %d 个\n"), matched, FormatBytes(totalSize), scanned)
 		return nil
 	}
-	myprint.PrintfBoldBlue("\n%d matching objects (%s)\n", matched, FormatBytes(totalSize))
+	myprint.PrintfBoldBlue(i18n.T("\n%d matching objects (%s)\n", "\n%d 个匹配对象（%s）\n"), matched, FormatBytes(totalSize))
 	return nil
 }
 
@@ -489,7 +490,7 @@ func normalizeFindType(t string) (string, error) {
 	case "d", "dir", "directory":
 		return "dir", nil
 	}
-	return "", fmt.Errorf("invalid --type %q: use file or dir", t)
+	return "", fmt.Errorf(i18n.T("invalid --type %q: use file or dir", "无效的 --type %q：请使用 file 或 dir"), t)
 }
 
 // parseFindSort 解析 --sort 取值: name/size/time, 前缀 "-" 表示倒序.
@@ -508,7 +509,7 @@ func parseFindSort(s string) (field string, desc bool, err error) {
 	case "time", "date", "modified":
 		return "time", desc, nil
 	}
-	return "", false, fmt.Errorf("invalid --sort %q: use name, size or time (prefix with - for descending order)", s)
+	return "", false, fmt.Errorf(i18n.T("invalid --sort %q: use name, size or time (prefix with - for descending order)", "无效的 --sort %q：请使用 name、size 或 time（前缀 - 表示降序）"), s)
 }
 
 // sortFindMatches 按字段排序匹配集合 (稳定排序, 同值按 key 兜底).
@@ -600,7 +601,7 @@ func parseFilterTime(s string) (time.Time, error) {
 func ParseDuration(s string) (time.Duration, error) {
 	s = strings.ToLower(strings.TrimSpace(s))
 	if s == "" {
-		return 0, fmt.Errorf("empty duration")
+		return 0, errors.New(i18n.T("empty duration", "时长为空"))
 	}
 	var total time.Duration
 	num := ""
@@ -611,7 +612,7 @@ func ParseDuration(s string) (time.Duration, error) {
 			continue
 		}
 		if num == "" {
-			return 0, fmt.Errorf("invalid duration %q", s)
+			return 0, fmt.Errorf(i18n.T("invalid duration %q", "无效的时长 %q"), s)
 		}
 		var unit time.Duration
 		switch c {
@@ -624,20 +625,20 @@ func ParseDuration(s string) (time.Duration, error) {
 		case 's':
 			unit = time.Second
 		default:
-			return 0, fmt.Errorf("invalid duration unit %q in %q (use d/h/m/s)", string(c), s)
+			return 0, fmt.Errorf(i18n.T("invalid duration unit %q in %q (use d/h/m/s)", "无效的时长单位 %q（位于 %q，请使用 d/h/m/s）"), string(c), s)
 		}
 		var n int64
 		if _, err := fmt.Sscanf(num, "%d", &n); err != nil {
-			return 0, fmt.Errorf("invalid duration %q", s)
+			return 0, fmt.Errorf(i18n.T("invalid duration %q", "无效的时长 %q"), s)
 		}
 		total += time.Duration(n) * unit
 		num = ""
 	}
 	if num != "" {
-		return 0, fmt.Errorf("invalid duration %q (trailing number)", s)
+		return 0, fmt.Errorf(i18n.T("invalid duration %q (trailing number)", "无效的时长 %q（末尾多余数字）"), s)
 	}
 	if total <= 0 {
-		return 0, fmt.Errorf("duration must be positive: %q", s)
+		return 0, fmt.Errorf(i18n.T("duration must be positive: %q", "时长必须为正数：%q"), s)
 	}
 	return total, nil
 }
@@ -681,5 +682,5 @@ func parseTime(s string) (time.Time, error) {
 			return t, nil
 		}
 	}
-	return time.Time{}, fmt.Errorf("unrecognized time format %q (use duration like 7d10h31s or RFC3339/'YYYY-MM-DD')", s)
+	return time.Time{}, fmt.Errorf(i18n.T("unrecognized time format %q (use duration like 7d10h31s or RFC3339/'YYYY-MM-DD')", "无法识别的时间格式 %q（请使用 7d10h31s 之类的时长或 RFC3339/'YYYY-MM-DD'）"), s)
 }

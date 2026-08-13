@@ -16,16 +16,16 @@ func init() {
 }
 
 // NewLsCmd 列出桶/对象 (-r/--recursive, --versions, --incomplete/-I, --summarize).
+// 允许「仅别名」参数 (列出所有桶), 见 NewRunEAllowAliasOnly.
 func NewLsCmd() *cobra.Command {
 	var opt action.ListOptions
-	AllowAliasOnly = true
 	cmd := &cobra.Command{
-		Use:               "ls [alias:[bucket/[path]]]",
+		Use:               "ls alias:[bucket/[path]]",
 		Aliases:           []string{"list", "l"},
 		Short:             i18n.T("List objects or bucket", "列出对象或存储桶"),
 		ValidArgsFunction: AutoCompletePath,
 		Args:              cobra.MinimumNArgs(1),
-		RunE: NewRunE(func(S3 action.Action, dst *s3path.Path) error {
+		RunE: NewRunEAllowAliasOnly(func(S3 action.Action, dst *s3path.Path) error {
 			return S3.ListObjects(opt, dst.Bucket, dst.Key)
 		}),
 	}

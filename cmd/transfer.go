@@ -44,14 +44,14 @@ func NewGetCmd() *cobra.Command {
 	return cmd
 }
 
-// NewPutCmd 上传对象 (--tags, --storage-class/--sc).
+// NewPutCmd 上传对象 (--tags, --storage-class/--sc; 本地路径为 "-" 时从 stdin 上传).
 func NewPutCmd() *cobra.Command {
 	var putOpt action.PutOptions
 	// cmd 先声明后赋值: RunE 闭包需要引用 cmd 判断 --part-size 是否被显式设置
 	var cmd *cobra.Command
 	cmd = &cobra.Command{
 		Use:               "put [local-path] [alias:bucket/path]",
-		Long:              i18n.T("Upload file(s) to S3 (text output only)", "上传文件到 S3（仅文本输出）"),
+		Long:              i18n.T("Upload file(s) to S3 (text output only). Use '-' as the local path to upload from stdin.", "上传文件到 S3（仅文本输出）。本地路径为 '-' 时从标准输入（stdin）读取数据上传。"),
 		Short:             i18n.T("Upload file(s) to S3", "上传文件到 S3"),
 		Args:              cobra.ExactArgs(2),
 		ValidArgsFunction: CompleteLocalFirst(AutoCompletePath),

@@ -7,10 +7,12 @@ package action
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"strings"
 
 	myprint "s3cli/pkg/fmtutil"
+	"s3cli/pkg/i18n"
 	s3 "s3cli/pkg/s3iface"
 )
 
@@ -47,22 +49,22 @@ func (c *Action) setCorsFromFile(corsFile, bucket string) error {
 		return fmt.Errorf("parse cors file %s: %w", corsFile, err)
 	}
 	if len(cfg.CORSRules) == 0 {
-		return fmt.Errorf("no CORS rules found in %s", corsFile)
+		return fmt.Errorf(i18n.T("no CORS rules found in %s", "在 %s 中未找到 CORS 规则"), corsFile)
 	}
 	if err := c.S3.SetBucketCors(c.Ctx, bucket, cfg); err != nil {
 		return fmt.Errorf("set cors %s: %s", bucket, FormatAPIError(err))
 	}
-	myprint.PrintfBoldGreen("CORS configuration set for %s %s\n", c.Alias, bucket)
+	myprint.PrintfBoldGreen(i18n.T("CORS configuration set for %s %s\n", "已为 %s %s 设置 CORS 配置\n"), c.Alias, bucket)
 	return nil
 }
 
 // setCorsFromFlags 按参数生成单条 CORS 规则并设置 (不依赖文件).
 func (c *Action) setCorsFromFlags(opt CorsOptions, bucket string) error {
 	if len(opt.Origins) == 0 {
-		return fmt.Errorf("cors set: at least one --origin is required (or use -f/--from-file)")
+		return errors.New(i18n.T("cors set: at least one --origin is required (or use -f/--from-file)", "设置 CORS：至少需要一个 --origin（或使用 -f/--from-file）"))
 	}
 	if len(opt.Methods) == 0 {
-		return fmt.Errorf("cors set: at least one --method is required (GET/PUT/POST/DELETE/HEAD)")
+		return errors.New(i18n.T("cors set: at least one --method is required (GET/PUT/POST/DELETE/HEAD)", "设置 CORS：至少需要一个 --method（GET/PUT/POST/DELETE/HEAD）"))
 	}
 
 	rule := s3.CorsRule{
@@ -82,7 +84,7 @@ func (c *Action) setCorsFromFlags(opt CorsOptions, bucket string) error {
 	}
 
 	scope := strings.Join(rule.AllowedOrigin, ", ")
-	myprint.PrintfBoldGreen("CORS configuration set for %s %s (%s)\n", c.Alias, bucket, scope)
+	myprint.PrintfBoldGreen(i18n.T("CORS configuration set for %s %s (%s)\n", "已为 %s %s 设置 CORS 配置（%s）\n"), c.Alias, bucket, scope)
 	return nil
 }
 
@@ -97,7 +99,7 @@ func (c *Action) GetCors(bucket string) error {
 
 // DelCors 删除桶 CORS
 func (c *Action) DelCors(bucket string) error {
-	return c.deleteBucketConfig(bucket, "cors", "CORS configuration deleted for %s %s\n",
+	return c.deleteBucketConfig(bucket, "cors", i18n.T("CORS configuration deleted for %s %s\n", "已为 %s %s 删除 CORS 配置\n"),
 		func() error { return c.S3.DeleteBucketCors(c.Ctx, bucket) })
 }
 

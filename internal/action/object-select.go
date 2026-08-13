@@ -6,11 +6,13 @@
 package action
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"strings"
 
 	myprint "s3cli/pkg/fmtutil"
+	"s3cli/pkg/i18n"
 	"s3cli/pkg/s3iface"
 )
 
@@ -35,7 +37,7 @@ func (c *Action) SelectObjects(opt SelectOptions, bucket, prefix string) error {
 		return c.selectRecursive(opt, bucket, prefix)
 	}
 	if prefix == "" {
-		return fmt.Errorf("sql requires an object key or a prefix with -r")
+		return errors.New(i18n.T("sql requires an object key or a prefix with -r", "sql 需要指定对象 key 或带 -r 的前缀"))
 	}
 	return c.selectOne(opt, bucket, prefix)
 }
@@ -54,7 +56,7 @@ func (c *Action) selectRecursive(opt SelectOptions, bucket, prefix string) error
 		return err
 	}
 	if count == 0 {
-		myprint.PrintfBoldYellow("%s: no objects to query\n", c.S3Path(bucket, prefix))
+		myprint.PrintfBoldYellow(i18n.T("%s: no objects to query\n", "%s：没有可查询的对象\n"), c.S3Path(bucket, prefix))
 	}
 	return nil
 }
@@ -89,7 +91,7 @@ func (c *Action) selectOne(opt SelectOptions, bucket, key string) error {
 
 	// 统计信息输出到 stderr, 不污染 stdout 的查询结果
 	if stats != nil {
-		fmt.Fprintf(os.Stderr, "%s: scanned %d B, processed %d B, returned %d B\n",
+		fmt.Fprintf(os.Stderr, i18n.T("%s: scanned %d B, processed %d B, returned %d B\n", "%s：扫描 %d B，处理 %d B，返回 %d B\n"),
 			c.S3Path(bucket, key), stats.BytesScanned, stats.BytesProcessed, stats.BytesReturned)
 	}
 	return nil
@@ -100,10 +102,10 @@ func (c *Action) selectOne(opt SelectOptions, bucket, key string) error {
 // 未指定 --compression 时按扩展名推断 (.gz -> GZIP, .bz/.bz2 -> BZIP2).
 func buildSelectSerializations(opt SelectOptions, key string) (*s3iface.SelectSerialization, *s3iface.SelectSerialization, error) {
 	if opt.CSVInput != "" && opt.JSONInput != "" {
-		return nil, nil, fmt.Errorf("only one of --csv-input or --json-input can be specified")
+		return nil, nil, errors.New(i18n.T("only one of --csv-input or --json-input can be specified", "--csv-input 与 --json-input 只能指定一个"))
 	}
 	if opt.CSVOutput != "" && opt.JSONOutput != "" {
-		return nil, nil, fmt.Errorf("only one of --csv-output or --json-output can be specified")
+		return nil, nil, errors.New(i18n.T("only one of --csv-output or --json-output can be specified", "--csv-output 与 --json-output 只能指定一个"))
 	}
 
 	lowerKey := strings.ToLower(key)
@@ -189,20 +191,20 @@ func parseSelectOpts(inp string, validKeys map[string]string) (map[string]string
 	for _, pair := range splitOptPairs(inp) {
 		eq := strings.Index(pair, "=")
 		if eq < 0 {
-			return nil, fmt.Errorf("serialization options should be of the form key=value,... (got %q)", pair)
+			return nil, fmt.Errorf(i18n.T("serialization options should be of the form key=value,... (got %q)", "序列化选项应为 key=value,... 形式（当前为 %q）"), pair)
 		}
 		key := strings.TrimSpace(pair[:eq])
 		val := strings.TrimSpace(pair[eq+1:])
 		if key == "" {
-			return nil, fmt.Errorf("empty option key in %q", pair)
+			return nil, fmt.Errorf(i18n.T("empty option key in %q", "%q 中存在空的选项键"), pair)
 		}
 		// 展开缩写 (rd -> RecordDelimiter 等)
 		long, ok := validKeys[key]
 		if !ok {
-			return nil, fmt.Errorf("invalid serialization key %q (valid: %s)", key, strings.Join(optKeys(validKeys), ", "))
+			return nil, fmt.Errorf(i18n.T("invalid serialization key %q (valid: %s)", "无效的序列化键 %q（合法：%s）"), key, strings.Join(optKeys(validKeys), ", "))
 		}
 		if _, dup := out[long]; dup {
-			return nil, fmt.Errorf("more than one key=value found for %s", key)
+			return nil, fmt.Errorf(i18n.T("more than one key=value found for %s", "%s 出现多次 key=value"), key)
 		}
 		out[long] = unescapeOptValue(val)
 	}
@@ -270,7 +272,7 @@ var validSelectKeys = map[string]string{
 func applySelectCSVInput(ins *s3iface.SelectSerialization, opts string) error {
 	kv, err := parseSelectOpts(opts, validSelectKeys)
 	if err != nil {
-		return fmt.Errorf("--csv-input: %w", err)
+		return fmt.Errorf(i18n.T("--csv-input: %w", "--csv-input：%w"), err)
 	}
 	for k, v := range kv {
 		switch k {
@@ -297,7 +299,7 @@ func applySelectCSVInput(ins *s3iface.SelectSerialization, opts string) error {
 func applySelectJSONInput(ins *s3iface.SelectSerialization, opts string) error {
 	kv, err := parseSelectOpts(opts, validSelectKeys)
 	if err != nil {
-		return fmt.Errorf("--json-input: %w", err)
+		return fmt.Errorf(i18n.T("--json-input: %w", "--json-input：%w"), err)
 	}
 	for k, v := range kv {
 		if k == "Type" {
@@ -314,7 +316,7 @@ func applySelectJSONInput(ins *s3iface.SelectSerialization, opts string) error {
 func applySelectCSVOutput(outs *s3iface.SelectSerialization, opts string) error {
 	kv, err := parseSelectOpts(opts, validSelectKeys)
 	if err != nil {
-		return fmt.Errorf("--csv-output: %w", err)
+		return fmt.Errorf(i18n.T("--csv-output: %w", "--csv-output：%w"), err)
 	}
 	for k, v := range kv {
 		switch k {
@@ -340,7 +342,7 @@ func applySelectCSVOutput(outs *s3iface.SelectSerialization, opts string) error 
 func applySelectJSONOutput(outs *s3iface.SelectSerialization, opts string) error {
 	kv, err := parseSelectOpts(opts, validSelectKeys)
 	if err != nil {
-		return fmt.Errorf("--json-output: %w", err)
+		return fmt.Errorf(i18n.T("--json-output: %w", "--json-output：%w"), err)
 	}
 	for k, v := range kv {
 		if k == "RecordDelimiter" {

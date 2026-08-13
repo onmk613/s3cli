@@ -147,6 +147,63 @@ func TestPresignedURLVerifiableRoundTrip(t *testing.T) {
 	}
 }
 
+// TestPresignedURLUsesCachedBucketRegion 验证预签名 URL 的签名 region 优先取
+// bucketLocCache 中缓存的 bucket region (与 Do 的签名逻辑一致), 而非配置 region。
+// 缓存未命中时仍用配置 region (回归: 默认行为不变)。
+func TestPresignedURLUsesCachedBucketRegion(t *testing.T) {
+	c, err := New(&Options{Endpoint: "https://s3.example.test", AccessKey: "key", SecretKey: "secret", Region: "us-east-1"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// 模拟此前经 region 重定向 / GetBucketLocation 探测写入的缓存
+	c.bucketLocCache.Set("bucket", "eu-central-1")
+
+	signed, err := c.PresignedURL(nil, "bucket", "dir/a b.txt", &PresignOptions{Method: "GET", Expires: time.Hour})
+	if err != nil {
+		t.Fatal(err)
+	}
+	u, err := url.Parse(signed)
+	if err != nil {
+		t.Fatal(err)
+	}
+	q := u.Query()
+	gotSig := q.Get("X-Amz-Signature")
+	if cred := q.Get("X-Amz-Credential"); !strings.Contains(cred, "/eu-central-1/s3/aws4_request") {
+		t.Fatalf("X-Amz-Credential = %q, want eu-central-1 scope", cred)
+	}
+
+	// 签名必须按缓存 region 派生: 用 eu-central-1 重建 canonical request 验签应一致
+	q.Del("X-Amz-Signature")
+	u.RawQuery = s3EncodeQuery(q)
+	req, err := http.NewRequest("GET", u.String(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Host = u.Host
+	canonicalRequest, _ := buildCanonicalRequest(req, unsignedPayload)
+	amzDate := q.Get("X-Amz-Date")
+	scopeDate := amzDate[:8]
+	scope := strings.Join([]string{scopeDate, "eu-central-1", serviceS3, "aws4_request"}, "/")
+	stringToSign := strings.Join([]string{signV4Algorithm, amzDate, scope, sumSHA256Hex([]byte(canonicalRequest))}, "\n")
+	wantSig := hexHMAC(deriveSigningKey("secret", scopeDate, "eu-central-1"), stringToSign)
+	if gotSig != wantSig {
+		t.Fatalf("signature mismatch:\n got %s\nwant %s", gotSig, wantSig)
+	}
+
+	// 未缓存 bucket: 回退配置 region
+	signed2, err := c.PresignedURL(nil, "other-bucket", "key", &PresignOptions{Method: "GET", Expires: time.Hour})
+	if err != nil {
+		t.Fatal(err)
+	}
+	u2, err := url.Parse(signed2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cred := u2.Query().Get("X-Amz-Credential"); !strings.Contains(cred, "/us-east-1/s3/aws4_request") {
+		t.Fatalf("X-Amz-Credential = %q, want us-east-1 scope for uncached bucket", cred)
+	}
+}
+
 // TestPresignV2SessionTokenSigned 验证临时凭证的 token 既出现在 query
 // (名为 x-amz-security-token), 也计入了 StringToSign。
 func TestPresignV2SessionTokenSigned(t *testing.T) {

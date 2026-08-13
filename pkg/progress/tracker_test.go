@@ -132,8 +132,36 @@ func TestRenderThrottleDoesNotPanic(t *testing.T) {
 	}
 }
 
-// 确认 colorize 辅助被覆盖 (render 间接调用)
-var _ = strings.Contains
+// TestSetOutput 验证 writer 注入: 渲染帧、quiet 原始行、Stop 汇总行都写入注入目标,
+// 且 quiet 模式下不输出 ANSI 颜色码。
+func TestSetOutput(t *testing.T) {
+	pt := New()
+	pt.SetQuiet() // 避免渲染, 走 quiet 原始行路径
+	pt.Start()
+
+	var buf bytes.Buffer
+	pt.SetOutput(&buf)
+
+	pt.AddTotalDone(1, "item")
+	if !strings.Contains(buf.String(), "Done: item") {
+		t.Errorf("expected raw Done line in buffer, got %q", buf.String())
+	}
+	if strings.Contains(buf.String(), "\x1b[") {
+		t.Errorf("quiet output should be plain text, got %q", buf.String())
+	}
+
+	pt.AddTotal(1)
+	pt.AddTotalSize(10)
+	pt.AddTotalSizeDone(10)
+	buf.Reset()
+	pt.Stop()
+	if !strings.Contains(buf.String(), "Uploading: 1/1 total") {
+		t.Errorf("expected summary in buffer, got %q", buf.String())
+	}
+	if strings.Contains(buf.String(), "\x1b[") {
+		t.Errorf("quiet Stop summary should be plain text, got %q", buf.String())
+	}
+}
 
 // TestStopPreventsPostSummaryFrames 回归 P1-BUG-5:
 // 并发 Add* 与 Stop 交错时, Stop 的汇总摘要行之后不得再出现任何输出
@@ -147,13 +175,10 @@ func TestStopPreventsPostSummaryFrames(t *testing.T) {
 			name = "quiet"
 		}
 		t.Run(name, func(t *testing.T) {
-			oldStdout := os.Stdout
 			r, w, err := os.Pipe()
 			if err != nil {
 				t.Fatal(err)
 			}
-			os.Stdout = w
-			defer func() { os.Stdout = oldStdout }()
 
 			// 并发排空管道: 防止 worker 在 Stop 前输出过多把 64KB 管道写满,
 			// 导致 Stop 的摘要行也阻塞、测试死锁。
@@ -165,6 +190,7 @@ func TestStopPreventsPostSummaryFrames(t *testing.T) {
 			}()
 
 			pt := New()
+			pt.SetOutput(w)
 			// 测试环境无终端: New 会置 quiet。按用例强制走目标路径。
 			pt.quiet.Store(quiet)
 			pt.width = 80
@@ -189,10 +215,9 @@ func TestStopPreventsPostSummaryFrames(t *testing.T) {
 
 			_ = w.Close()
 			<-drained
-			os.Stdout = oldStdout
 			out := buf.Bytes()
 
-			// 汇总摘要行包含 "Uploading: N/M total (...)" (带颜色转义);
+			// 汇总摘要行包含 "Uploading: N/M total (...)" (可能带颜色转义);
 			// 进度条帧里只有 " Uploading " (无冒号), 故 "Uploading:" 唯一指向摘要行。
 			idx := bytes.Index(out, []byte("Uploading:"))
 			if idx < 0 {

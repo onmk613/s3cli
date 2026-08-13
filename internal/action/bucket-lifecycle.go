@@ -25,6 +25,7 @@ import (
 	"time"
 
 	myprint "s3cli/pkg/fmtutil"
+	"s3cli/pkg/i18n"
 	s3 "s3cli/pkg/s3iface"
 )
 
@@ -92,7 +93,7 @@ func (c *Action) SetLifecycle(opt LifecycleOptions, bucket string) error {
 		cfg = loaded
 	} else {
 		if opt.TTL == "" {
-			return fmt.Errorf("lifecycle set: either --prefix+--ttl or --from-file is required")
+			return errors.New(i18n.T("lifecycle set: either --prefix+--ttl or --from-file is required", "lifecycle set: 必须提供 --prefix+--ttl 或 --from-file"))
 		}
 		days, err := ParseTTLDays(opt.TTL)
 		if err != nil {
@@ -108,7 +109,7 @@ func (c *Action) SetLifecycle(opt LifecycleOptions, bucket string) error {
 		return fmt.Errorf("set lifecycle %s: %s", bucket, FormatAPIError(err))
 	}
 
-	myprint.PrintfBoldGreen("Lifecycle set for %s %s (%d rules)\n", c.Alias, bucket, len(cfg.Rules))
+	myprint.PrintfBoldGreen(i18n.T("Lifecycle set for %s %s (%d rules)\n", "已为 %s %s 设置生命周期 (%d 条规则)\n"), c.Alias, bucket, len(cfg.Rules))
 	return nil
 }
 
@@ -134,7 +135,7 @@ func (c *Action) SetLifecycleRule(opt LifecycleRuleOptions, bucket string) error
 			if err := c.S3.SetBucketLifecycle(c.Ctx, bucket, cfg); err != nil {
 				return fmt.Errorf("set lifecycle rule %s: %s", bucket, FormatAPIError(err))
 			}
-			myprint.PrintfBoldGreen("Lifecycle rule %s updated on %s %s\n", rule.ID, c.Alias, bucket)
+			myprint.PrintfBoldGreen(i18n.T("Lifecycle rule %s updated on %s %s\n", "生命周期规则 %s 已在 %s %s 上更新\n"), rule.ID, c.Alias, bucket)
 			return nil
 		}
 	}
@@ -142,7 +143,7 @@ func (c *Action) SetLifecycleRule(opt LifecycleRuleOptions, bucket string) error
 	if err := c.S3.SetBucketLifecycle(c.Ctx, bucket, cfg); err != nil {
 		return fmt.Errorf("set lifecycle rule %s: %s", bucket, FormatAPIError(err))
 	}
-	myprint.PrintfBoldGreen("Lifecycle rule %s added to %s %s\n", rule.ID, c.Alias, bucket)
+	myprint.PrintfBoldGreen(i18n.T("Lifecycle rule %s added to %s %s\n", "生命周期规则 %s 已添加到 %s %s\n"), rule.ID, c.Alias, bucket)
 	return nil
 }
 
@@ -151,13 +152,13 @@ func (c *Action) SetLifecycleRule(opt LifecycleRuleOptions, bucket string) error
 func (c *Action) RemoveLifecycleRules(opt RemoveLifecycleOptions, bucket string) error {
 	if opt.All {
 		if !opt.Force {
-			return fmt.Errorf("lifecycle remove: --all requires --force")
+			return errors.New(i18n.T("lifecycle remove: --all requires --force", "lifecycle remove: --all 必须配合 --force"))
 		}
 		if err := c.S3.DeleteBucketLifecycle(c.Ctx, bucket); err != nil {
 			// 无配置时视为已删除 (幂等)
 			var apiErr *s3.ErrorResponse
 			if errors.As(err, &apiErr) && (apiErr.Code == "NoSuchLifecycleConfiguration" || apiErr.StatusCode == 404) {
-				myprint.PrintfBoldGreen("Lifecycle deleted for %s %s\n", c.Alias, bucket)
+				myprint.PrintfBoldGreen(i18n.T("Lifecycle deleted for %s %s\n", "已删除 %s %s 的生命周期配置\n"), c.Alias, bucket)
 				return nil
 			}
 			return fmt.Errorf("remove lifecycle %s: %s", bucket, FormatAPIError(err))
@@ -166,7 +167,7 @@ func (c *Action) RemoveLifecycleRules(opt RemoveLifecycleOptions, bucket string)
 		return nil
 	}
 	if opt.ID == "" {
-		return fmt.Errorf("lifecycle remove: either --id or --all is required")
+		return errors.New(i18n.T("lifecycle remove: either --id or --all is required", "lifecycle remove: 必须指定 --id 或 --all"))
 	}
 	cfg, err := c.getLifecycle(bucket)
 	if err != nil {
@@ -182,13 +183,28 @@ func (c *Action) RemoveLifecycleRules(opt RemoveLifecycleOptions, bucket string)
 		out = append(out, r)
 	}
 	if !found {
-		return fmt.Errorf("lifecycle rule with ID %q not found on %s/%s", opt.ID, c.Alias, bucket)
+		return fmt.Errorf(i18n.T("lifecycle rule with ID %q not found on %s/%s", "未找到 ID 为 %q 的生命周期规则 (在 %s/%s 上)"), opt.ID, c.Alias, bucket)
 	}
 	cfg.Rules = out
+	// 删光最后一条规则时, 部分服务端 (MinIO) 拒绝空配置 PUT
+	// ("Lifecycle configuration should have at least one rule"),
+	// 此时改走 DeleteBucketLifecycle (与 --all 路径一致)。
+	if len(cfg.Rules) == 0 {
+		if err := c.S3.DeleteBucketLifecycle(c.Ctx, bucket); err != nil {
+			var apiErr *s3.ErrorResponse
+			if errors.As(err, &apiErr) && (apiErr.Code == "NoSuchLifecycleConfiguration" || apiErr.Code == "NoSuchBucket") {
+				myprint.PrintfBoldGreen(i18n.T("Lifecycle rule %s removed from %s %s\n", "生命周期规则 %s 已从 %s %s 移除\n"), opt.ID, c.Alias, bucket)
+				return nil
+			}
+			return fmt.Errorf("remove lifecycle %s: %s", bucket, FormatAPIError(err))
+		}
+		myprint.PrintfBoldGreen(i18n.T("Lifecycle rule %s removed from %s %s\n", "生命周期规则 %s 已从 %s %s 移除\n"), opt.ID, c.Alias, bucket)
+		return nil
+	}
 	if err := c.S3.SetBucketLifecycle(c.Ctx, bucket, cfg); err != nil {
 		return fmt.Errorf("remove lifecycle rule %s: %s", bucket, FormatAPIError(err))
 	}
-	myprint.PrintfBoldGreen("Lifecycle rule %s removed from %s %s\n", opt.ID, c.Alias, bucket)
+	myprint.PrintfBoldGreen(i18n.T("Lifecycle rule %s removed from %s %s\n", "生命周期规则 %s 已从 %s %s 移除\n"), opt.ID, c.Alias, bucket)
 	return nil
 }
 
@@ -273,8 +289,8 @@ func (c *Action) ListLifecycle(bucket string, opt ListLifecycleOptions) error {
 		}
 		if len(rows) > 0 {
 			sections = append(sections, section{
-				title:  "Expiration for latest version (Expiration)",
-				header: []string{"ID", "Status", "Prefix", "Tags", "Days to Expire", "Expire DeleteMarker"},
+				title:  i18n.T("Expiration for latest version (Expiration)", "当前版本过期 (Expiration)"),
+				header: []string{"ID", i18n.T("Status", "状态"), i18n.T("Prefix", "前缀"), i18n.T("Tags", "标签"), i18n.T("Days to Expire", "过期天数"), i18n.T("Expire DeleteMarker", "过期删除标记")},
 				rows:   rows,
 			})
 		}
@@ -301,8 +317,8 @@ func (c *Action) ListLifecycle(bucket string, opt ListLifecycleOptions) error {
 		}
 		if len(rows) > 0 {
 			sections = append(sections, section{
-				title:  "Expiration for older versions (NoncurrentVersionExpiration)",
-				header: []string{"ID", "Status", "Prefix", "Tags", "Days to Expire", "Keep Versions"},
+				title:  i18n.T("Expiration for older versions (NoncurrentVersionExpiration)", "历史版本过期 (NoncurrentVersionExpiration)"),
+				header: []string{"ID", i18n.T("Status", "状态"), i18n.T("Prefix", "前缀"), i18n.T("Tags", "标签"), i18n.T("Days to Expire", "过期天数"), i18n.T("Keep Versions", "保留版本数")},
 				rows:   rows,
 			})
 		}
@@ -329,8 +345,8 @@ func (c *Action) ListLifecycle(bucket string, opt ListLifecycleOptions) error {
 		}
 		if len(rows) > 0 {
 			sections = append(sections, section{
-				title:  "Transition for latest version (Transition)",
-				header: []string{"ID", "Status", "Prefix", "Tags", "Days to Tier", "Tier"},
+				title:  i18n.T("Transition for latest version (Transition)", "当前版本转换 (Transition)"),
+				header: []string{"ID", i18n.T("Status", "状态"), i18n.T("Prefix", "前缀"), i18n.T("Tags", "标签"), i18n.T("Days to Tier", "转换天数"), i18n.T("Tier", "存储层级")},
 				rows:   rows,
 			})
 		}
@@ -354,8 +370,8 @@ func (c *Action) ListLifecycle(bucket string, opt ListLifecycleOptions) error {
 		}
 		if len(rows) > 0 {
 			sections = append(sections, section{
-				title:  "Transition for older versions (NoncurrentVersionTransition)",
-				header: []string{"ID", "Status", "Prefix", "Tags", "Days to Tier", "Tier"},
+				title:  i18n.T("Transition for older versions (NoncurrentVersionTransition)", "历史版本转换 (NoncurrentVersionTransition)"),
+				header: []string{"ID", i18n.T("Status", "状态"), i18n.T("Prefix", "前缀"), i18n.T("Tags", "标签"), i18n.T("Days to Tier", "转换天数"), i18n.T("Tier", "存储层级")},
 				rows:   rows,
 			})
 		}
@@ -377,19 +393,19 @@ func (c *Action) ListLifecycle(bucket string, opt ListLifecycleOptions) error {
 		}
 		if len(rows) > 0 {
 			sections = append(sections, section{
-				title:  "AbortIncompleteMultipartUpload",
-				header: []string{"ID", "Status", "Prefix", "Tags", "Days to Abort", ""},
+				title:  i18n.T("AbortIncompleteMultipartUpload", "中止未完成的分片上传 (AbortIncompleteMultipartUpload)"),
+				header: []string{"ID", i18n.T("Status", "状态"), i18n.T("Prefix", "前缀"), i18n.T("Tags", "标签"), i18n.T("Days to Abort", "中止天数"), ""},
 				rows:   rows,
 			})
 		}
 	}
 
 	if len(cfg.Rules) == 0 {
-		myprint.PrintfBoldYellow("%s: no lifecycle rules configured\n", c.S3Path(bucket, ""))
+		myprint.PrintfBoldYellow(i18n.T("%s: no lifecycle rules configured\n", "%s: 未配置生命周期规则\n"), c.S3Path(bucket, ""))
 		return nil
 	}
 
-	myprint.PrintfBoldBlue("# %s %s lifecycle rules (%d):\n", c.Alias, bucket, len(cfg.Rules))
+	myprint.PrintfBoldBlue(i18n.T("# %s %s lifecycle rules (%d):\n", "# %s %s 生命周期规则 (%d):\n"), c.Alias, bucket, len(cfg.Rules))
 	for _, sec := range sections {
 		printLifecycleSection(sec.title, sec.header, sec.rows)
 	}
@@ -451,7 +467,7 @@ func buildLifecycleRule(opt LifecycleRuleOptions) (s3.LifecycleRule, error) {
 		expiryCount++
 	}
 	if expiryCount > 1 {
-		return rule, fmt.Errorf("only one of --expire-days/--expiry-date/--expire-delete-marker can be used in a single rule")
+		return rule, errors.New(i18n.T("only one of --expire-days/--expiry-date/--expire-delete-marker can be used in a single rule", "单条规则中 --expire-days/--expiry-date/--expire-delete-marker 只能使用其一"))
 	}
 	if opt.ExpireAllObjectVersions != nil {
 		all := *opt.ExpireAllObjectVersions
@@ -463,12 +479,12 @@ func buildLifecycleRule(opt LifecycleRuleOptions) (s3.LifecycleRule, error) {
 
 	if opt.TransitionDays != nil {
 		if opt.TransitionTier == nil {
-			return rule, fmt.Errorf("--transition-tier is required when --transition-days is set")
+			return rule, errors.New(i18n.T("--transition-tier is required when --transition-days is set", "设置 --transition-days 时必须提供 --transition-tier"))
 		}
 		days := *opt.TransitionDays
 		rule.Transitions = []s3.Transition{{Days: &days, StorageClass: strings.ToUpper(*opt.TransitionTier)}}
 	} else if opt.TransitionTier != nil {
-		return rule, fmt.Errorf("--transition-days is required when --transition-tier is set")
+		return rule, errors.New(i18n.T("--transition-days is required when --transition-tier is set", "设置 --transition-tier 时必须提供 --transition-days"))
 	}
 
 	if opt.NoncurrentExpireDays != nil || opt.NoncurrentExpireNewer != nil {
@@ -486,18 +502,18 @@ func buildLifecycleRule(opt LifecycleRuleOptions) (s3.LifecycleRule, error) {
 
 	if opt.NoncurrentTransitionDays != nil {
 		if opt.NoncurrentTransitionTier == nil {
-			return rule, fmt.Errorf("--noncurrent-transition-tier is required when --noncurrent-transition-days is set")
+			return rule, errors.New(i18n.T("--noncurrent-transition-tier is required when --noncurrent-transition-days is set", "设置 --noncurrent-transition-days 时必须提供 --noncurrent-transition-tier"))
 		}
 		days := *opt.NoncurrentTransitionDays
 		rule.NoncurrentVersionTransitions = []s3.NoncurrentVersionTransition{
 			{NoncurrentDays: &days, StorageClass: strings.ToUpper(*opt.NoncurrentTransitionTier)},
 		}
 	} else if opt.NoncurrentTransitionTier != nil {
-		return rule, fmt.Errorf("--noncurrent-transition-days is required when --noncurrent-transition-tier is set")
+		return rule, errors.New(i18n.T("--noncurrent-transition-days is required when --noncurrent-transition-tier is set", "设置 --noncurrent-transition-tier 时必须提供 --noncurrent-transition-days"))
 	}
 
 	if !hasLifecycleAction(rule) {
-		return rule, fmt.Errorf("at least one of --expire-days/--expiry-date/--expire-delete-marker/--expire-all-object-versions/--transition-days/--noncurrent-expire-days/--noncurrent-transition-days must be specified")
+		return rule, errors.New(i18n.T("at least one of --expire-days/--expiry-date/--expire-delete-marker/--expire-all-object-versions/--transition-days/--noncurrent-expire-days/--noncurrent-transition-days must be specified", "必须至少指定 --expire-days/--expiry-date/--expire-delete-marker/--expire-all-object-versions/--transition-days/--noncurrent-expire-days/--noncurrent-transition-days 之一"))
 	}
 	// ID 在动作字段全部就位后生成, 确保不同内容 (动作/天数/层级) 得到不同 ID.
 	if rule.ID == "" {
@@ -583,7 +599,7 @@ func validateLifecycleConfig(cfg *s3.LifecycleConfig) error {
 // validateLifecycleDate 校验 'YYYY-MM-DD' (或完整 ISO 8601) 日期.
 func validateLifecycleDate(date string) error {
 	if _, err := normalizeLifecycleDate(date); err != nil {
-		return fmt.Errorf("invalid date %q: must be YYYY-MM-DD", date)
+		return fmt.Errorf(i18n.T("invalid date %q: must be YYYY-MM-DD", "日期 %q 无效: 必须为 YYYY-MM-DD 格式"), date)
 	}
 	return nil
 }
@@ -680,7 +696,7 @@ func parseILMTags(s string) []s3.Tag {
 func ParseByteSize(s string) (int64, error) {
 	s = strings.TrimSpace(s)
 	if s == "" {
-		return 0, fmt.Errorf("empty size")
+		return 0, errors.New(i18n.T("empty size", "大小为必填项"))
 	}
 	i := 0
 	for i < len(s) {
@@ -695,7 +711,7 @@ func ParseByteSize(s string) (int64, error) {
 	unit := strings.ToLower(strings.TrimSpace(s[i:]))
 	n, err := strconv.ParseFloat(numStr, 64)
 	if err != nil || n <= 0 {
-		return 0, fmt.Errorf("invalid size %q: expected a positive number", s)
+		return 0, fmt.Errorf(i18n.T("invalid size %q: expected a positive number", "大小 %q 无效: 必须为正数"), s)
 	}
 	var mult float64
 	switch unit {
@@ -712,11 +728,11 @@ func ParseByteSize(s string) (int64, error) {
 	case "p", "pb", "pib":
 		mult = 1 << 50
 	default:
-		return 0, fmt.Errorf("unknown size unit %q in %q: use B/K/M/G/T/P (KiB/MiB/GiB...)", unit, s)
+		return 0, fmt.Errorf(i18n.T("unknown size unit %q in %q: use B/K/M/G/T/P (KiB/MiB/GiB...)", "大小单位 %q 无效 (在 %q 中): 请使用 B/K/M/G/T/P (KiB/MiB/GiB...)"), unit, s)
 	}
 	v := int64(math.Round(n * mult))
 	if v <= 0 {
-		return 0, fmt.Errorf("invalid size %q", s)
+		return 0, fmt.Errorf(i18n.T("invalid size %q", "大小 %q 无效"), s)
 	}
 	return v, nil
 }
@@ -754,7 +770,7 @@ func detectConfigFormat(data []byte) ([]byte, string, error) {
 	data = bytes.TrimPrefix(data, []byte{0xEF, 0xBB, 0xBF})
 	trimmed := bytes.TrimSpace(data)
 	if len(trimmed) == 0 {
-		return nil, "", fmt.Errorf("empty input")
+		return nil, "", errors.New(i18n.T("empty input", "输入为空"))
 	}
 	switch trimmed[0] {
 	case '{', '[':
@@ -775,7 +791,9 @@ func (c *Action) getLifecycle(bucket string) (*s3.LifecycleConfig, error) {
 		return cfg, nil
 	}
 	var apiErr *s3.ErrorResponse
-	if errors.As(err, &apiErr) && (apiErr.Code == "NoSuchLifecycleConfiguration" || apiErr.StatusCode == 404) {
+	// 只把 "无配置" 当作空配置; 桶不存在 (NoSuchBucket, 同样是 404) 必须上抛,
+	// 否则 set 会对不存在的桶继续 PUT (部分服务端会静默接收, 产生孤儿配置)。
+	if errors.As(err, &apiErr) && apiErr.Code == "NoSuchLifecycleConfiguration" {
 		return &s3.LifecycleConfig{}, nil
 	}
 	return nil, fmt.Errorf("get lifecycle %s: %s", bucket, FormatAPIError(err))
@@ -817,7 +835,7 @@ func buildTTLLifecycle(prefix string, days int) *s3.LifecycleConfig {
 func ParseTTLDays(s string) (int, error) {
 	s = strings.TrimSpace(s)
 	if s == "" {
-		return 0, fmt.Errorf("--ttl is empty")
+		return 0, errors.New(i18n.T("--ttl is empty", "--ttl 为空"))
 	}
 
 	// 分离数值部分与单位部分
@@ -833,7 +851,7 @@ func ParseTTLDays(s string) (int, error) {
 	}
 	n, err := strconv.ParseFloat(numStr, 64)
 	if err != nil || n <= 0 {
-		return 0, fmt.Errorf("invalid --ttl %q: expected a positive number", s)
+		return 0, fmt.Errorf(i18n.T("invalid --ttl %q: expected a positive number", "--ttl %q 无效: 必须为正数"), s)
 	}
 
 	var days float64

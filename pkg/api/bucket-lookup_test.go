@@ -75,6 +75,55 @@ func TestCustomLookupResolvesRegionAndCaches(t *testing.T) {
 	}
 }
 
+// TestCustomLookupRejectsInvalidBucketAtRuntime 验证自定义模板在运行期对真实 bucket 名做
+// 二次校验: 配置期校验只用固定测试值 ("test-bucket"), 含 ".." 的 bucket 名替换进 host
+// 模板后会拼出非法 host, 必须在发请求前返回带 bucket 名信息的错误。
+func TestCustomLookupRejectsInvalidBucketAtRuntime(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+
+	c, err := New(&Options{
+		Endpoint:           server.URL,
+		AccessKey:          "ak",
+		SecretKey:          "sk",
+		BucketLookupViaURL: &testRegionLookup{template: "https://%(bucket).example.com", needRegion: false},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// 非法 bucket: host 模板替换后含 "..", 必须报错且错误信息含 bucket 名与
+	// 模板输出 (断言校验文案, 避免依赖 DNS 解析错误, 证明错误来自运行期校验)
+	_, err = c.Do(context.Background(), http.MethodGet, requestMetadata{bucketName: "a..b", objectName: "key"})
+	if err == nil {
+		t.Fatal("expected error for bucket 'a..b' substituted into host template")
+	}
+	if !strings.Contains(err.Error(), "a..b") {
+		t.Fatalf("error should mention bucket name, got: %v", err)
+	}
+	if !strings.Contains(err.Error(), `must not contain ".."`) {
+		t.Fatalf("error should come from runtime validation, got: %v", err)
+	}
+
+	// 对照: 同样的 bucket 放进 path 风格模板 (host 不含 "..") 不受影响, 请求正常发出
+	c2, err := New(&Options{
+		Endpoint:           server.URL,
+		AccessKey:          "ak",
+		SecretKey:          "sk",
+		BucketLookupViaURL: &testRegionLookup{template: server.URL + "/%(bucket)", needRegion: false},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp, err := c2.Do(context.Background(), http.MethodGet, requestMetadata{bucketName: "a..b", objectName: "key"})
+	if err != nil {
+		t.Fatalf("path-style template should accept bucket 'a..b': %v", err)
+	}
+	_ = resp.Body.Close()
+}
+
 // TestCustomLookupWithoutRegionSkipsProbe 验证模板不含 %(region) 时走默认方案, 不做任何探测。
 func TestCustomLookupWithoutRegionSkipsProbe(t *testing.T) {
 	var locationHits atomic.Int32
