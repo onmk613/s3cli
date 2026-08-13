@@ -1,4 +1,4 @@
-// object-list.go 实现对象列举 ListObjects (ls), 参数与 mc ls 对齐:
+// object-list.go 实现对象列举 ListObjects (ls), 支持:
 // --recursive/-r 递归, --versions 列版本, --incomplete/-I 列进行中分片上传,
 // --summarize 汇总 (对象数/总大小). bucket 为空时列桶.
 
@@ -9,10 +9,11 @@ import (
 	"strings"
 
 	myprint "s3cli/pkg/fmtutil"
+	"s3cli/pkg/i18n"
 	"s3cli/pkg/s3iface"
 )
 
-// ListOptions ls 命令参数 (mc ls 对齐).
+// ListOptions ls 命令参数.
 type ListOptions struct {
 	Recursive  bool     // -r: 递归列举全部层级
 	Versions   bool     // --versions: 列出对象的所有版本与 delete-marker
@@ -23,6 +24,19 @@ type ListOptions struct {
 	Exclude    []string // --exclude: 不列出匹配任一 glob 的对象
 }
 
+// lsRow 列举输出的表格行 (未指定 --json 时).
+type lsRow struct {
+	date  string
+	size  string
+	typ   string
+	path  string
+	extra string
+	color myprint.Color
+}
+
+// lsTimeLayout 列举输出的统一时间格式.
+const lsTimeLayout = "2006-01-02 15:04:05"
+
 // ListObjects 列出桶 / 对象. bucket 为空时列出当前凭证下所有桶.
 func (c *Action) ListObjects(opt ListOptions, bucket, prefix string) error {
 	if bucket == "" {
@@ -30,6 +44,7 @@ func (c *Action) ListObjects(opt ListOptions, bucket, prefix string) error {
 		if err != nil {
 			return fmt.Errorf("list buckets: %s", FormatAPIError(err))
 		}
+		var rows [][2]myprint.Cell
 		for _, bucket := range buckets {
 			if opt.JSON {
 				if err := printJSONLine(map[string]any{
@@ -41,8 +56,17 @@ func (c *Action) ListObjects(opt ListOptions, bucket, prefix string) error {
 				}
 				continue
 			}
-			myprint.PrintfDim("[%s]   ", bucket.CreationDate.Format("2006-01-02 15:04"))
-			myprint.PrintfGreen("%s\n", c.S3Path(bucket.Name, ""))
+			rows = append(rows, [2]myprint.Cell{
+				{Text: bucket.CreationDate.Format("2006-01-02 15:04"), Color: myprint.Dim},
+				{Text: c.S3Path(bucket.Name, ""), Color: myprint.Green},
+			})
+		}
+		if !opt.JSON {
+			tbl := myprint.NewTable(i18n.T("Created", "创建时间"), i18n.T("Bucket", "存储桶"))
+			for _, r := range rows {
+				tbl.AddRow(r[0], r[1])
+			}
+			tbl.Render()
 		}
 		return nil
 	}
@@ -57,6 +81,53 @@ func (c *Action) ListObjects(opt ListOptions, bucket, prefix string) error {
 	}
 }
 
+// lsTableRowLimit 表格输出行数上限: 超过后放弃对齐表格,
+// 改为逐行流式输出 TSV 文本 (首行表头, 制表符分隔), 避免超大列举的内存峰值与首行延迟.
+const lsTableRowLimit = 1000
+
+// lsTable ls 输出的行收集器: 行数未超上限时渲染对齐表格,
+// 超过后由 Table 自动切换为流式 TSV 输出 (内存有界).
+type lsTable struct {
+	tbl   *myprint.Table
+	extra bool // 是否有末尾附加列 (版本 ID / 上传 ID)
+}
+
+// newLsTable 构造 ls 表格收集器; extraHeader 为末尾附加列名.
+func newLsTable(extraHeader string) *lsTable {
+	headers := []string{
+		i18n.T("Time", "时间"),
+		i18n.T("Size", "大小"),
+		i18n.T("Type", "类型"),
+		i18n.T("Path", "路径"),
+	}
+	if extraHeader != "" {
+		headers = append(headers, extraHeader)
+	}
+	return &lsTable{
+		tbl:   myprint.NewTable(headers...).AlignRight(1).PlainRowLimit(lsTableRowLimit),
+		extra: extraHeader != "",
+	}
+}
+
+// add 追加一行 (超上限时立即写出).
+func (t *lsTable) add(r lsRow) {
+	cells := []myprint.Cell{
+		{Text: r.date, Color: myprint.Dim},
+		{Text: r.size},
+		{Text: r.typ, Color: r.color},
+		{Text: r.path, Color: r.color},
+	}
+	if t.extra {
+		cells = append(cells, myprint.Cell{Text: r.extra, Color: myprint.Cyan})
+	}
+	t.tbl.AddRow(cells...)
+}
+
+// render 输出 (已切换流式时无动作).
+func (t *lsTable) render() {
+	t.tbl.Render()
+}
+
 // listObjectsV2 递归或单层列举对象.
 func (c *Action) listObjectsV2(bucket, prefix string, opt ListOptions) error {
 	opts := &s3iface.ListObjectsV2Options{
@@ -69,6 +140,7 @@ func (c *Action) listObjectsV2(bucket, prefix string, opt ListOptions) error {
 	var count int64
 	var totalSize int64
 	var hasOutput bool
+	tbl := newLsTable("")
 	paginator := c.S3.NewListObjectsV2Paginator(bucket, opts)
 	for paginator.HasMorePages() {
 		page, err := paginator.NextPage(c.Ctx)
@@ -86,7 +158,7 @@ func (c *Action) listObjectsV2(bucket, prefix string, opt ListOptions) error {
 				}
 				continue
 			}
-			myprint.PrintfBlue("%-22s %12s   DIR   %s\n", "", "-", c.S3Path(bucket, p))
+			tbl.add(lsRow{date: "-", size: "-", typ: "DIR", path: c.S3Path(bucket, p), color: myprint.Blue})
 		}
 		for _, item := range page.Contents {
 			// --include/--exclude 过滤 (对完整 key 做 glob; 建议配合 -r)
@@ -108,7 +180,7 @@ func (c *Action) listObjectsV2(bucket, prefix string, opt ListOptions) error {
 					}
 					continue
 				}
-				myprint.PrintfBlue("%-22s %12s   DIR   %s\n", "", "-", c.S3Path(bucket, item.Key))
+				tbl.add(lsRow{date: "-", size: "-", typ: "DIR", path: c.S3Path(bucket, item.Key), color: myprint.Blue})
 				continue
 			}
 			count++
@@ -124,9 +196,13 @@ func (c *Action) listObjectsV2(bucket, prefix string, opt ListOptions) error {
 				}
 				continue
 			}
-			myprint.PrintfDim("[%s]  ", item.LastModified.Format("2006-01-02 15:04:05"))
-			myprint.Printf("%12d   ", item.Size)
-			myprint.PrintfGreen("FILE  %s\n", c.S3Path(bucket, item.Key))
+			tbl.add(lsRow{
+				date:  item.LastModified.Format(lsTimeLayout),
+				size:  fmt.Sprintf("%d", item.Size),
+				typ:   "FILE",
+				path:  c.S3Path(bucket, item.Key),
+				color: myprint.Green,
+			})
 		}
 	}
 
@@ -135,6 +211,9 @@ func (c *Action) listObjectsV2(bucket, prefix string, opt ListOptions) error {
 	// 导致只有空目录的前缀递归列举结果为空。
 	if opt.Recursive && !hasOutput {
 		return c.listObjectsV2(bucket, prefix, ListOptions{JSON: opt.JSON, Summarize: opt.Summarize})
+	}
+	if !opt.JSON {
+		tbl.render()
 	}
 	if opt.Summarize {
 		if opt.JSON {
@@ -160,6 +239,7 @@ func (c *Action) listObjectVersionsAsLs(bucket, prefix string, opt ListOptions) 
 
 	var count int64
 	var totalSize int64
+	tbl := newLsTable(i18n.T("Version ID", "版本ID"))
 	for paginator.HasMorePages() {
 		page, err := paginator.NextPage(c.Ctx)
 		if err != nil {
@@ -190,11 +270,14 @@ func (c *Action) listObjectVersionsAsLs(bucket, prefix string, opt ListOptions) 
 			if v.IsLatest {
 				flag = "VER*"
 			}
-			myprint.Printf("%s ", flag)
-			myprint.PrintfDim("[%s]  ", v.LastModified.Format("2006-01-02 15:04:05"))
-			myprint.Printf("%12d   ", v.Size)
-			myprint.PrintfGreen("%s  ", c.S3Path(bucket, v.Key))
-			myprint.PrintfCyan("ID=%s\n", v.VersionID)
+			tbl.add(lsRow{
+				date:  v.LastModified.Format(lsTimeLayout),
+				size:  fmt.Sprintf("%d", v.Size),
+				typ:   flag,
+				path:  c.S3Path(bucket, v.Key),
+				extra: v.VersionID,
+				color: myprint.Green,
+			})
 		}
 		for _, m := range page.DeleteMarkers {
 			if opt.JSON {
@@ -213,12 +296,18 @@ func (c *Action) listObjectVersionsAsLs(bucket, prefix string, opt ListOptions) 
 			if m.IsLatest {
 				flag = "DEL*"
 			}
-			myprint.PrintfRed("%s ", flag)
-			myprint.PrintfDim("[%s]  ", m.LastModified.Format("2006-01-02 15:04:05"))
-			myprint.Printf("%12s   ", "-")
-			myprint.PrintfRed("%s  ", c.S3Path(bucket, m.Key))
-			myprint.PrintfCyan("ID=%s\n", m.VersionID)
+			tbl.add(lsRow{
+				date:  m.LastModified.Format(lsTimeLayout),
+				size:  "-",
+				typ:   flag,
+				path:  c.S3Path(bucket, m.Key),
+				extra: m.VersionID,
+				color: myprint.Red,
+			})
 		}
+	}
+	if !opt.JSON {
+		tbl.render()
 	}
 	if opt.Summarize {
 		if opt.JSON {
@@ -246,11 +335,12 @@ func (c *Action) listIncompleteUploads(bucket, prefix string, opt ListOptions) e
 		return fmt.Errorf("list multipart uploads: %s", FormatAPIError(err))
 	}
 	var count int
+	tbl := newLsTable(i18n.T("Upload ID", "上传ID"))
 	for _, u := range out.Uploads {
 		count++
 		initiated := ""
 		if !u.Initiated.IsZero() {
-			initiated = u.Initiated.Format("2006-01-02 15:04:05")
+			initiated = u.Initiated.Format(lsTimeLayout)
 		}
 		if opt.JSON {
 			if err := printJSONLine(map[string]any{
@@ -263,10 +353,14 @@ func (c *Action) listIncompleteUploads(bucket, prefix string, opt ListOptions) e
 			}
 			continue
 		}
-		myprint.PrintfDim("[%s]  ", initiated)
-		myprint.Printf("%12s   ", "-")
-		myprint.PrintfYellow("INCOMPLETE  %s  ", c.S3Path(bucket, u.Key))
-		myprint.PrintfCyan("uploadId=%s\n", u.UploadID)
+		tbl.add(lsRow{
+			date:  initiated,
+			size:  "-",
+			typ:   "INCOMPLETE",
+			path:  c.S3Path(bucket, u.Key),
+			extra: u.UploadID,
+			color: myprint.Yellow,
+		})
 	}
 	if count == 0 {
 		if opt.JSON {
@@ -274,6 +368,9 @@ func (c *Action) listIncompleteUploads(bucket, prefix string, opt ListOptions) e
 		}
 		myprint.PrintfBoldYellow("%s: no in-progress multipart uploads\n", c.S3Path(bucket, prefix))
 		return nil
+	}
+	if !opt.JSON {
+		tbl.render()
 	}
 	if opt.Summarize {
 		if opt.JSON {

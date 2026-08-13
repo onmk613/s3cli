@@ -1,5 +1,5 @@
 // bucket-cors.go 实现桶 CORS 配置管理: Set/Get/DelCors.
-// SetCors 支持两种模式 (mc/AWS CLI 风格):
+// SetCors 支持两种模式:
 //   - 参数模式: --id/--origin/--method/--allowed-header/--expose-header/--max-age 直接生成规则, 不依赖文件
 //   - 文件模式: -f/--from-file 或位置参数指定 JSON / XML 配置文件
 

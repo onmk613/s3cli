@@ -88,7 +88,7 @@ func Mirror(cfg MirrorOptions) error {
 		}(manifest)
 	}
 
-	myprint.Printf("Listing & mirroring %s -> %s ...\n",
+	myprint.Printf("Mirroring %s -> %s ...\n",
 		plan.srcClient.S3Path(plan.srcBucket, plan.srcPrefix),
 		plan.tgtClient.S3Path(plan.tgtBucket, plan.tgtPrefix))
 	if plan.sameEP {

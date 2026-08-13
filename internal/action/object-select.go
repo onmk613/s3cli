@@ -1,6 +1,6 @@
-// object-select.go 实现 S3 Select SQL 查询 (sql 命令, 参数与 mc sql 对齐).
+// object-select.go 实现 S3 Select SQL 查询 (sql 命令).
 //
-// 支持对 CSV / JSON / Parquet 对象执行 SQL, 序列化选项用 mc 风格的
+// 支持对 CSV / JSON / Parquet 对象执行 SQL, 序列化选项用
 // "rd=\\n,fh=USE,fd=;" 键值串描述 (缩写: rd/fd/fh/qc/qec/cc/qf, 详见 parseSelectOpts).
 
 package action
@@ -14,7 +14,7 @@ import (
 	"s3cli/pkg/s3iface"
 )
 
-// SelectOptions sql 命令参数 (mc sql 对齐).
+// SelectOptions sql 命令参数.
 type SelectOptions struct {
 	Query           string // SQL 表达式
 	Recursive       bool   // -r: 对前缀下所有对象执行查询
@@ -40,7 +40,7 @@ func (c *Action) SelectObjects(opt SelectOptions, bucket, prefix string) error {
 	return c.selectOne(opt, bucket, prefix)
 }
 
-// selectRecursive 对前缀下所有对象执行查询 (mc sql -r).
+// selectRecursive 对前缀下所有对象执行查询 (-r).
 func (c *Action) selectRecursive(opt SelectOptions, bucket, prefix string) error {
 	var count int
 	err := c.forEachObject(c.Ctx, bucket, prefix, func(obj s3iface.ObjectInfo) error {
@@ -95,7 +95,7 @@ func (c *Action) selectOne(opt SelectOptions, bucket, key string) error {
 	return nil
 }
 
-// buildSelectSerializations 由选项串构造输入/输出序列化描述 (mc sql 语义):
+// buildSelectSerializations 由选项串构造输入/输出序列化描述:
 // 未指定输入格式时按文件扩展名推断 (csv/json/parquet), CSV 默认首行为表头 (FileHeaderInfo=USE);
 // 未指定 --compression 时按扩展名推断 (.gz -> GZIP, .bz/.bz2 -> BZIP2).
 func buildSelectSerializations(opt SelectOptions, key string) (*s3iface.SelectSerialization, *s3iface.SelectSerialization, error) {
@@ -145,7 +145,7 @@ func buildSelectSerializations(opt SelectOptions, key string) (*s3iface.SelectSe
 		if opt.CSVInput != "" {
 			err = applySelectCSVInput(in, opt.CSVInput)
 		} else {
-			// mc 语义: 默认首行为表头
+			// 默认首行为表头
 			in.FileHeaderInfo = "USE"
 		}
 	case "JSON":
@@ -177,7 +177,7 @@ func buildSelectSerializations(opt SelectOptions, key string) (*s3iface.SelectSe
 }
 
 // ----------------------------------------------------------------------------
-// 序列化选项解析 (mc sql 兼容)
+// 序列化选项解析
 // ----------------------------------------------------------------------------
 
 // parseSelectOpts 解析 "k=v,k2=v2" 选项串, 展开缩写并校验合法键.
@@ -209,7 +209,7 @@ func parseSelectOpts(inp string, validKeys map[string]string) (map[string]string
 	return out, nil
 }
 
-// splitOptPairs 按逗号切分 k=v 对 (值中的逗号视为普通字符, 与 mc 兼容).
+// splitOptPairs 按逗号切分 k=v 对 (值中的逗号视为普通字符).
 func splitOptPairs(inp string) []string {
 	var pairs []string
 	var cur strings.Builder
@@ -227,7 +227,7 @@ func splitOptPairs(inp string) []string {
 	return pairs
 }
 
-// unescapeOptValue 还原 \n \r \t 转义 (mc 语义).
+// unescapeOptValue 还原 \n \r \t 转义.
 func unescapeOptValue(v string) string {
 	return strings.NewReplacer(`\n`, "\n", `\t`, "\t", `\r`, "\r").Replace(v)
 }
@@ -245,7 +245,7 @@ func optKeys(m map[string]string) []string {
 	return keys
 }
 
-// validSelectKeys 合法键: 缩写 -> 长名 (mc 的 validCSVInputAbbrKeys 等).
+// validSelectKeys 合法键: 缩写 -> 长名.
 var validSelectKeys = map[string]string{
 	"cc":                    "Comments",
 	"fh":                    "FileHeader",
@@ -287,7 +287,7 @@ func applySelectCSVInput(ins *s3iface.SelectSerialization, opts string) error {
 		case "FileHeader":
 			ins.FileHeaderInfo = strings.ToUpper(v)
 		default:
-			// QuotedRecordDelimiter 仅 MinIO 扩展, S3 无此元素, 忽略
+			// QuotedRecordDelimiter 是服务端扩展, 标准 S3 无此元素, 忽略
 		}
 	}
 	return nil

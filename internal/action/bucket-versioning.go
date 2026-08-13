@@ -24,7 +24,7 @@ func (c *Action) SetVersioning(opt VersioningOptions, bucket string) error {
 		return fmt.Errorf("set versioning %s: %s", bucket, FormatAPIError(err))
 	}
 
-	myprint.PrintfBoldGreen("Versioning %s for %s %s\n", opt.Status, c.Alias, bucket)
+	myprint.PrintfBoldGreen("Versioning for %s set to %s\n", c.S3Path(bucket, ""), opt.Status)
 	return nil
 }
 
@@ -39,6 +39,6 @@ func (c *Action) GetVersioning(bucket string) error {
 		s = "(disabled)"
 	}
 
-	myprint.PrintfBoldGreen("Bucket %s versioning for %s: %s\n", c.Alias, bucket, s)
+	myprint.PrintfBoldGreen("Versioning for %s: %s\n", c.S3Path(bucket, ""), s)
 	return nil
 }

@@ -1,4 +1,4 @@
-// object-del.go 实现对象删除 DeleteObjects, 参数与 mc rm 对齐:
+// object-del.go 实现对象删除 DeleteObjects, 支持:
 // --recursive/-r (需 --force), --versions, --version-id/--vid, --incomplete/-I,
 // --dry-run, --older-than/--newer-than, --stdin, --non-current.
 // 批量删除按 S3 上限分批, 并清理删除后变空的目录标记对象.
@@ -25,10 +25,10 @@ func isBenignNotFound(err error) bool {
 		(apiErr.StatusCode == 404 || strings.Contains(apiErr.Code, "NoSuch"))
 }
 
-// DelOptions rm 命令参数 (mc rm 对齐).
+// DelOptions rm 命令参数.
 type DelOptions struct {
 	Recursive  bool     // -r: 递归删除
-	Force      bool     // 递归删除必须显式 --force (mc 语义)
+	Force      bool     // 递归删除必须显式 --force
 	VersionID  string   // --version-id/--vid: 删除指定版本
 	Versions   bool     // --versions: 删除对象及其全部版本
 	Incomplete bool     // -I/--incomplete: 中止进行中的分片上传
@@ -63,7 +63,7 @@ func (c *Action) DeleteObjects(bucket, prefix string, opt DelOptions) error {
 		return c.deleteFromStdin(bucket, opt)
 	}
 
-	// 末尾带 "/" 明确表示目录：不能拿带 "/" 的 key 去 HeadObject（部分服务如 minio
+	// 末尾带 "/" 明确表示目录：不能拿带 "/" 的 key 去 HeadObject（部分服务
 	// 会报 "Object name contains unsupported characters"），直接按目录前缀处理。
 	if strings.HasSuffix(prefix, "/") {
 		if !opt.Recursive {
@@ -177,7 +177,7 @@ func (c *Action) deleteVersionsOfObject(bucket, key string, opt DelOptions) erro
 	return nil
 }
 
-// deleteFromStdin 从 stdin 逐行读取 key 并逐个删除 (mc rm --stdin).
+// deleteFromStdin 从 stdin 逐行读取 key 并逐个删除 (--stdin).
 func (c *Action) deleteFromStdin(bucket string, opt DelOptions) error {
 	sc := bufio.NewScanner(os.Stdin)
 	sc.Buffer(make([]byte, 64*1024), 4*1024*1024)
@@ -198,7 +198,7 @@ func (c *Action) deleteFromStdin(bucket string, opt DelOptions) error {
 	return sc.Err()
 }
 
-// deletePrefixIncomplete 中止 prefix 下所有进行中的分片上传 (mc rm -I).
+// deletePrefixIncomplete 中止 prefix 下所有进行中的分片上传 (-I).
 func (c *Action) deletePrefixIncomplete(bucket, prefix string, opt DelOptions) error {
 	out, err := c.S3.ListMultipartUploads(c.Ctx, bucket, &s3iface.ListMultipartUploadsOptions{Prefix: prefix})
 	if err != nil {
@@ -244,7 +244,7 @@ func (c *Action) deleteObjectVersion(bucket, key, versionID string) error {
 }
 
 func (c *Action) deleteObjectsWithPrefix(bucket, prefix string, opt DelOptions) error {
-	// 时间过滤解析 (mc rm --older-than/--newer-than)
+	// 时间过滤解析 (--older-than/--newer-than)
 	newer, older, err := parseDeleteTimeFilters(opt)
 	if err != nil {
 		return err

@@ -3,6 +3,7 @@ package cmd
 import (
 	"s3cli/internal/action"
 	"s3cli/internal/s3path"
+	"s3cli/pkg/i18n"
 
 	"github.com/spf13/cobra"
 )
@@ -12,7 +13,7 @@ func init() { Register("object", "Object Operations", NewMpuCmd) }
 func NewMpuCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "mpu",
-		Short: "Manage in-progress multipart uploads",
+		Short: i18n.T("Manage in-progress multipart uploads", "管理进行中的分段上传任务"),
 	}
 
 	cmd.AddCommand(newMpuListCmd(), newMpuAbortCmd(), newMpuLocalListCmd(), newMpuLocalClearCmd())
@@ -24,12 +25,12 @@ func newMpuLocalListCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:     "local-list",
 		Aliases: []string{"ls-local"},
-		Short:   "List local resumable multipart states",
+		Short:   i18n.T("List local resumable multipart states", "列出本地可恢复的分段上传状态"),
 		RunE: NewRunELocal(func(_ *cobra.Command, _ []string) error {
 			return action.MpuLocalList(opt)
 		}),
 	}
-	cmd.Flags().BoolVar(&opt.OutputToJSON, "json", false, "Output format: text or json (supported commands emit structured results)")
+	cmd.Flags().BoolVar(&opt.OutputToJSON, "json", false, jsonOutputDesc())
 	return cmd
 }
 
@@ -38,13 +39,13 @@ func newMpuLocalClearCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:     "local-clear [state-file]",
 		Aliases: []string{"rm-local"},
-		Short:   "Remove one local resumable multipart state",
+		Short:   i18n.T("Remove one local resumable multipart state", "删除一个本地可恢复的分段上传状态"),
 		Args:    cobra.ExactArgs(1),
 		RunE: NewRunELocal(func(_ *cobra.Command, args []string) error {
 			return action.MpuLocalClear(args[0], opt)
 		}),
 	}
-	cmd.Flags().BoolVar(&opt.OutputToJSON, "json", false, "Output format: text or json (supported commands emit structured results)")
+	cmd.Flags().BoolVar(&opt.OutputToJSON, "json", false, jsonOutputDesc())
 	return cmd
 }
 
@@ -53,14 +54,14 @@ func newMpuListCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:               "list [alias:bucket[/prefix]] ...",
 		Aliases:           []string{"ls"},
-		Short:             "List in-progress multipart uploads",
+		Short:             i18n.T("List in-progress multipart uploads", "列出进行中的分段上传任务"),
 		Args:              cobra.MinimumNArgs(1),
 		ValidArgsFunction: AutoCompletePath,
 		RunE: NewRunE(func(S3 action.Action, dst *s3path.Path) error {
 			return S3.MpuList(opt, dst.Bucket, dst.Key)
 		}),
 	}
-	cmd.Flags().BoolVar(&opt.JSON, "json", false, "Output format: text or json (supported commands emit structured results)")
+	cmd.Flags().BoolVar(&opt.JSON, "json", false, jsonOutputDesc())
 	return cmd
 }
 
@@ -69,7 +70,7 @@ func newMpuAbortCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:               "abort [alias:bucket[/key-or-prefix]]",
 		Aliases:           []string{"rm", "delete", "del"},
-		Short:             "Abort multipart upload. With --upload-id aborts one; otherwise aborts all under the prefix.",
+		Short:             i18n.T("Abort multipart upload. With --upload-id aborts one; otherwise aborts all under the prefix.", "中止分段上传。指定 --upload-id 中止单个任务；否则中止前缀下的所有任务。"),
 		Args:              cobra.ExactArgs(1),
 		ValidArgsFunction: AutoCompletePath,
 		RunE: NewRunE(func(S3 action.Action, dst *s3path.Path) error {
@@ -77,6 +78,6 @@ func newMpuAbortCmd() *cobra.Command {
 		}),
 	}
 
-	cmd.Flags().StringVar(&uploadID, "upload-id", "", "Specific UploadId to abort. If the object key is omitted, it is auto-resolved by listing uploads under the prefix")
+	cmd.Flags().StringVar(&uploadID, "upload-id", "", i18n.T("Specific UploadId to abort. If the object key is omitted, it is auto-resolved by listing uploads under the prefix", "要中止的 UploadId。省略对象 key 时，自动通过列出前缀下的上传任务解析"))
 	return cmd
 }

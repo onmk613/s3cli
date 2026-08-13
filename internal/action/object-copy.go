@@ -1,4 +1,4 @@
-// object-copy.go 实现同 endpoint 内的对象复制 CopyObjects (cp, 参数与 mc cp 对齐:
+// object-copy.go 实现同 endpoint 内的对象复制 CopyObjects (cp, 支持:
 // --recursive/-r / --storage-class/--sc / --tags / --metadata),
 // 单文件直传与目录递归 (走 RunStream), 目标 key 解析复用 s3path 规则.
 
@@ -15,7 +15,7 @@ import (
 	"s3cli/pkg/s3iface"
 )
 
-// CopyOptions cp/mv 命令参数 (mc cp/mv 对齐).
+// CopyOptions cp/mv 命令参数.
 type CopyOptions struct {
 	Recursive    bool              // -r: 递归复制目录
 	NoProgress   bool              // 不显示进度条（--quiet）
@@ -59,7 +59,7 @@ func (c *Action) CopyObjects(opt CopyOptions, srcBucket, srcKey, destBucket, des
 	return c.copyDirStreaming(opt, srcBucket, srcKey, destBucket, destPrefix, appendRel)
 }
 
-// copyObject 单对象复制, 透传 mc 对齐的复制参数.
+// copyObject 单对象复制, 透传存储级别/标签/元数据参数.
 func (c *Action) copyObject(opt CopyOptions, srcBucket, srcKey, destBucket, destKey string) error {
 	copyOpts := &s3iface.CopyObjectOptions{
 		StorageClass: opt.StorageClass,

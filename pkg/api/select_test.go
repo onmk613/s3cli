@@ -9,7 +9,7 @@ import (
 	"s3cli/pkg/s3iface"
 )
 
-// buildSelectFrame 按 S3 Select 事件流帧格式构造一条消息 (与 minio-go/mc 一致):
+// buildSelectFrame 按 S3 Select 事件流帧格式构造一条消息:
 // prelude(totalLen, headerLen) + preludeCRC + headers + payload + messageCRC.
 // 消息 CRC 覆盖整个消息体 (prelude + preludeCRC + headers + payload).
 func buildSelectFrame(t *testing.T, headerKVs map[string]string, payload []byte) []byte {

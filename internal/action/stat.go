@@ -1,4 +1,4 @@
-// stat.go 实现 mc stat 风格的元信息展示 (StatObjects):
+// stat.go 实现元信息展示 (StatObjects):
 // 对象输出 Name/Date/Size/ETag/Type/Metadata; 桶输出属性 (Versioning/Location/
 // Anonymous/ILM) 与用量统计; 支持 --json 与 -r/--recursive.
 
@@ -16,14 +16,14 @@ import (
 	"s3cli/pkg/s3iface"
 )
 
-// StatOptions stat 命令参数 (mc stat 对齐).
+// StatOptions stat 命令参数.
 type StatOptions struct {
 	Recursive bool   // -r: 递归展示前缀下所有对象
 	VersionID string // --version-id/--vid: 指定对象版本
 	JSON      bool   // --json: JSON lines 输出
 }
 
-// StatObjects 展示对象或桶的元信息 (mc stat 风格).
+// StatObjects 展示对象或桶的元信息.
 func (c *Action) StatObjects(opt StatOptions, bucket, prefix string) error {
 	if opt.VersionID != "" {
 		if prefix == "" {
@@ -32,7 +32,7 @@ func (c *Action) StatObjects(opt StatOptions, bucket, prefix string) error {
 		return c.statObject(bucket, prefix, opt.VersionID, opt)
 	}
 	if opt.Recursive {
-		// mc stat -r: 递归展示对象, 桶本身不输出
+		// -r: 递归展示对象, 桶本身不输出
 		return c.statRecursive(bucket, prefix, opt)
 	}
 	if prefix == "" {
@@ -49,7 +49,7 @@ func (c *Action) StatObjects(opt StatOptions, bucket, prefix string) error {
 	return c.statObject(bucket, prefix, "", opt)
 }
 
-// statRecursive 逐个输出前缀下对象的 stat (mc stat -r).
+// statRecursive 逐个输出前缀下对象的 stat (-r).
 func (c *Action) statRecursive(bucket, prefix string, opt StatOptions) error {
 	var count int
 	err := c.forEachObject(c.Ctx, bucket, prefix, func(obj s3iface.ObjectInfo) error {
@@ -95,10 +95,10 @@ func (c *Action) statObject(bucket, key, versionID string, opt StatOptions) erro
 	}
 
 	myprint.PrintfBoldBlue("%-10s: %s\n", "Name", pathBase(key))
-	myprint.Printf("%-10s: %s \n", "Date", head.LastModified.Local().Format("2006-01-02 15:04:05 MST"))
-	myprint.Printf("%-10s: %s   \n", "Size", FormatBytes(head.ContentLength))
-	myprint.Printf("%-10s: %s \n", "ETag", head.ETag)
-	myprint.Printf("%-10s: file \n", "Type")
+	myprint.Printf("%-10s: %s\n", "Date", head.LastModified.Local().Format("2006-01-02 15:04:05 MST"))
+	myprint.Printf("%-10s: %s\n", "Size", FormatBytes(head.ContentLength))
+	myprint.Printf("%-10s: %s\n", "ETag", head.ETag)
+	myprint.Printf("%-10s: %s\n", "Type", "file")
 	if len(meta) > 0 {
 		myprint.Printf("%-10s:\n", "Metadata")
 		keys := make([]string, 0, len(meta))
@@ -107,14 +107,14 @@ func (c *Action) statObject(bucket, key, versionID string, opt StatOptions) erro
 		}
 		sort.Strings(keys)
 		for _, k := range keys {
-			myprint.Printf("  %s: %s \n", k, meta[k])
+			myprint.Printf("  %s: %s\n", k, meta[k])
 		}
 	}
 	myprint.Println("")
 	return nil
 }
 
-// statMetadata 汇总 HEAD 响应中的元数据 (mc stat Metadata 段).
+// statMetadata 汇总 HEAD 响应中的元数据 (Metadata 段).
 func statMetadata(head *s3iface.HeadObjectOutput) map[string]string {
 	meta := map[string]string{}
 	if head.ContentType != "" {
@@ -150,14 +150,14 @@ func statMetadata(head *s3iface.HeadObjectOutput) map[string]string {
 	return meta
 }
 
-// statBucket 输出桶的元信息与用量 (mc stat 桶形态).
+// statBucket 输出桶的元信息与用量.
 func (c *Action) statBucket(bucket string, opt StatOptions) error {
 	location, err := c.S3.GetBucketLocation(c.Ctx, bucket)
 	if err != nil {
 		return fmt.Errorf("get bucket location: %s", FormatAPIError(err))
 	}
 	if location == "" {
-		location = "us-east-1" // 与 mc 一致: 未返回时默认
+		location = "us-east-1" // 未返回时使用默认值
 	}
 
 	// 创建时间 (来自 ListBuckets)
@@ -229,9 +229,9 @@ func (c *Action) statBucket(bucket string, opt StatOptions) error {
 	if !createdAt.IsZero() {
 		dateStr = createdAt.Local().Format("2006-01-02 15:04:05 MST")
 	}
-	myprint.Printf("%-10s: %s \n", "Date", dateStr)
-	myprint.Printf("%-10s: N/A    \n", "Size")
-	myprint.Printf("%-10s: folder \n", "Type")
+	myprint.Printf("%-10s: %s\n", "Date", dateStr)
+	myprint.Printf("%-10s: %s\n", "Size", "N/A")
+	myprint.Printf("%-10s: %s\n", "Type", "folder")
 	myprint.Println("")
 	myprint.PrintfBoldBlue("Properties:\n")
 	myprint.Printf("  Versioning: %s\n", versioning)
@@ -246,7 +246,7 @@ func (c *Action) statBucket(bucket string, opt StatOptions) error {
 	return nil
 }
 
-// printStatJSON 输出 JSON lines (mc stat --json 形态).
+// printStatJSON 输出 JSON lines (--json 形态).
 func printStatJSON(v any) error {
 	b, err := json.Marshal(v)
 	if err != nil {

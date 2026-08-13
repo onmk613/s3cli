@@ -2,7 +2,7 @@
 //
 // 它基于 net/http 直接实现 S3 REST API. 常规请求统一使用 AWS Signature Version 4
 // 签名; 预签名 URL 同时支持 SigV4 (PresignedURL) 与 SigV2 (PresignV2, 兼容旧式服务).
-// 可对接 AWS S3、MinIO、SeaweedFS、Ceph RGW 等任何 S3 兼容的对象存储服务.
+// 可对接 AWS S3、SeaweedFS、Ceph RGW 等任何 S3 兼容的对象存储服务.
 //
 // 典型用法:
 //

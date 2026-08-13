@@ -6,6 +6,7 @@ import (
 	"fmt"
 
 	myprint "s3cli/pkg/fmtutil"
+	"s3cli/pkg/i18n"
 	"s3cli/pkg/s3iface"
 )
 
@@ -65,9 +66,14 @@ func (c *Action) GetTag(opt TagOptions, bucket, prefix string) error {
 	}
 
 	myprint.PrintfBoldBlue("# %s tags:\n", c.S3Path(bucket, prefix))
+	tbl := myprint.NewTable(i18n.T("Key", "键"), i18n.T("Value", "值"))
 	for _, t := range tags {
-		myprint.PrintfGreen("  %s = %s\n", t.Key, t.Value)
+		tbl.AddRow(
+			myprint.Cell{Text: t.Key, Color: myprint.Green},
+			myprint.Cell{Text: t.Value, Color: myprint.Green},
+		)
 	}
+	tbl.Render()
 	return nil
 }
 

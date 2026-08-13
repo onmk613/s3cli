@@ -1,29 +1,23 @@
-// object-du.go 实现磁盘占用统计 DuObject, 参数与 mc du 对齐:
+// object-du.go 实现磁盘占用统计 DuObject:
 // 默认输出前缀总大小; --recursive/-r 按目录层级输出各前缀占用, --depth/-d 限制层级.
 
 package action
 
 import (
 	"sort"
+	"strconv"
 	"strings"
 
 	myprint "s3cli/pkg/fmtutil"
+	"s3cli/pkg/i18n"
 	"s3cli/pkg/s3iface"
 )
 
-// DuOptions du 命令参数 (mc du 对齐 + 兼容 --block-size).
+// DuOptions du 命令参数.
 type DuOptions struct {
-	BlockSize int64 // 按块向上取整估算磁盘占用 (s3cli 扩展)
-	Recursive bool  // -r: 逐目录输出占用
-	Depth     int   // -d: 仅统计 N 层以内的目录 (与 --recursive 搭配, 根目录为第 1 层)
-	JSON      bool  // --json: JSON lines 输出
-}
-
-func roundUpToBlock(size, block int64) int64 {
-	if block <= 0 || size <= 0 {
-		return size
-	}
-	return ((size + block - 1) / block) * block
+	Recursive bool // -r: 逐目录输出占用
+	Depth     int  // -d: 仅统计 N 层以内的目录 (与 --recursive 搭配, 根目录为第 1 层)
+	JSON      bool // --json: JSON lines 输出
 }
 
 // DuObject 显示磁盘占用, 只支持 bucket 及以下级别.
@@ -32,11 +26,9 @@ func (c *Action) DuObject(opt DuOptions, bucket, prefix string) error {
 		return c.duRecursive(opt, bucket, prefix)
 	}
 
-	var totalSize, diskSize, count int64
+	var totalSize, count int64
 	err := c.forEachObject(c.Ctx, bucket, prefix, func(o s3iface.ObjectInfo) error {
-		sz := o.Size
-		totalSize += sz                               // 真实文件大小累加（始终）
-		diskSize += roundUpToBlock(sz, opt.BlockSize) // 按块向上取整的磁盘占用
+		totalSize += o.Size
 		count++
 		return nil
 	})
@@ -46,26 +38,25 @@ func (c *Action) DuObject(opt DuOptions, bucket, prefix string) error {
 
 	if opt.JSON {
 		return printJSONLine(map[string]any{
-			"path":      c.S3Path(bucket, prefix),
-			"fileNum":   count,
-			"size":      totalSize,
-			"diskSize":  diskSize,
-			"blockSize": opt.BlockSize,
+			"path":    c.S3Path(bucket, prefix),
+			"fileNum": count,
+			"size":    totalSize,
 		})
 	}
 
-	myprint.PrintfBoldBlue("Path: %s, FileNum: %d, Size: %d, RealSize: %s", c.S3Path(bucket, prefix), count, totalSize, FormatBytes(totalSize))
-	if opt.BlockSize > 0 {
-		myprint.PrintfBoldBlue(", DiskSize: %s\n", FormatBytes(diskSize))
-		return nil
-	}
-	myprint.Printf("\n")
+	tbl := myprint.NewTable(i18n.T("Path", "路径"), i18n.T("Objects", "对象数"), i18n.T("Size", "大小")).AlignRight(1, 2)
+	tbl.AddRow(
+		myprint.Cell{Text: c.S3Path(bucket, prefix), Color: myprint.BoldBlue},
+		myprint.Cell{Text: strconv.FormatInt(count, 10)},
+		myprint.Cell{Text: FormatBytes(totalSize)},
+	)
+	tbl.Render()
 	return nil
 }
 
-// duRecursive 按目录层级统计 (mc du -r):
+// duRecursive 按目录层级统计 (-r):
 // 一次性递归列举全部对象, 把每个对象的大小累加到其每一级祖先目录,
-// 再按层级从深到浅输出各目录的总占用 (与 mc 输出顺序一致).
+// 再按层级从深到浅输出各目录的总占用.
 func (c *Action) duRecursive(opt DuOptions, bucket, prefix string) error {
 	base := strings.TrimSuffix(prefix, "/")
 
@@ -95,7 +86,7 @@ func (c *Action) duRecursive(opt DuOptions, bucket, prefix string) error {
 		return err
 	}
 
-	// 输出顺序: 层级从深到浅 (mc 顺序), 同层按名称; 根目录最后输出
+	// 输出顺序: 层级从深到浅, 同层按名称; 根目录最后输出
 	dirs := make([]string, 0, len(dirTotal))
 	for d := range dirTotal {
 		if !dirSet[d] {
@@ -112,8 +103,9 @@ func (c *Action) duRecursive(opt DuOptions, bucket, prefix string) error {
 	})
 
 	var dirErr error
+	tbl := myprint.NewTable(i18n.T("Path", "路径"), i18n.T("Objects", "对象数"), i18n.T("Size", "大小")).AlignRight(1, 2)
 	printDir := func(dir string) {
-		// mc 语义: 相对命令行参数的第 1 层子目录为层级 1; --depth N 仅输出层级 < N 的目录
+		// 相对命令行参数的第 1 层子目录为层级 1; --depth N 仅输出层级 < N 的目录
 		// (即 -d 1 只输出参数本身, -d 2 输出参数与其直接子目录).
 		if opt.Depth > 0 {
 			relLevel := strings.Count(dir, "/") + 1
@@ -137,7 +129,11 @@ func (c *Action) duRecursive(opt DuOptions, bucket, prefix string) error {
 			}
 			return
 		}
-		myprint.PrintfBoldBlue("%s: %d object(s), %s\n", c.S3Path(bucket, display), dirCount[dir], FormatBytes(dirTotal[dir]))
+		tbl.AddRow(
+			myprint.Cell{Text: c.S3Path(bucket, display), Color: myprint.BoldBlue},
+			myprint.Cell{Text: strconv.FormatInt(dirCount[dir], 10)},
+			myprint.Cell{Text: FormatBytes(dirTotal[dir])},
+		)
 	}
 
 	for _, d := range dirs {
@@ -160,7 +156,12 @@ func (c *Action) duRecursive(opt DuOptions, bucket, prefix string) error {
 			"dir":     true,
 		})
 	}
-	myprint.PrintfBoldBlue("%s: %d object(s), %s\n", c.S3Path(bucket, prefix), rootCount, FormatBytes(rootTotal))
+	tbl.AddRow(
+		myprint.Cell{Text: c.S3Path(bucket, prefix), Color: myprint.BoldBlue},
+		myprint.Cell{Text: strconv.FormatInt(rootCount, 10)},
+		myprint.Cell{Text: FormatBytes(rootTotal)},
+	)
+	tbl.Render()
 	return nil
 }
 

@@ -3,6 +3,7 @@ package cmd
 import (
 	"s3cli/internal/action"
 	"s3cli/internal/s3path"
+	"s3cli/pkg/i18n"
 
 	"github.com/spf13/cobra"
 )
@@ -11,7 +12,7 @@ import (
 func EventCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "event",
-		Short: "Manage object notifications",
+		Short: i18n.T("Manage object notifications", "管理对象事件通知"),
 	}
 	cmd.AddCommand(EventSetCmd(), EventGetCmd(), EventDelCmd())
 	return cmd
@@ -20,7 +21,7 @@ func EventCmd() *cobra.Command {
 func EventSetCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:               "set [notification-file] [alias:bucket] ...",
-		Short:             "Set bucket event notifications (SQS/SNS/Lambda, JSON, AWS CLI compatible)",
+		Short:             i18n.T("Set bucket event notifications (SQS/SNS/Lambda, JSON, AWS CLI compatible)", "设置存储桶事件通知（SQS/SNS/Lambda，JSON，兼容 AWS CLI）"),
 		ValidArgsFunction: CompleteLocalFirst(AutoCompleteBucket),
 		Args:              cobra.MinimumNArgs(2),
 		Annotations:       FirstLocalFileOrPathMode,
@@ -33,7 +34,7 @@ func EventSetCmd() *cobra.Command {
 func EventGetCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:               "get [alias:bucket] ...",
-		Short:             "Print bucket(s) event notification configuration (JSON)",
+		Short:             i18n.T("Print bucket(s) event notification configuration (JSON)", "打印存储桶事件通知配置（JSON）"),
 		ValidArgsFunction: AutoCompleteBucket,
 		Args:              cobra.MinimumNArgs(1),
 		RunE: NewRunE(func(S3 action.Action, dst *s3path.Path) error {
@@ -45,7 +46,7 @@ func EventGetCmd() *cobra.Command {
 func EventDelCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:               "del [alias:bucket] ...",
-		Short:             "Remove all bucket event notification configurations",
+		Short:             i18n.T("Remove all bucket event notification configurations", "删除存储桶所有事件通知配置"),
 		ValidArgsFunction: AutoCompleteBucket,
 		Args:              cobra.MinimumNArgs(1),
 		RunE: NewRunE(func(S3 action.Action, dst *s3path.Path) error {

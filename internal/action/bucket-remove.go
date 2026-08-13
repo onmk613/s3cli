@@ -15,7 +15,7 @@ type RemoveBucketOptions struct {
 // RemoveBuckets 删除桶; force=true 时先清空桶内全部对象与版本 (不可恢复) 再删桶.
 func (c *Action) RemoveBuckets(opt RemoveBucketOptions, bucket string) error {
 	if opt.Force {
-		myprint.PrintfBoldYellow("!!! WARNING: --force will permanently delete all objects/versions in %v %s!!!", c.Alias, bucket)
+		myprint.PrintfBoldYellow("WARNING: --force will permanently delete all objects/versions in %s\n", c.S3Path(bucket, ""))
 		if err := c.deleteAllObjects(bucket); err != nil {
 			return fmt.Errorf("force-delete objects in %s: %v", bucket, err)
 		}

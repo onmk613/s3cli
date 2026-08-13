@@ -22,7 +22,6 @@ import (
 	"os"
 	"strconv"
 	"strings"
-	"text/tabwriter"
 	"time"
 
 	myprint "s3cli/pkg/fmtutil"
@@ -67,14 +66,14 @@ type LifecycleRuleOptions struct {
 	ConfigFile string // set: 非空时从文件整体替换整份配置
 }
 
-// RemoveLifecycleOptions 控制 RemoveLifecycleRules (mc ilm rule remove).
+// RemoveLifecycleOptions 控制 RemoveLifecycleRules (lifecycle remove).
 type RemoveLifecycleOptions struct {
 	ID    string // 删除指定 ID 的规则
 	All   bool   // 删除全部规则 (需 Force)
 	Force bool   // --all 必须搭配 --force
 }
 
-// ListLifecycleOptions 控制 ListLifecycle (mc ilm rule list).
+// ListLifecycleOptions 控制 ListLifecycle (lifecycle list).
 type ListLifecycleOptions struct {
 	Expiry     bool // 仅显示过期字段
 	Transition bool // 仅显示过渡字段
@@ -147,7 +146,7 @@ func (c *Action) SetLifecycleRule(opt LifecycleRuleOptions, bucket string) error
 	return nil
 }
 
-// RemoveLifecycleRules 删除生命周期规则 (mc ilm rule remove):
+// RemoveLifecycleRules 删除生命周期规则:
 // --id 删单条; --all --force 删除全部.
 func (c *Action) RemoveLifecycleRules(opt RemoveLifecycleOptions, bucket string) error {
 	if opt.All {
@@ -193,7 +192,7 @@ func (c *Action) RemoveLifecycleRules(opt RemoveLifecycleOptions, bucket string)
 	return nil
 }
 
-// ListLifecycle 列出桶的生命周期规则 (mc ilm rule list 对齐): 按动作分段输出
+// ListLifecycle 列出桶的生命周期规则: 按动作分段输出
 // 详细表格 (Expiration / NoncurrentVersionExpiration / Transition /
 // NoncurrentVersionTransition / AbortIncompleteMultipartUpload);
 // --json 输出 JSON; --expiry/--transition 只显示对应动作段.
@@ -265,7 +264,7 @@ func (c *Action) ListLifecycle(bucket string, opt ListLifecycleOptions) error {
 			if e.ExpiredObjectAllVersions != nil {
 				allVersions = strconv.FormatBool(*e.ExpiredObjectAllVersions)
 			}
-			// mc 没有 ExpireAllVersions 列; 非空时并入 DeleteMarker 列显示
+			// ExpireAllVersions 无独立列; 非空时并入 DeleteMarker 列显示
 			if allVersions == "true" {
 				delMarker = "all"
 			}
@@ -397,22 +396,24 @@ func (c *Action) ListLifecycle(bucket string, opt ListLifecycleOptions) error {
 	return nil
 }
 
-// printLifecycleSection 渲染一个生命周期动作分段 (mc ilm rule list 风格).
+// printLifecycleSection 渲染一个生命周期动作分段 (表格形式).
 func printLifecycleSection(title string, header []string, rows [][6]string) {
 	myprint.PrintfBoldBlue("\n%s\n", title)
-	w := tabwriter.NewWriter(os.Stdout, 0, 4, 2, ' ', 0)
 	cols := []string{}
 	for _, h := range header {
 		if h != "" {
 			cols = append(cols, h)
 		}
 	}
-	fmt.Fprintln(w, strings.Join(cols, "\t"))
+	tbl := myprint.NewTable(cols...)
 	for _, r := range rows {
-		line := r[:len(cols)]
-		fmt.Fprintln(w, strings.Join(line[:], "\t"))
+		cells := make([]myprint.Cell, 0, len(cols))
+		for i := range cols {
+			cells = append(cells, myprint.Cell{Text: r[i]})
+		}
+		tbl.AddRow(cells...)
 	}
-	_ = w.Flush()
+	tbl.Render()
 }
 
 // buildLifecycleRule 按参数构造一条完整规则 (set 语义: 以显式字段为准).
@@ -505,7 +506,7 @@ func buildLifecycleRule(opt LifecycleRuleOptions) (s3.LifecycleRule, error) {
 	return rule, nil
 }
 
-// buildRuleFilter 按 mc 语义构造 Filter:
+// buildRuleFilter 构造 Filter:
 // 单个条件直接落到 Prefix/Tag/ObjectSize*; 多个条件合并到 And.
 func buildRuleFilter(prefix, tags *string, sizeLT, sizeGT *int64) *s3.Filter {
 	f := &s3.Filter{}
@@ -588,7 +589,7 @@ func validateLifecycleDate(date string) error {
 }
 
 // normalizeLifecycleDate 把 'YYYY-MM-DD' 归一化为完整 ISO 8601 ('YYYY-MM-DDT00:00:00Z'),
-// 与 mc/minio-go 写入的格式一致; 已是 ISO 8601 的输入原样返回.
+// 已是 ISO 8601 的输入原样返回.
 func normalizeLifecycleDate(date string) (string, error) {
 	if t, err := time.Parse("2006-01-02", date); err == nil {
 		return t.UTC().Format("2006-01-02T15:04:05Z"), nil
@@ -675,7 +676,7 @@ func parseILMTags(s string) []s3.Tag {
 }
 
 // ParseByteSize 解析大小字符串, 支持裸数字 (字节) 与带单位写法, 如
-// "1048576" / "1MiB" / "1MB" / "10k" / "1.5G". 单位均为 1024 进制 (与 mc/minio 一致).
+// "1048576" / "1MiB" / "1MB" / "10k" / "1.5G". 单位均为 1024 进制.
 func ParseByteSize(s string) (int64, error) {
 	s = strings.TrimSpace(s)
 	if s == "" {

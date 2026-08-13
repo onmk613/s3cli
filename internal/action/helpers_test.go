@@ -213,21 +213,6 @@ func TestCountingReader(t *testing.T) {
 	}
 }
 
-func TestRoundUpToBlock(t *testing.T) {
-	cases := []struct{ size, block, want int64 }{
-		{0, 4, 0},   // size<=0
-		{10, 0, 10}, // block<=0
-		{10, 4, 12},
-		{8, 4, 8}, // 精确倍数
-		{1, 1024, 1024},
-	}
-	for _, tc := range cases {
-		if got := roundUpToBlock(tc.size, tc.block); got != tc.want {
-			t.Errorf("roundUpToBlock(%d,%d)=%d want %d", tc.size, tc.block, got, tc.want)
-		}
-	}
-}
-
 func TestParentDirectory(t *testing.T) {
 	cases := []struct{ in, want string }{
 		{"", ""},

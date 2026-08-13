@@ -7,6 +7,7 @@ import (
 	"fmt"
 
 	myprint "s3cli/pkg/fmtutil"
+	"s3cli/pkg/i18n"
 	"s3cli/pkg/s3iface"
 )
 
@@ -24,11 +25,12 @@ func (c *Action) MpuList(opt MpuListOptions, bucket, prefix string) error {
 		return fmt.Errorf("list multipart uploads: %s", FormatAPIError(err))
 	}
 	var count int
+	tbl := newLsTable(i18n.T("Upload ID", "上传ID"))
 	for _, u := range out.Uploads {
 		count++
 		initiated := ""
 		if !u.Initiated.IsZero() {
-			initiated = u.Initiated.Format("2006-01-02 15:04:05")
+			initiated = u.Initiated.Format(lsTimeLayout)
 		}
 		if opt.JSON {
 			if err := printJSONLine(map[string]any{
@@ -42,14 +44,24 @@ func (c *Action) MpuList(opt MpuListOptions, bucket, prefix string) error {
 			}
 			continue
 		}
-		myprint.Printf("%s  %s  uploadId=%s\n",
-			initiated, c.S3Path(bucket, u.Key), u.UploadID)
+		tbl.add(lsRow{
+			date:  initiated,
+			size:  "-",
+			typ:   "INCOMPLETE",
+			path:  c.S3Path(bucket, u.Key),
+			extra: u.UploadID,
+			color: myprint.Yellow,
+		})
 	}
 	if count == 0 {
 		if opt.JSON {
 			return nil
 		}
 		myprint.PrintfBoldYellow("%s: no in-progress multipart uploads\n", c.S3Path(bucket, ""))
+		return nil
+	}
+	if !opt.JSON {
+		tbl.render()
 	}
 	return nil
 }

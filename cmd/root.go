@@ -6,12 +6,12 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
+	"s3cli/internal/config"
+	myprint "s3cli/pkg/fmtutil"
+	"s3cli/pkg/i18n"
 	"strings"
 	"sync"
 	"syscall"
-
-	"s3cli/internal/config"
-	myprint "s3cli/pkg/fmtutil"
 
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
@@ -105,15 +105,37 @@ func bindEnv(fs *pflag.FlagSet) {
 	})
 }
 
+// resolveLangPref 在 cobra 解析前从原始命令行/环境变量读取语言偏好：
+// 优先级：--lang 标志 > CLI_LANG 环境变量 > 自动检测。
+func resolveLangPref(args []string) string {
+	for i, a := range args {
+		if a == "--lang" && i+1 < len(args) {
+			return args[i+1]
+		}
+		if strings.HasPrefix(a, "--lang=") {
+			return strings.TrimPrefix(a, "--lang=")
+		}
+	}
+	if v := os.Getenv("CLI_LANG"); v != "" {
+		return v
+	}
+	return "auto"
+}
+
 // NewRootCmd 创建根命令并执行，注册所有子命令
 func NewRootCmd() {
+	// 语言必须在命令构建之前确定，帮助/描述文案在构造时即被渲染。
+	langPref := resolveLangPref(os.Args)
+	i18n.Resolve(langPref)
+
 	// 创建一个可取消的上下文，用于在接收到 SIGINT 或 SIGTERM 信号时取消操作
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 
 	// RootCmd
 	rootCmd := &cobra.Command{
 		Use:           "s3cli",
-		Short:         "A lightweight S3 command-line client",
+		Short:         i18n.T("A lightweight S3 command-line client", "轻量级 S3 命令行客户端"),
+		Long:          i18n.T("A lightweight S3 command-line client.\n\nManage buckets and objects across multiple S3-compatible endpoints via aliases.", "轻量级 S3 命令行客户端。\n\n通过别名（alias）管理多个 S3 兼容存储端的存储桶与对象。"),
 		SilenceUsage:  true,
 		SilenceErrors: true,
 		Version:       version(),
@@ -140,14 +162,15 @@ func NewRootCmd() {
 
 	// flags
 	fs := rootCmd.PersistentFlags()
-	fs.StringVarP(&config.G.C, "conf", "f", config.DefaultConfigPath(), "Path to configuration file (default ~/.s3cli)")
-	fs.BoolVar(&config.G.F.Debug, "debug", false, "Print summarized S3 requests")
-	fs.BoolVar(&config.G.F.NoColor, "no-color", false, "Disable color output")
-	fs.StringVar(&config.G.F.UserAgent, "user-agent", "", "Override the HTTP User-Agent header")
-	fs.StringVar(&config.G.F.UserAgentSuffix, "user-agent-suffix", "", "Append extra content to the HTTP User-Agent header")
-	fs.StringArrayVarP(&config.G.F.Headers, "header", "H", nil, "Add a custom HTTP header (key:value), can repeat")
-	fs.StringVar(&config.G.F.HostBase, "host-base", "", "Override the endpoint host for all aliases")
-	fs.BoolVar(&config.G.F.NoVerifySSL, "no-verify-ssl", false, "Skip TLS certificate verification")
+	fs.StringVarP(&config.G.C, "conf", "f", config.DefaultConfigPath(), i18n.T("Path to configuration file (default ~/.s3cli)", "配置文件路径（默认 ~/.s3cli）"))
+	fs.BoolVar(&config.G.F.Debug, "debug", false, i18n.T("Print summarized S3 requests", "打印精简后的 S3 请求信息"))
+	fs.BoolVar(&config.G.F.NoColor, "no-color", false, i18n.T("Disable color output", "禁用彩色输出"))
+	fs.StringVar(&config.G.F.UserAgent, "user-agent", "", i18n.T("Override the HTTP User-Agent header", "覆盖 HTTP User-Agent 请求头"))
+	fs.StringVar(&config.G.F.UserAgentSuffix, "user-agent-suffix", "", i18n.T("Append extra content to the HTTP User-Agent header", "向 HTTP User-Agent 请求头追加额外内容"))
+	fs.StringArrayVarP(&config.G.F.Headers, "header", "H", nil, i18n.T("Add a custom HTTP header (key:value), can repeat", "添加自定义 HTTP 请求头（key:value），可重复使用"))
+	fs.StringVar(&config.G.F.HostBase, "host-base", "", i18n.T("Override the endpoint host for all aliases", "覆盖所有别名使用的 endpoint 主机地址"))
+	fs.BoolVar(&config.G.F.NoVerifySSL, "no-verify-ssl", false, i18n.T("Skip TLS certificate verification", "跳过 TLS 证书校验"))
+	fs.StringVar(&langFlag, "lang", langPref, i18n.T("Help language: auto (detect from timezone/locale) | en | zh", "帮助语言：auto（按时区/环境自动检测）| en | zh"))
 
 	// 从注册表添加所有子命令（带分组显示）。
 	// 同时校验顶层命令名/别名不得重叠：cobra 在命令名与别名冲突时的命中顺序
@@ -178,3 +201,7 @@ func NewRootCmd() {
 		os.Exit(1)
 	}
 }
+
+// langFlag 接收 --lang 标志值；语言已在命令构建前解析生效，
+// 该变量仅用于让标志出现在帮助中并参与环境变量绑定。
+var langFlag string

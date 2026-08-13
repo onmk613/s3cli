@@ -12,7 +12,7 @@ import (
 	"s3cli/pkg/s3iface"
 )
 
-// TreeOptions tree 命令参数 (mc tree 对齐).
+// TreeOptions tree 命令参数.
 type TreeOptions struct {
 	MaxDepth int  // 最大展示层级 (0 = 不限制)
 	ShowSize bool // 是否在叶子上显示文件大小

@@ -1,7 +1,7 @@
 // object-select.go 实现 S3 Select (SelectObjectContent) 的自建客户端.
 //
 // 请求: POST /bucket/key?select=&select-type=2, body 为 SelectObjectContentRequest XML.
-// 响应: 事件流 (event stream), 每个消息的帧格式 (与 mc/minio-go 一致):
+// 响应: 事件流 (event stream), 每个消息的帧格式:
 //
 //	prelude (12 字节): TotalLength(4, BE) | HeadersLength(4, BE) | PreludeCRC(4, BE, CRC32-IEEE)
 //	headers (HeadersLength 字节): 每项 = NameLen(1) | Name | ValueType(1, 7=string) | ValueLen(2, BE) | Value
@@ -98,7 +98,7 @@ func buildSelectXML(input *s3iface.SelectObjectInput) ([]byte, error) {
 		switch strings.ToUpper(input.InputSerialization.Format) {
 		case "CSV":
 			// 仅当显式设置了任意 CSV 选项时才输出 CSV 元素;
-			// 全空时留空 (服务端默认 CSV + 首行作表头, 与 mc 一致).
+			// 全空时留空 (服务端默认 CSV + 首行作表头).
 			csv := &selectCSVInput{
 				FileHeaderInfo:       input.InputSerialization.FileHeaderInfo,
 				FieldDelimiter:       input.InputSerialization.FieldDelimiter,
@@ -232,7 +232,7 @@ func parseSelectStream(ctx context.Context, body io.Reader, onRecord func(payloa
 			return stats, fmt.Errorf("read select event payload: %w", err)
 		}
 
-		// message CRC: 与 minio-go/mc 一致, 覆盖整条消息 (prelude + preludeCRC + headers + payload)
+		// message CRC: 覆盖整条消息 (prelude + preludeCRC + headers + payload)
 		var msgCRC [4]byte
 		if _, err := io.ReadFull(br, msgCRC[:]); err != nil {
 			return stats, fmt.Errorf("read message crc: %w", err)

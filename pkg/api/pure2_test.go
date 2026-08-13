@@ -180,7 +180,7 @@ func TestParseBucketLifecycleConfig(t *testing.T) {
 	}
 }
 
-// TestParseBucketLifecycleConfigRootVariants 新版 MinIO 返回 <BucketLifecycleConfiguration>
+// TestParseBucketLifecycleConfigRootVariants 部分服务端返回 <BucketLifecycleConfiguration>
 // 根元素, 必须同样能解析 (回归测试).
 func TestParseBucketLifecycleConfigRootVariants(t *testing.T) {
 	for _, root := range []string{"LifecycleConfiguration", "BucketLifecycleConfiguration"} {

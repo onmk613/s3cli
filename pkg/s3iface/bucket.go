@@ -104,7 +104,7 @@ type ServerSideEncryptionConfiguration struct {
 // LifecycleConfig 是 bucket 生命周期配置.
 //
 // 注意: 不声明 XMLName 根元素约束 —— 服务端返回的根元素不统一
-// (AWS/旧版 MinIO 为 <LifecycleConfiguration>, 新版 MinIO 为
+// (有的返回 <LifecycleConfiguration>, 有的返回
 // <BucketLifecycleConfiguration>), 去掉约束即可同时兼容;
 // 序列化时由 ToXML 显式包裹为 <LifecycleConfiguration> (PUT 的标准根元素).
 type LifecycleConfig struct {
@@ -165,7 +165,7 @@ type Expiration struct {
 	Days                      *int     `xml:"Days,omitempty" json:"Days,omitempty"`
 	Date                      string   `xml:"Date,omitempty" json:"Date,omitempty"`
 	ExpiredObjectDeleteMarker *bool    `xml:"ExpiredObjectDeleteMarker,omitempty" json:"ExpiredObjectDeleteMarker,omitempty"`
-	// ExpiredObjectAllVersions 由 mc 的 --expire-all-object-versions 生成 (MinIO 扩展).
+	// ExpiredObjectAllVersions 由 --expire-all-object-versions 生成.
 	ExpiredObjectAllVersions *bool `xml:"ExpiredObjectAllVersions,omitempty" json:"ExpiredObjectAllVersions,omitempty"`
 }
 

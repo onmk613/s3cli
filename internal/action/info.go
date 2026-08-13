@@ -1,4 +1,4 @@
-// info.go 实现元信息查看 Info (mc stat 对齐): 桶或对象均可, 输出 JSON.
+// info.go 实现元信息查看 Info: 桶或对象均可, 输出 JSON.
 // 支持 --recursive/-r 遍历对象与 --version-id/--vid 指定版本.
 
 package action
@@ -11,7 +11,7 @@ import (
 	"s3cli/pkg/s3iface"
 )
 
-// InfoOptions info/stat 命令参数 (mc stat 对齐).
+// InfoOptions info/stat 命令参数.
 type InfoOptions struct {
 	Recursive bool   // -r: 统计/列出前缀下所有对象
 	VersionID string // --version-id/--vid: 指定对象版本
@@ -43,7 +43,7 @@ func (c *Action) Info(opt InfoOptions, bucket, prefix string) error {
 	return c.infoObject(bucket, prefix)
 }
 
-// infoObjectsRecursive 逐个输出前缀下对象的元信息 (mc stat -r).
+// infoObjectsRecursive 逐个输出前缀下对象的元信息 (-r).
 func (c *Action) infoObjectsRecursive(bucket, prefix string) error {
 	var count int
 	err := c.forEachObject(c.Ctx, bucket, prefix, func(obj s3iface.ObjectInfo) error {

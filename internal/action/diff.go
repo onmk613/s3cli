@@ -413,7 +413,7 @@ func diffDirectories(opt DiffOptions) error {
 
 	// 先报比较失败（I/O 错误 ≠ 内容不同），再报差异，保证退出语义正确。
 	if failed.Load() > 0 {
-		return fmt.Errorf("%d files failed to compare", failed.Load())
+		return fmt.Errorf("%d file(s) failed to compare", failed.Load())
 	}
 	if len(differ)+len(onlyA)+len(onlyB) > 0 {
 		return errDiffer

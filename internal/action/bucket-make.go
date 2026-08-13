@@ -17,9 +17,9 @@ type MakeBucketOptions struct {
 	PolicyFile     string
 	LifecycleFile  string
 	Versioning     bool
-	Region         string // 桶所在区域 (mc mb --region)
-	ObjectLocking  bool   // 启用对象锁 (mc mb --with-lock)
-	IgnoreExisting bool   // 桶已存在时静默成功 (mc mb --ignore-existing)
+	Region         string // 桶所在区域 (--region)
+	ObjectLocking  bool   // 启用对象锁 (--with-lock)
+	IgnoreExisting bool   // 桶已存在时静默成功 (--ignore-existing)
 }
 
 // MakeBuckets 创建桶
@@ -47,7 +47,7 @@ func (c *Action) MakeBuckets(opt MakeBucketOptions, bucket string) error {
 			myprint.PrintfBoldYellow("set %s: %v\n", name, err)
 			errs = append(errs, fmt.Errorf("set %s: %w", name, err))
 		} else {
-			myprint.PrintlnBoldGreen("set " + name + " success")
+			myprint.PrintfBoldGreen("set %s: success\n", name)
 		}
 	}
 

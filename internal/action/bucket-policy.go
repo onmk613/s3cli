@@ -1,9 +1,9 @@
-// bucket-policy.go 实现桶访问策略 (Bucket Policy) 管理, 对齐 mc 的 `mc anonymous`:
+// bucket-policy.go 实现桶访问策略 (Bucket Policy) 管理:
 // SetPolicy (permission 参数直接生成策略, 不依赖文件) / GetPolicy / DelPolicy.
 //
-// permission 取值与 mc 一致: private / download / upload / public.
+// permission 取值: private / download / upload / public.
 // 兼容旧名: none -> private, public-read -> download, public-write -> upload,
-// public-read-write -> public. 策略语句结构对齐 minio-go (mc 底层):
+// public-read-write -> public. 预定义策略语句结构:
 //
 //	download: GetBucketLocation + ListBucket + GetObject
 //	upload:   GetBucketLocation + ListBucketMultipartUploads + Put/Delete/Abort/ListParts
@@ -27,7 +27,7 @@ import (
 // PolicyOptions 控制 SetPolicy 的参数.
 //
 // 三选一: 指定 ConfigFile 用自定义 JSON 文件覆盖;
-// 或指定 Permission 套用预定义策略 (mc 语义); 否则报错.
+// 或指定 Permission 套用预定义策略; 否则报错.
 // Prefix 仅对预定义策略生效, 把策略限定到某个 key 前缀.
 type PolicyOptions struct {
 	Permission string // private / download / upload / public (+ 兼容旧名)
@@ -113,10 +113,10 @@ func (c *Action) DelPolicy(bucket string) error {
 }
 
 // ----------------------------------------------------------------------------
-// 预定义策略 (mc anonymous 语义)
+// 预定义匿名访问策略
 // ----------------------------------------------------------------------------
 
-// normalizePermission 把权限名归一化: 旧名映射到 mc 语义.
+// normalizePermission 把权限名归一化: 旧名映射到标准语义.
 func normalizePermission(name string) (string, error) {
 	switch name {
 	case "private", "none":
@@ -131,7 +131,7 @@ func normalizePermission(name string) (string, error) {
 	return "", fmt.Errorf("unknown permission %q: allowed values are [private, download, upload, public]", name)
 }
 
-// anonStatement / anonPolicy 按 minio-go 的 JSON 结构构造策略.
+// anonStatement / anonPolicy 描述匿名访问策略的 JSON 结构.
 type anonPrincipal struct {
 	AWS []string `json:"AWS"`
 }
@@ -165,9 +165,9 @@ const (
 	actionListMultipartParts  = "s3:ListMultipartUploadParts"
 )
 
-// buildAnonymousPolicy 按 mc (minio-go) 语义构造匿名访问策略 JSON, 语句结构与 mc
-// 完全一致 (含 GetBucketLocation+ListBucketMultipartUploads 合并语句与
-// ListBucket 的 StringEquals s3:prefix 条件).
+// buildAnonymousPolicy 构造匿名访问策略 JSON, 语句结构为标准的预定义策略,
+// 含 GetBucketLocation+ListBucketMultipartUploads 合并语句与
+// ListBucket 的 StringEquals s3:prefix 条件.
 // prefix 为空时作用于整个桶, 否则仅作用于该前缀下的对象.
 func buildAnonymousPolicy(perm, bucket, prefix string) ([]byte, error) {
 	bucketRes := "arn:aws:s3:::" + bucket
@@ -176,7 +176,7 @@ func buildAnonymousPolicy(perm, bucket, prefix string) ([]byte, error) {
 	allow := "Allow"
 	principal := anonPrincipal{AWS: []string{"*"}}
 
-	// 桶级语句: GetBucketLocation 与 ListBucketMultipartUploads 合并为一条 (同 mc).
+	// 桶级语句: GetBucketLocation 与 ListBucketMultipartUploads 合并为一条.
 	common := anonStatement{
 		Action:    []string{actionGetBucketLocation, actionListBucketMultipart},
 		Effect:    allow,

@@ -4,11 +4,11 @@ import (
 	"context"
 	"fmt"
 
-	"s3cli/internal/client"
-	"s3cli/internal/s3path"
-
 	"s3cli/internal/action"
+	"s3cli/internal/client"
 	"s3cli/internal/config"
+	"s3cli/internal/s3path"
+	"s3cli/pkg/i18n"
 	"s3cli/pkg/s3iface"
 
 	"github.com/spf13/cobra"
@@ -64,18 +64,18 @@ func NewDiffCmd() *cobra.Command {
 
 	cmd := &cobra.Command{
 		Use:               "diff [path-a] [path-b]",
-		Short:             "Compare files/directories between s3 and/or local paths",
+		Short:             i18n.T("Compare files/directories between s3 and/or local paths", "比较 S3 与/或本地路径之间的文件/目录差异"),
 		Args:              cobra.ExactArgs(2),
 		ValidArgsFunction: AutoCompletePath,
 		RunE:              NewRunEMixedPair(parseDiffArg, runDiff),
 	}
 
 	f := cmd.Flags()
-	f.StringVar(&modeFlag, "check", "md5", "Compare strategy: md5 | size | quick")
-	f.BoolVarP(&opt.Recursive, "recursive", "r", true, "Recursively diff directories")
-	f.IntVar(&opt.Concurrency, "concurrency", config.DefaultConcurrency, "Concurrent file comparisons (directory mode)")
-	f.BoolVar(&opt.BriefOnly, "brief", false, "Print only differences, hide identical files")
-	f.BoolVar(&opt.JSON, "json", false, "Output format: text or json (supported commands emit structured results)")
+	f.StringVar(&modeFlag, "check", "md5", i18n.T("Compare strategy: md5 | size | quick", "比较策略：md5 | size | quick"))
+	f.BoolVarP(&opt.Recursive, "recursive", "r", true, i18n.T("Recursively diff directories", "递归比较目录"))
+	f.IntVar(&opt.Concurrency, "concurrency", config.DefaultConcurrency, i18n.T("Concurrent file comparisons (directory mode)", "并发文件比较数（目录模式）"))
+	f.BoolVar(&opt.BriefOnly, "brief", false, i18n.T("Print only differences, hide identical files", "只打印差异，隐藏相同的文件"))
+	f.BoolVar(&opt.JSON, "json", false, jsonOutputDesc())
 	return cmd
 }
 

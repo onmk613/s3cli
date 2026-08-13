@@ -39,7 +39,7 @@ func (c *Client) CopyObject(ctx context.Context, srcBucket, srcKey, destBucket, 
 	}
 
 	// x-amz-copy-source: /bucket/key?versionId=xxx
-	// versionId 同样需要 percent-encode (MinIO 的 versionId 可能含 + / = 等字符)。
+	// versionId 同样需要 percent-encode (versionId 可能含 + / = 等字符)。
 	copySource := "/" + srcBucket + "/" + encodePath(srcKey)
 	if opts.SourceVersionID != "" {
 		copySource += "?versionId=" + percentEncode(opts.SourceVersionID)

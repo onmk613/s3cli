@@ -14,6 +14,7 @@ import (
 	"time"
 
 	myprint "s3cli/pkg/fmtutil"
+	"s3cli/pkg/i18n"
 )
 
 // multipartState persists only the information required to safely reconnect a
@@ -115,9 +116,23 @@ func MpuLocalList(opt MpuLocalOptions) error {
 		myprint.PrintlnGreen(string(b))
 		return nil
 	}
+	tbl := myprint.NewTable(
+		i18n.T("Created", "创建时间"),
+		i18n.T("Bucket", "存储桶"),
+		i18n.T("Key", "对象Key"),
+		i18n.T("Upload ID", "上传ID"),
+		i18n.T("State File", "状态文件"),
+	)
 	for _, state := range states {
-		myprint.Printf("%s  %s/%s  uploadId=%s  %s\n", state.CreatedAt, state.Bucket, state.Key, state.UploadID, state.StatePath)
+		tbl.AddRow(
+			myprint.Cell{Text: state.CreatedAt, Color: myprint.Dim},
+			myprint.Cell{Text: state.Bucket},
+			myprint.Cell{Text: state.Key},
+			myprint.Cell{Text: state.UploadID, Color: myprint.Cyan},
+			myprint.Cell{Text: state.StatePath},
+		)
 	}
+	tbl.Render()
 	return nil
 }
 

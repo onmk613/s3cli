@@ -196,7 +196,7 @@ func (c *Action) downloadSingleFile(opt GetOptions, bucket, key, localPath strin
 	myprint.Printf("get: %s --> %s ", c.S3Path(bucket, key), localFilePath)
 	size, err := c.downloadFile(key, localFilePath, bucket, nil, opt.VersionID)
 	if err != nil {
-		myprint.Println("FAILED")
+		myprint.PrintlnRed("FAILED")
 		return fmt.Errorf("download: %s", FormatAPIError(err))
 	}
 	myprint.Printf("(%s)\n", FormatBytes(size))

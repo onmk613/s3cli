@@ -1,5 +1,5 @@
 // object-mv.go 实现同 endpoint 内的对象移动 Mv (mv) = copy + delete 源;
-// 参数与 mc mv 对齐 (--recursive/-r / --storage-class/--sc / --tags / --metadata).
+// 参数 (--recursive/-r / --storage-class/--sc / --tags / --metadata).
 
 package action
 
