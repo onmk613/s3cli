@@ -2,6 +2,8 @@
 
 轻量、高性能、简单的 S3 命令行客户端
 
+中文 · [English](README.en.md)
+
 ## 特性
 
 - 零 AWS SDK 依赖：基于 `net/http` 自实现 S3 REST API 与 SigV4 签名，兼容任何 S3 服务
