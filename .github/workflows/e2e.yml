@@ -29,13 +29,20 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version: "1.26"
+      # 不用 golangci-lint-action 的预编译二进制: 它与 go.mod 固定的 toolchain
+      # 存在版本错配 (v2.13.x 需以 Go 1.27 构建)。这里与本地验证路径完全一致:
+      # GOTOOLCHAIN=auto 允许 go install 按需取 1.27 构建 linter, 项目本身仍按
+      # go.mod 的 1.26.7 构建。
       - name: golangci-lint
-        uses: golangci/golangci-lint-action@v8
-        with:
-          version: latest
-          args: ./...
+        run: |
+          go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.13.1
+          golangci-lint run ./...
+        env:
+          GOTOOLCHAIN: auto
       - name: govulncheck
         run: go run golang.org/x/vuln/cmd/govulncheck@latest ./...
+        env:
+          GOTOOLCHAIN: auto
 
   cross-build:
     name: 交叉编译冒烟 (build.sh all)
