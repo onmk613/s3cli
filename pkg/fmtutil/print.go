@@ -4,10 +4,9 @@ import (
 	"io"
 )
 
-// 传入一个 writer，和是否输出调试信息和是否禁用颜色用于初始化赋值
-// 直接调用 Printf/Print/Println 等函数即可
-
-var std = New()
+// 包级便捷函数均委托全局 std（os.Stdout、自动着色）：
+// 通过 SetColor/SetWriter 调整全局行为，直接调用
+// Printf/Println 等函数即可输出。
 
 func SetColor(b bool) {
 	std.SetColor(b)
@@ -21,14 +20,10 @@ func SetWriter(w io.Writer) {
 	std.SetWriter(w)
 }
 
-// ColorEnabled 返回全局 std 当前是否启用颜色输出。
-// 依据 mode（auto/always/never）与输出目标是否为终端判断，
-// 与包内 Printf/Println 等输出函数的着色决策保持一致；
-// 内部加锁读取，并发安全。供其它包（如 pkg/progress）统一颜色开关。
+// ColorEnabled 返回全局 std 当前是否启用颜色输出，与包级输出函数的
+// 着色决策保持一致，供其它包（如 pkg/progress）统一颜色开关。
 func ColorEnabled() bool {
-	std.mu.Lock()
-	defer std.mu.Unlock()
-	return !std.noColorLocked()
+	return std.ColorEnabled()
 }
 
 // ------- 默认(无色)输出函数 -------
@@ -81,24 +76,15 @@ func PrintlnBlue(a ...any) {
 func PrintfCyan(format string, a ...any) {
 	std.Printf(Cyan, format, a...)
 }
-func PrintlnCyan(a ...any) {
-	std.Println(Cyan, a...)
-}
 
-// PrintlnDim 浅灰色
-func PrintlnDim(a ...any) {
-	std.Println(Dim, a...)
-}
+// PrintfDim 浅灰色
 func PrintfDim(format string, a ...any) {
 	std.Printf(Dim, format, a...)
 }
 
 // -------- 加粗颜色输出函数 --------
 
-// PrintlnBoldCyan 加粗青色
-func PrintlnBoldCyan(a ...any) {
-	std.Println(BoldCyan, a...)
-}
+// PrintfBoldCyan 加粗青色
 func PrintfBoldCyan(format string, a ...any) {
 	std.Printf(BoldCyan, format, a...)
 }
@@ -107,38 +93,18 @@ func PrintfBoldCyan(format string, a ...any) {
 func PrintlnBoldRed(a ...any) {
 	std.Println(BoldRed, a...)
 }
-func PrintfBoldRed(format string, a ...any) {
-	std.Printf(BoldRed, format, a...)
-}
 
-// PrintlnBoldGreen 加粗绿色
-func PrintlnBoldGreen(a ...any) {
-	std.Println(BoldGreen, a...)
-}
+// PrintfBoldGreen 加粗绿色
 func PrintfBoldGreen(format string, a ...any) {
 	std.Printf(BoldGreen, format, a...)
 }
 
-// PrintlnBoldYellow 加粗黄色
-func PrintlnBoldYellow(a ...any) {
-	std.Println(BoldYellow, a...)
-}
+// PrintfBoldYellow 加粗黄色
 func PrintfBoldYellow(format string, a ...any) {
 	std.Printf(BoldYellow, format, a...)
 }
 
-// PrintlnBoldBlue 加粗蓝色
-func PrintlnBoldBlue(a ...any) {
-	std.Println(BoldBlue, a...)
-}
+// PrintfBoldBlue 加粗蓝色
 func PrintfBoldBlue(format string, a ...any) {
 	std.Printf(BoldBlue, format, a...)
-}
-
-// PrintlnBoldBlack 加粗黑色
-func PrintlnBoldBlack(a ...any) {
-	std.Println(BoldBlack, a...)
-}
-func PrintfBoldBlack(format string, a ...any) {
-	std.Printf(BoldBlack, format, a...)
 }

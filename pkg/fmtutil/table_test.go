@@ -9,27 +9,15 @@ import (
 func renderTable(t *testing.T, tb *Table) string {
 	t.Helper()
 	var buf bytes.Buffer
-	old := std.out
-	std.out = &buf
-	defer func() { std.out = old }()
+	tb.To(&buf)
 	tb.Render()
 	return buf.String()
 }
 
 func TestTableAlignsColumns(t *testing.T) {
 	tb := NewTable("Time", "Size", "Type", "Path").AlignRight(1)
-	tb.AddRow(
-		Cell{Text: "2026-08-10 11:00:00"},
-		Cell{Text: "1048576"},
-		Cell{Text: "FILE"},
-		Cell{Text: "minio:bucket/a.txt"},
-	)
-	tb.AddRow(
-		Cell{Text: "-"},
-		Cell{Text: "-"},
-		Cell{Text: "DIR"},
-		Cell{Text: "minio:bucket/dir/"},
-	)
+	tb.AddRow(C("2026-08-10 11:00:00"), C("1048576"), C("FILE"), C("minio:bucket/a.txt"))
+	tb.AddRow(C("-"), C("-"), C("DIR"), C("minio:bucket/dir/"))
 	out := renderTable(t, tb)
 	lines := strings.Split(strings.TrimRight(out, "\n"), "\n")
 	if len(lines) != 4 {
@@ -47,8 +35,8 @@ func TestTableAlignsColumns(t *testing.T) {
 
 func TestTableCJKWidth(t *testing.T) {
 	tb := NewTable("键", "值")
-	tb.AddRow(Cell{Text: "存储桶"}, Cell{Text: "v1"})
-	tb.AddRow(Cell{Text: "b"}, Cell{Text: "v2"})
+	tb.AddRow(C("存储桶"), C("v1"))
+	tb.AddRow(C("b"), C("v2"))
 	out := renderTable(t, tb)
 	lines := strings.Split(strings.TrimRight(out, "\n"), "\n")
 	// 中文表头 "键" 占 2 列宽, "b" 只占 1; 分隔线须等长且第 2 列起点一致
@@ -137,6 +125,53 @@ func TestDisplayWidthExported(t *testing.T) {
 	}
 }
 
+func TestTruncateDisplay(t *testing.T) {
+	if got := TruncateDisplay("abc", 5); got != "abc" {
+		t.Errorf("short string should pass through: %q", got)
+	}
+	if got := TruncateDisplay("abcdefgh", 5); got != "abcd…" {
+		t.Errorf("TruncateDisplay = %q, want abcd…", got)
+	}
+	if got := TruncateDisplay("abc", 0); got != "" {
+		t.Errorf("TruncateDisplay with max<=0 = %q, want empty", got)
+	}
+	// CJK 按显示宽度计: 2 个中文 = 4 列
+	if got := TruncateDisplay("中文混排abc", 7); got != "中文混…" {
+		t.Errorf("TruncateDisplay CJK = %q, want 中文混…", got)
+	}
+	// 截断按 grapheme 边界: 切点落在国旗内部时保持序列完整, 不撕开
+	if got := TruncateDisplay("xx🇨🇳yy", 5); got != "xx🇨🇳…" {
+		t.Errorf("TruncateDisplay grapheme = %q, want xx🇨🇳…", got)
+	}
+}
+
+func TestTableViaPrinterColor(t *testing.T) {
+	// 绑定 Printer 的表格: 开色时单元格/表头带 ANSI, 关色时纯文本
+	var buf bytes.Buffer
+	p := New()
+	p.SetWriter(&buf)
+
+	p.SetColor(true)
+	tb := p.NewTable("H", "S")
+	tb.AddRow(CC("x", Red), C("y"))
+	tb.Render()
+	if !strings.Contains(buf.String(), "\x1b[31m") || !strings.Contains(buf.String(), "\x1b[1;34m") {
+		t.Errorf("colored table missing ANSI codes:\n%q", buf.String())
+	}
+
+	buf.Reset()
+	p.SetColor(false)
+	tb2 := p.NewTable("H", "S")
+	tb2.AddRow(CC("x", Red), C("y"))
+	tb2.Render()
+	if strings.Contains(buf.String(), "\x1b[") {
+		t.Errorf("no-color printer should strip ANSI:\n%q", buf.String())
+	}
+	if !strings.Contains(buf.String(), "x") || !strings.Contains(buf.String(), "y") {
+		t.Errorf("table content wrong:\n%q", buf.String())
+	}
+}
+
 func TestRenderToPlain(t *testing.T) {
 	tb := NewTable("A", "B")
 	tb.AddRow(CC("x", Green), C("y"))
@@ -154,9 +189,7 @@ func TestTablePlainRowLimit(t *testing.T) {
 	// 超过上限后切换为 TSV 流式输出: 首行表头, 制表符分隔, 无对齐
 	tb := NewTable("A", "B").PlainRowLimit(2)
 	var buf bytes.Buffer
-	old := std.out
-	std.out = &buf
-	defer func() { std.out = old }()
+	tb.To(&buf)
 
 	tb.AddRow(C("1"), C("x"))
 	tb.AddRow(C("22"), C("y"))
@@ -184,9 +217,7 @@ func TestTablePlainCellGate(t *testing.T) {
 	// 单单元格超宽时即使行数很少也降级为 TSV
 	tb := NewTable("A").PlainRowLimit(1000)
 	var buf bytes.Buffer
-	old := std.out
-	std.out = &buf
-	defer func() { std.out = old }()
+	tb.To(&buf)
 
 	tb.AddRow(C("short"))
 	tb.AddRow(C(strings.Repeat("x", plainCellLimit+1)))
@@ -247,28 +278,7 @@ func TestTableUnderPlainRowLimitStaysAligned(t *testing.T) {
 	}
 }
 
-func TestRuneWidthExtended(t *testing.T) {
-	cases := []struct {
-		s    string
-		want int
-	}{
-		{"\t", 0},                 // 控制符归零
-		{"\x1b[31mRED\x1b[0m", 3}, // ANSI 不计宽
-		{"é", 1},                  // e + U+0301 组合
-		{"ｱｲｳ", 3},                // 半角假名 = 1
-		{"ＡＢＣ", 6},                // 全角字母 = 2
-		{"🟢", 2},                  // 0x1F7E2 彩色圆
-		{"🈚", 2},                  // 0x1F21A 封闭表意补充
-		{"שָׁלוֹם", 4},            // 希伯来语元音点 (Mn) 归零
-	}
-	for _, c := range cases {
-		if got := displayWidth(c.s); got != c.want {
-			t.Errorf("displayWidth(%q) = %d, want %d", c.s, got, c.want)
-		}
-	}
-}
-
-func TestRuneWidth(t *testing.T) {
+func TestDisplayWidth(t *testing.T) {
 	cases := []struct {
 		s    string
 		want int
@@ -277,6 +287,16 @@ func TestRuneWidth(t *testing.T) {
 		{"中文", 4},
 		{"a中b", 4},
 		{"héllo", 5},
+		{"\t", 0},                 // 控制符归零
+		{"\x1b[31mRED\x1b[0m", 3}, // ANSI 不计宽
+		{"é", 1},                  // e + U+0301 组合
+		{"ｱｲｳ", 3},                // 半角假名 = 1
+		{"ＡＢＣ", 6},                // 全角字母 = 2
+		{"🟢", 2},                  // 0x1F7E2 彩色圆
+		{"🈚", 2},                  // 0x1F21A 封闭表意补充
+		{"שָׁלוֹם", 4},            // 希伯来语元音点 (Mn) 归零
+		{"🇨🇳", 2},                 // 区域指示符国旗: grapheme 聚合为单格
+		{"👨‍👩‍👧", 2},              // ZWJ 家庭 emoji: 聚合为单格并封顶 2 列
 	}
 	for _, c := range cases {
 		if got := displayWidth(c.s); got != c.want {

@@ -2,6 +2,7 @@ package fmtutil
 
 import (
 	"bytes"
+	"os"
 	"strings"
 	"testing"
 )
@@ -74,6 +75,27 @@ func TestPrinterColorAutoNonTerminal(t *testing.T) {
 	}
 }
 
+func TestPrinterColorEnabled(t *testing.T) {
+	p := New()
+	var buf bytes.Buffer
+	p.SetWriter(&buf)
+
+	p.SetColor(false)
+	if p.ColorEnabled() {
+		t.Error("SetColor(false) should disable color")
+	}
+
+	p.SetColor(true)
+	if !p.ColorEnabled() {
+		t.Error("SetColor(true) should enable color")
+	}
+
+	p.SetColorAuto() // auto + 非终端 -> 自动关色
+	if p.ColorEnabled() {
+		t.Error("auto + non-terminal should disable color")
+	}
+}
+
 func TestPackageLevelPrintFunctionsNoPanic(t *testing.T) {
 	// 包级函数使用全局 std, 默认写 os.Stdout。仅确保不 panic。
 	Printf("%s", "x")
@@ -83,32 +105,51 @@ func TestPackageLevelPrintFunctionsNoPanic(t *testing.T) {
 	PrintfDim("dim")
 }
 
-func TestColorEnabled(t *testing.T) {
-	// 保存并恢复全局 std 状态, 避免影响其它用例
-	std.mu.Lock()
-	oldOut, oldMode, oldTerm := std.out, std.mode, std.outIsTerminal
-	std.mu.Unlock()
+func TestPackageLevelColorEnabled(t *testing.T) {
+	// 包级 ColorEnabled 委托全局 std; 测试后经公开 API 恢复缺省 (stdout + auto)
 	defer func() {
-		std.mu.Lock()
-		std.out, std.mode, std.outIsTerminal = oldOut, oldMode, oldTerm
-		std.mu.Unlock()
+		SetWriter(os.Stdout)
+		SetColorAuto()
 	}()
-
-	var buf bytes.Buffer // 非 *os.File -> 非终端
-	SetWriter(&buf)
-
-	SetColor(false) // 强制关色
+	SetColor(false)
 	if ColorEnabled() {
 		t.Error("SetColor(false) should disable color")
 	}
+}
 
-	SetColor(true) // 强制开色
-	if !ColorEnabled() {
-		t.Error("SetColor(true) should enable color")
+func TestSprint(t *testing.T) {
+	p := New()
+	var buf bytes.Buffer
+	p.SetWriter(&buf)
+
+	p.SetColor(true)
+	if got := p.Sprint(Green, "g"); got != "\033[32mg"+resetCode {
+		t.Errorf("Sprint colored = %q", got)
 	}
 
-	SetColorAuto() // auto + 非终端 -> 自动关色
-	if ColorEnabled() {
-		t.Error("auto + non-terminal should disable color")
+	p.SetColor(false)
+	if got := p.Sprint(Green, "g"); got != "g" {
+		t.Errorf("Sprint no-color should pass through: %q", got)
+	}
+}
+
+func TestNoColorEnvConvention(t *testing.T) {
+	// no-color.org 约定: 变量存在且非空即禁色, 与取值无关
+	t.Setenv("NO_COLOR", "")
+	if noColorByEnv() {
+		t.Error("空 NO_COLOR 不应禁色")
+	}
+	t.Setenv("NO_COLOR", "0")
+	if !noColorByEnv() {
+		t.Error("NO_COLOR 非空即禁色（取值 0 也是）")
+	}
+
+	// 显式强制开色不受 NO_COLOR 影响
+	p := New()
+	var buf bytes.Buffer
+	p.SetWriter(&buf)
+	p.SetColor(true)
+	if !p.ColorEnabled() {
+		t.Error("SetColor(true) 应覆盖 NO_COLOR")
 	}
 }

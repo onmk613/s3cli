@@ -5,7 +5,8 @@ import (
 	"io"
 	"regexp"
 	"strings"
-	"unicode"
+
+	"github.com/mattn/go-runewidth"
 )
 
 // Cell 表格单元格；Color 为 None 时使用默认颜色。
@@ -32,25 +33,34 @@ func Cf(format string, a ...any) Cell { return Cell{Text: fmt.Sprintf(format, a.
 // Table 轻量文本表格渲染器：
 //   - 表头 + 分隔线 + 数据行，按内容自动计算列宽
 //   - 支持 CJK 全角/宽字符宽度计算，中文表头对齐不偏移
-//   - 单元格可单独着色，颜色开关遵循全局 Printer/std 设置（--no-color / 非终端自动禁用）
+//   - 单元格可单独着色，颜色开关遵循所绑定的 Printer（--no-color / 非终端自动禁用）
 //   - 不做边框、不换行、不合并单元格
 type Table struct {
-	header   []string
-	align    []bool // true = 右对齐（适合数字列）
-	rows     [][]Cell
-	added    int                 // 已添加的行数 (plain 模式下同样累计)
-	bufBytes int                 // 缓冲文本字节数 (降级闸门用)
-	limit    int                 // >0: 行数上限, 超过后转为流式 TSV 输出
-	plain    bool                // 已切换为流式输出, 不再缓存行
-	sink     func(Color, string) // 非 nil: 输出到自定义目标 (纯文本, 无 ANSI); nil: 全局 std
+	header    []string
+	align     []bool // true = 右对齐（适合数字列）
+	rows      [][]Cell
+	added     int                 // 已添加的行数 (plain 模式下同样累计)
+	bufBytes  int                 // 缓冲文本字节数 (降级闸门用)
+	limit     int                 // >0: 行数上限, 超过后转为流式 TSV 输出
+	plain     bool                // 已切换为流式输出, 不再缓存行
+	sink      func(Color, string) // nil: 全局 std; 否则输出到自定义目标
+	plainSink bool                // sink 为纯文本目标 (To), 渲染时不着色
 }
 
-// NewTable 新建表格；headers 为表头，传空表示无表头行。
+// NewTable 新建绑定全局标准输出的表格（颜色遵循全局 std 开关）；
+// headers 为表头，传空表示无表头行。
 func NewTable(headers ...string) *Table {
 	return &Table{
 		header: headers,
 		align:  make([]bool, len(headers)),
 	}
+}
+
+// NewTable 新建绑定 p 的表格：单元格着色与否由 p 的颜色开关决定。
+func (p *Printer) NewTable(headers ...string) *Table {
+	t := NewTable(headers...)
+	t.sink = p.output
+	return t
 }
 
 // AlignRight 把指定列设为右对齐（适合数字列）。
@@ -77,10 +87,11 @@ func (t *Table) PlainRowLimit(n int) *Table {
 	return t
 }
 
-// To 指定输出目标: 所有输出 (含 plain 流式行) 以纯文本 (无 ANSI) 写入 w。
+// To 指定纯文本输出目标: 所有输出 (含 plain 流式行) 以无 ANSI 形态写入 w。
 // 须在第一次 AddRow 之前调用, 否则 plain 模式下已流出的行不会进入 w.
 func (t *Table) To(w io.Writer) *Table {
 	t.sink = func(_ Color, s string) { fmt.Fprint(w, s) }
+	t.plainSink = true
 	return t
 }
 
@@ -131,13 +142,13 @@ func (t *Table) overLimit(cells []Cell) bool {
 	return t.bufBytes >= plainByteLimit
 }
 
-// Render 渲染到全局标准输出（颜色遵循全局 Printer/std 开关）。
+// Render 渲染输出（颜色遵循所绑定 Printer 的开关；To(w) 时为纯文本）。
 // 已切换为流式输出时无动作 (行已逐条写出).
 func (t *Table) Render() {
 	if t.plain {
 		return
 	}
-	t.render(t.emit, t.sink == nil)
+	t.render(t.emit, !t.plainSink)
 }
 
 // RenderTo 以纯文本（无 ANSI 颜色）渲染到 w，便于测试断言与文件输出。
@@ -149,7 +160,7 @@ func (t *Table) RenderTo(w io.Writer) {
 	t.render(t.emit, false)
 }
 
-// emit 按 sink 输出: sink 非 nil 时纯文本写入; 否则走全局 std (遵循颜色开关).
+// emit 按 sink 输出: sink 非 nil 时写入自定义目标; 否则走全局 std.
 func (t *Table) emit(c Color, s string) {
 	if t.sink != nil {
 		t.sink(c, s)
@@ -304,95 +315,34 @@ func padCell(text string, w int, right, last bool) string {
 // ansiRe 匹配 ANSI 转义序列（CSI），用于宽度计算前剥离着色码。
 var ansiRe = regexp.MustCompile(`\x1b\[[0-9;?]*[ -/]*[@-~]`)
 
-// displayWidth 计算字符串的终端显示宽度（CJK 宽字符按 2 计，
-// 组合符号按 0 计，混入的 ANSI 颜色码不占宽度）。
+// widthCond 固定 EastAsianWidth=false，不随 EastAsianWidth 环境变量
+// 与终端 locale 漂移（包级默认函数会做环境探测），保证任意环境下
+// 表格列宽计算确定一致。
+var widthCond = runewidth.Condition{EastAsianWidth: false}
+
+// displayWidth 计算字符串的终端显示宽度：CJK 宽字符按 2 计，组合符号
+// 按 0 计，ZWJ emoji/国旗等多 rune 序列按 grapheme 聚合为单格并封顶
+// 2 列（go-runewidth 语义）；混入的 ANSI 颜色码不占宽度。
 func displayWidth(s string) int {
 	if strings.IndexByte(s, 0x1b) >= 0 {
 		s = ansiRe.ReplaceAllString(s, "")
 	}
-	w := 0
-	for _, r := range s {
-		w += runeWidth(r)
-	}
-	return w
+	return widthCond.StringWidth(s)
 }
 
-// DisplayWidth 计算字符串的终端显示宽度，语义与内部 displayWidth 相同
-// （先剥离 ANSI 转义序列，CJK 全角/宽字符按 2 列计，组合符号按 0 计），
+// DisplayWidth 计算字符串的终端显示宽度，语义与内部 displayWidth 相同，
 // 供包外（如 pkg/progress 的进度条宽度计算）复用。
 func DisplayWidth(s string) int { return displayWidth(s) }
 
-// runeWidth 返回单个 rune 的终端显示宽度。
-// 依据 Unicode East Asian Width 手工整理, 组合符号经 unicode.Mn/Me 归零,
-// 覆盖 CJK 与常见 emoji. 多 rune 合成一个显示格的场景 (emoji ZWJ 家庭、
-// 区域指示符国旗、keycap 序列) 需 grapheme 聚合才精确,
-// 如需 100% 正确可换用 rivo/uniseg.
-func runeWidth(r rune) int {
-	switch {
-	// 控制符 (C0/C1 + DEL)
-	case r < 0x20 || r == 0x7F || in(r, 0x80, 0x9F):
-		return 0
-	// 零宽格式符: ZWNJ/ZWJ、零宽空格、双向标记、词连接符、BOM
-	case r == 0x200C || r == 0x200D ||
-		r == 0x200B || in(r, 0x200E, 0x200F) ||
-		in(r, 0x2060, 0x2064) || r == 0xFEFF:
-		return 0
-	// 组合附加符号（零宽）: 变体选择符、假名浊点、泰语/希伯来语/天城文等
-	case unicode.Is(unicode.Mn, r) || unicode.Is(unicode.Me, r):
-		return 0
-	// CJK 全角/宽字符
-	case in(r, 0x1100, 0x115F) || // 谚文字母 (Jamo)
-		r == 0x2329 || r == 0x232A ||
-		in(r, 0x2E80, 0x303E) || // CJK 部首补充/康熙部首/CJK 符号标点/平假名/片假名
-		in(r, 0x3041, 0x33FF) || // 假名、CJK 兼容、方框绘制、CJK 笔画
-		in(r, 0x3400, 0x4DBF) || // CJK 扩展 A
-		in(r, 0x4E00, 0x9FFF) || // CJK 统一表意
-		in(r, 0xA000, 0xA4CF) || // 彝文
-		in(r, 0xA960, 0xA97F) || // 谚文字母扩展 A
-		in(r, 0xAC00, 0xD7A3) || // 谚文音节
-		in(r, 0xD7B0, 0xD7FF) || // 谚文字母扩展 B
-		in(r, 0xF900, 0xFAFF) || // CJK 兼容表意
-		in(r, 0xFE10, 0xFE19) ||
-		in(r, 0xFE30, 0xFE6F) ||
-		in(r, 0xFF00, 0xFF60) ||
-		in(r, 0xFFE0, 0xFFE6) ||
-		in(r, 0x16FE0, 0x18AFF) || // 西夏文/女书等
-		in(r, 0x1B000, 0x1B16F) || // 假名补充/假名扩展 A
-		in(r, 0x1F200, 0x1F2FF) || // 封闭表意补充
-		in(r, 0x20000, 0x2FFFD) ||
-		in(r, 0x30000, 0x3FFFD):
-		return 2
-	// 常见 emoji（终端普遍渲染为 2 列）
-	case r == 0x231A || r == 0x231B || // 手表/沙漏
-		in(r, 0x23E9, 0x23EC) || r == 0x23F0 || r == 0x23F3 ||
-		r == 0x25FD || r == 0x25FE ||
-		r == 0x2614 || r == 0x2615 ||
-		r == 0x2648 || r == 0x2649 || r == 0x264A || r == 0x264B ||
-		r == 0x264C || r == 0x264D || r == 0x264E || r == 0x264F ||
-		r == 0x2650 || r == 0x2651 || r == 0x2652 || r == 0x2653 ||
-		r == 0x26AA || r == 0x26AB || r == 0x26BD || r == 0x26BE ||
-		r == 0x26C4 || r == 0x26C5 || r == 0x26CE || r == 0x26D4 ||
-		r == 0x26EA || r == 0x26F2 || r == 0x26F3 || r == 0x26F5 ||
-		r == 0x26FA || r == 0x26FD ||
-		r == 0x2705 || r == 0x270A || r == 0x270B || r == 0x2728 ||
-		r == 0x274C || r == 0x274E ||
-		in(r, 0x2753, 0x2755) || r == 0x2757 ||
-		in(r, 0x2795, 0x2797) || r == 0x27B0 || r == 0x27BF ||
-		r == 0x2B1B || r == 0x2B1C || r == 0x2B50 || r == 0x2B55 ||
-		in(r, 0x1F000, 0x1F0FF) || // 麻将牌/扑克牌
-		in(r, 0x1F1E6, 0x1F1FF) || // 区域指示符（国旗）
-		in(r, 0x1F300, 0x1F64F) ||
-		in(r, 0x1F680, 0x1F6FF) ||
-		in(r, 0x1F7E0, 0x1F7EB) || // 彩色圆/方 (🟢🔴🟡)
-		in(r, 0x1F900, 0x1F9FF) ||
-		in(r, 0x1FA70, 0x1FAFF):
-		return 2
-	default:
-		return 1
+// TruncateDisplay 按终端显示宽度截断字符串（附加省略号 …），
+// 用于表格单元格等定宽场景; s 已短于 max 时原样返回。
+// 截断按 grapheme 边界进行，不会撕开组合符号与 emoji 序列。
+func TruncateDisplay(s string, max int) string {
+	if max <= 0 {
+		return ""
 	}
-}
-
-// in 判断 rune 是否位于 [lo, hi] 闭区间.
-func in(r, lo, hi rune) bool {
-	return r >= lo && r <= hi
+	if displayWidth(s) <= max {
+		return s
+	}
+	return widthCond.Truncate(s, max, "…")
 }

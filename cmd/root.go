@@ -154,7 +154,11 @@ func NewRootCmd() {
 			if shouldSkipConfLoad(cmd) {
 				return nil
 			}
-			myprint.SetColor(!config.G.F.NoColor)
+			// 显式传 --no-color 才强制关色; 否则保持缺省自动模式
+			// (终端且 NO_COLOR 未设置时着色, 重定向/管道自动降级纯文本)
+			if config.G.F.NoColor {
+				myprint.SetColor(false)
+			}
 			return config.LoadConf()
 		},
 		PersistentPostRun: func(cmd *cobra.Command, args []string) {
