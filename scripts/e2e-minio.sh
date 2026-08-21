@@ -192,8 +192,23 @@ download_minio() {
   done
 
   MINIO_BIN="$WORK/minio"
-  printf '  下载 MinIO (%s) ...\n' "$plat"
-  curl -fsSL --retry 3 -o "$MINIO_BIN" "https://dl.min.io/server/minio/release/$plat/minio" || die "MinIO 下载失败"
+  # 固定版本 + sha256 校验: 滚动拉 latest 会让 CI 随上游 release 变化而变红
+  # (不可复现), 且无完整性校验。sha256sum 与二进制同源分发, 主要防止传输损坏,
+  # 版本可复现性由 pin 保证; 需要换版本时覆盖 MINIO_VERSION 环境变量。
+  local ver="${MINIO_VERSION:-RELEASE.2025-09-07T16-13-09Z}"
+  local base="https://dl.min.io/server/minio/release/$plat/archive"
+  printf '  下载 MinIO %s (%s) ...\n' "$ver" "$plat"
+  curl -fsSL --retry 3 -o "$MINIO_BIN" "$base/minio.$ver" || die "MinIO 下载失败"
+  local expect_sha got_sha
+  expect_sha=$(curl -fsSL --retry 3 "$base/minio.$ver.sha256sum" | awk '{print $1}') || die "MinIO sha256sum 获取失败"
+  if command -v sha256sum >/dev/null 2>&1; then
+    got_sha=$(sha256sum "$MINIO_BIN" | awk '{print $1}')
+  else
+    got_sha=$(shasum -a 256 "$MINIO_BIN" | awk '{print $1}')
+  fi
+  if [ "$got_sha" != "$expect_sha" ]; then
+    die "MinIO sha256 校验失败 (got $got_sha, want $expect_sha)"
+  fi
   chmod +x "$MINIO_BIN"
 }
 
@@ -401,7 +416,6 @@ POLOF
   expect_ok "create e2e-event" s3 bucket create "minio:$B5"
   expect_ok "create e2e-enc" s3 bucket create "minio:$B6"
   expect_ok "create e2e-life" s3 bucket create "minio:$B7"
-  expect_ok "create e2e-tag" s3 bucket create "minio:$B8"
   expect_out "ls 列出全部桶" "$B1" s3 ls minio
 
   expect_ok "remove 测试专用桶 (含对象)" s3 bucket create "minio:e2e-full"
@@ -556,7 +570,7 @@ test_read_commands() {
   expect_out "find --smaller" "hello.txt" s3 find "minio:$B1/read/" --smaller 1KB
   expect_out "find --newer-than 1h" "hello.txt" s3 find "minio:$B1/read/" --newer-than 1h
   expect_out "find --older-than 1h 空结果" "no objects matched" s3 find "minio:$B1/read/" --older-than 1h
-  expect_out "find --maxdepth 1" "hello.txt" s3 find "minio:$B1/read/" --maxdepth 1
+  expect_out "find --max-depth 1" "hello.txt" s3 find "minio:$B1/read/" --max-depth 1
   expect_out "find --min-depth 2" "c.txt" s3 find "minio:$B1/read/tree/" --min-depth 2
   jsonl_ok "find --limit 2" "assert len(rows)==2" s3 find "minio:$B1/read/" --limit 2 --json
   expect_out "find --ignore 排除" "data.csv" s3 find "minio:$B1/read/" --ignore "*.log"
@@ -808,9 +822,11 @@ test_diff() {
   contains "$OUT" "OK" && bad "diff --brief 不应输出 OK" || ok "diff --brief 隐藏相同项"
 
   expect_code "diff --check size 同尺寸判同 (内容差异被忽略)" 0 s3 diff --check size "$WORK/local-tree-diff" "minio:$B1/diff/s3a/"
-  # quick 比较 mtime: 本地文件 mtime 改到 2020 年, 与 S3 LastModified 必然不同
+  # quick 比较 mtime: 本地 mtime 与 S3 LastModified 是两个时钟 (后者=上传时刻),
+  # 跨来源比较必然误报 —— 新语义跳过 mtime (同尺寸判同); mtime 检出改用同源目录验证
   touch -t 202001010000 "$WORK/local-tree-diff/sub/b.txt"
-  expect_code "diff --check quick 检出 mtime 差异" 6 s3 diff --check quick "$WORK/local-tree-diff" "minio:$B1/diff/s3a/"
+  expect_code "diff --check quick 本地↔s3 跳过不可比的 mtime" 0 s3 diff --check quick "$WORK/local-tree-diff" "minio:$B1/diff/s3a/"
+  expect_code "diff --check quick 同源目录检出 mtime 差异" 6 s3 diff --check quick "$WORK/local-tree" "$WORK/local-tree-diff"
   expect_code "diff --check md5 检出内容差异" 6 s3 diff --check md5 "$WORK/local-tree-diff" "minio:$B1/diff/s3a/"
   expect_ok "diff --concurrency 并发比对" s3 diff --concurrency 2 "$WORK/local-tree" "minio:$B1/diff/s3a/"
   json_ok "diff --json 结构化输出" "assert isinstance(d, dict) or isinstance(d, list)" \
@@ -969,7 +985,7 @@ test_share_completion() {
 
 main() {
   B1="e2e-b1"; B_R="e2e-region"; B2="e2e-ver"; B3="e2e-lock"; B4="e2e-policy"
-  B5="e2e-event"; B6="e2e-enc"; B7="e2e-life"; B8="e2e-tag"
+  B5="e2e-event"; B6="e2e-enc"; B7="e2e-life"
 
   printf 's3cli e2e 测试 (MinIO)\n'
   printf '  s3cli: %s\n  work:  %s\n' "$S3CLI_BIN" "$WORK"

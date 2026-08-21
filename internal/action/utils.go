@@ -23,7 +23,9 @@ func IsCanceled(err error) bool {
 	if err == nil {
 		return false
 	}
-	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+	// 注意: DeadlineExceeded (超时) 不是用户取消 —— 以 130 静默退出会吞掉超时错误,
+	// 超时应正常报错并退出 1。
+	if errors.Is(err, context.Canceled) {
 		return true
 	}
 	// 兜底：部分路径会把 context.Canceled 文本包进普通 error，丢失了可 Is 的链。

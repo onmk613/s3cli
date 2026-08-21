@@ -145,6 +145,10 @@ func resolveMirrorPlan(cfg MirrorOptions) (*mirrorPlan, error) {
 	if err != nil {
 		state = s3path.DestNone
 	}
+	if state == s3path.DestFile {
+		return nil, fmt.Errorf(i18n.T("mirror: target %s exists and is a file object; cannot mirror a directory tree onto it",
+			"mirror：目标 %s 已存在且是文件对象；目录树无法镜像到单个对象上"), tgtClient.S3Path(tgtBucket, tgtPrefix))
+	}
 	tgtPrefix, _ = s3path.ResolveDirDestPrefix(
 		srcPrefix, cfg.Src.TrailingSlash,
 		tgtPrefix, cfg.Tgt.TrailingSlash,

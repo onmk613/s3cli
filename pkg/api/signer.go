@@ -26,9 +26,14 @@ var ignoredSigningHeaders = map[string]struct{}{
 	"Accept-Encoding": {},
 }
 
-// signV4 对请求做 SigV4 header 签名, 直接修改 req 的 Header.
+// signV4 对请求做 SigV4 header 签名 (service 固定为 s3), 直接修改 req 的 Header.
 // https://docs.aws.amazon.com/AmazonS3/latest/developerguide/sigv4-auth-using-authorization-header.html
 func signV4(req *http.Request, accessKey, secretKey, region, payloadSHA256Hex string, t time.Time) {
+	signV4Service(req, accessKey, secretKey, region, serviceS3, payloadSHA256Hex, t)
+}
+
+// signV4Service 是 signV4 的通用形式, service 可指定 (如官方向量回归测试用 "service")。
+func signV4Service(req *http.Request, accessKey, secretKey, region, service, payloadSHA256Hex string, t time.Time) {
 	amzDate := t.Format(iso8601Format)
 	scopeDate := t.Format(yyyymmddFormat)
 
@@ -39,7 +44,7 @@ func signV4(req *http.Request, accessKey, secretKey, region, payloadSHA256Hex st
 
 	canonicalRequest, signedHeaders := buildCanonicalRequest(req, payloadSHA256Hex)
 
-	scope := strings.Join([]string{scopeDate, region, serviceS3, "aws4_request"}, "/")
+	scope := strings.Join([]string{scopeDate, region, service, "aws4_request"}, "/")
 	stringToSign := strings.Join([]string{
 		signV4Algorithm,
 		amzDate,
@@ -47,7 +52,7 @@ func signV4(req *http.Request, accessKey, secretKey, region, payloadSHA256Hex st
 		sumSHA256Hex([]byte(canonicalRequest)),
 	}, "\n")
 
-	signingKey := deriveSigningKey(secretKey, scopeDate, region)
+	signingKey := deriveSigningKeyService(secretKey, scopeDate, region, service)
 	signature := hexHMAC(signingKey, stringToSign)
 
 	authorization := signV4Algorithm +
@@ -152,11 +157,16 @@ func canonicalQueryString(v url.Values) string {
 	return buf.String()
 }
 
-// deriveSigningKey 派生 SigV4 签名密钥.
+// deriveSigningKey 派生 SigV4 签名密钥 (service 固定为 s3).
 func deriveSigningKey(secretKey, scopeDate, region string) []byte {
+	return deriveSigningKeyService(secretKey, scopeDate, region, serviceS3)
+}
+
+// deriveSigningKeyService 是 deriveSigningKey 的通用形式。
+func deriveSigningKeyService(secretKey, scopeDate, region, service string) []byte {
 	dateKey := sumHMACSHA256([]byte("AWS4"+secretKey), []byte(scopeDate))
 	regionKey := sumHMACSHA256(dateKey, []byte(region))
-	serviceKey := sumHMACSHA256(regionKey, []byte(serviceS3))
+	serviceKey := sumHMACSHA256(regionKey, []byte(service))
 	return sumHMACSHA256(serviceKey, []byte("aws4_request"))
 }
 

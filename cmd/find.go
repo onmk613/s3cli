@@ -51,7 +51,11 @@ func NewFindCmd() *cobra.Command {
 	f.StringVar(&findOpt.NewerThan, "newer-than", "", i18n.T("Match objects modified after a duration or date, e.g. 3d / 7d10h31s / 2026-08-01", "匹配修改时间晚于某时长或日期的对象，如 3d / 7d10h31s / 2026-08-01"))
 	f.StringVar(&findOpt.OlderThan, "older-than", "", i18n.T("Match objects modified before a duration or date, e.g. 3d / 7d10h31s / 2026-08-01", "匹配修改时间早于某时长或日期的对象，如 3d / 7d10h31s / 2026-08-01"))
 	f.IntVar(&findOpt.MinDepth, "min-depth", 0, i18n.T("Skip objects shallower than this directory depth (0 = unlimited)", "跳过目录深度小于该值的对象（0 = 不限制）"))
-	f.IntVar(&findOpt.MaxDepth, "maxdepth", 0, i18n.T("Limit directory navigation to this depth (0 = unlimited)", "限制目录遍历深度（0 = 不限制）"))
+	// 命名与 tree 的 --max-depth 统一 (min-depth/maxdepth 拼写不一致是记忆负担);
+	// 旧拼写保留为弃用别名, 不破坏已有脚本。
+	f.IntVar(&findOpt.MaxDepth, "max-depth", 0, i18n.T("Limit directory navigation to this depth (0 = unlimited)", "限制目录遍历深度（0 = 不限制）"))
+	f.IntVar(&findOpt.MaxDepth, "maxdepth", 0, i18n.T("DEPRECATED: use --max-depth", "已弃用：请使用 --max-depth"))
+	_ = cmd.Flags().MarkDeprecated("maxdepth", i18n.T("use --max-depth instead", "请改用 --max-depth"))
 	f.StringVar(&findOpt.Type, "type", "", i18n.T("Match by object type: file or dir (dir matches zero-byte directory markers)", "按对象类型匹配：file 或 dir（dir 匹配零字节目录标记）"))
 	f.StringVar(&findOpt.StorageClass, "storage-class", "", i18n.T("Match by storage class, e.g. STANDARD / STANDARD_IA / GLACIER", "按存储类型匹配，如 STANDARD / STANDARD_IA / GLACIER"))
 	f.StringSliceVar(&findOpt.Include, "include", nil, i18n.T("Only match keys matching a glob pattern (can repeat)", "只匹配符合通配模式的 key（可重复）"))

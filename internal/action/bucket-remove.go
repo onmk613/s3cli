@@ -49,8 +49,15 @@ func (c *Action) deleteAllObjects(bucket string) error {
 		if len(objects) == 0 {
 			continue
 		}
-		if _, err := c.S3.DeleteObjects(c.Ctx, bucket, objects, true); err != nil {
+		result, err := c.S3.DeleteObjects(c.Ctx, bucket, objects, true)
+		if err != nil {
 			return fmt.Errorf("delete objects: %s", FormatAPIError(err))
+		}
+		// quiet 模式下部分对象仍可能失败 (权限/瞬态错误), 静默继续会导致
+		// 随后 DeleteBucket 报 BucketNotEmpty 而用户不知道哪些对象没删掉。
+		if len(result.Errors) > 0 {
+			first := result.Errors[0]
+			return fmt.Errorf("delete objects: %d object(s) failed (first %q: %s: %s)", len(result.Errors), first.Key, first.Code, first.Message)
 		}
 	}
 	return nil

@@ -169,7 +169,7 @@ func TestFindSortSize(t *testing.T) {
 	iBig := strings.Index(out, "big.txt")
 	iMid := strings.Index(out, "mid.txt")
 	iSmall := strings.Index(out, "small.txt")
-	if iBig < 0 || iMid < 0 || iSmall < 0 || !(iBig < iMid && iMid < iSmall) {
+	if iBig < 0 || iMid < 0 || iSmall < 0 || iBig >= iMid || iMid >= iSmall {
 		t.Fatalf("sort -size should be descending:\n%s", out)
 	}
 }
@@ -186,7 +186,7 @@ func TestFindSortTimeAndReverse(t *testing.T) {
 	})
 	iOld := strings.Index(out, "older.txt")
 	iNew := strings.Index(out, "newer.txt")
-	if !(iOld >= 0 && iNew >= 0 && iOld < iNew) {
+	if iOld < 0 || iNew < 0 || iOld >= iNew {
 		t.Fatalf("sort time ascending should list older first:\n%s", out)
 	}
 	out = captureStdout(t, func() {
@@ -195,7 +195,7 @@ func TestFindSortTimeAndReverse(t *testing.T) {
 		}
 	})
 	iOld, iNew = strings.Index(out, "older.txt"), strings.Index(out, "newer.txt")
-	if !(iOld >= 0 && iNew >= 0 && iNew < iOld) {
+	if iOld < 0 || iNew < 0 || iNew >= iOld {
 		t.Fatalf("reverse should list newer first:\n%s", out)
 	}
 }

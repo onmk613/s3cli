@@ -99,9 +99,13 @@ func bindEnv(fs *pflag.FlagSet) {
 		if !ok || val == "" {
 			return
 		}
-		// 用环境变量的值设置（覆盖默认值）
+		// 用环境变量的值设置（覆盖默认值）。必须置 Changed: 命令层普遍用
+		// cmd.Flags().Changed 判断"用户是否显式指定"来决定是否覆盖 alias 配置,
+		// 不置位会导致环境变量优先级低于配置文件, 与声明的 命令行>环境变量>默认值 不符。
 		if err := f.Value.Set(val); err != nil {
 			fmt.Fprintf(os.Stderr, "warning: invalid value for %s: %v\n", envName, err)
+		} else {
+			f.Changed = true
 		}
 	})
 }
@@ -135,6 +139,19 @@ func NewRootCmd() {
 
 	// 创建一个可取消的上下文，用于在接收到 SIGINT 或 SIGTERM 信号时取消操作
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer cancel()
+
+	// NotifyContext 的信号 handler 注册不会因 ctx 取消而移除, 之后的信号只会
+	// 进入无人读取的 channel (被吞掉)。若优雅取消被无法感知 ctx 的阻塞卡住
+	// (交互输入、长 IO), 用户将没有任何升级退出手段 —— 补一个第二信号监听,
+	// 再次 Ctrl+C 直接按 130 强制退出。
+	go func() {
+		<-ctx.Done()
+		force := make(chan os.Signal, 1)
+		signal.Notify(force, syscall.SIGINT, syscall.SIGTERM)
+		<-force
+		os.Exit(exitCanceled)
+	}()
 
 	// RootCmd
 	rootCmd := &cobra.Command{
@@ -160,9 +177,6 @@ func NewRootCmd() {
 				myprint.SetColor(false)
 			}
 			return config.LoadConf()
-		},
-		PersistentPostRun: func(cmd *cobra.Command, args []string) {
-			cancel()
 		},
 	}
 

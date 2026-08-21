@@ -1,6 +1,6 @@
 module s3cli
 
-go 1.26.5
+go 1.27
 
 require (
 	github.com/BurntSushi/toml v1.6.0
@@ -12,6 +12,6 @@ require (
 )
 
 require (
-	github.com/clipperhouse/uax29/v2 v2.2.0 // indirect
+	github.com/clipperhouse/uax29/v2 v2.7.0 // indirect
 	github.com/inconshreveable/mousetrap v1.1.0 // indirect
 )

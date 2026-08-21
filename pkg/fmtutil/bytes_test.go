@@ -31,7 +31,7 @@ func TestParseBytes(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		t.Run(fmt.Sprintf("%s", tt.input), func(t *testing.T) {
+		t.Run(tt.input, func(t *testing.T) {
 			result, _ := ParseBytes(tt.input)
 			if result != tt.expected {
 				t.Errorf("ParseBytes(%q) = %d, want %d", tt.input, result, tt.expected)

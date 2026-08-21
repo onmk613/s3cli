@@ -328,15 +328,15 @@ func (c *Action) listObjectVersionsAsLs(bucket, prefix string, opt ListOptions) 
 
 // listIncompleteUploads 列出进行中的分片上传 (ls --incomplete).
 func (c *Action) listIncompleteUploads(bucket, prefix string, opt ListOptions) error {
-	out, err := c.S3.ListMultipartUploads(c.Ctx, bucket, &s3iface.ListMultipartUploadsOptions{
-		Prefix: prefix,
-	})
+	// 翻页列举 (与 mpu list 一致): ListMultipartUploads 单页上限 1000,
+	// 不翻页会静默截断且与 `mpu list` 输出不一致。
+	uploads, err := c.listAllMultipartUploads(c.Ctx, bucket, prefix)
 	if err != nil {
 		return fmt.Errorf("list multipart uploads: %s", FormatAPIError(err))
 	}
 	var count int
 	tbl := newLsTable(i18n.T("Upload ID", "上传ID"))
-	for _, u := range out.Uploads {
+	for _, u := range uploads {
 		count++
 		initiated := ""
 		if !u.Initiated.IsZero() {

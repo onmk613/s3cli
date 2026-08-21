@@ -204,6 +204,9 @@ func diffSingleFile(a, b *DiffEndpoint, mode DiffMode, jsonOut bool) error {
 
 	if jsonOut {
 		var differ, identical []string
+		// mtime 只在同种来源间可比 (本地 mtime 与 S3 LastModified 是两个时钟),
+		// 跨来源的 quick 模式退化为仅比 size, 与文本输出分支语义一致。
+		mtimeComparable := a.IsS3 == b.IsS3
 		switch {
 		case ea.Size != eb.Size:
 			differ = append(differ, fmt.Sprintf(i18n.T("%s vs %s (size %s vs %s)", "%s 与 %s（大小 %s 与 %s）"),
@@ -211,11 +214,14 @@ func diffSingleFile(a, b *DiffEndpoint, mode DiffMode, jsonOut bool) error {
 		case mode == DiffModeSize:
 			identical = append(identical, fmt.Sprintf(i18n.T("%s vs %s (size %s)", "%s 与 %s（大小 %s）"),
 				a.String(), b.String(), FormatBytes(ea.Size)))
-		case mode == DiffModeQuick && ea.Mtime != eb.Mtime:
+		case mode == DiffModeQuick && mtimeComparable && ea.Mtime != eb.Mtime:
 			differ = append(differ, fmt.Sprintf(i18n.T("%s vs %s (mtime %d vs %d)", "%s 与 %s（mtime %d 与 %d）"),
 				a.String(), b.String(), ea.Mtime, eb.Mtime))
-		case mode == DiffModeQuick:
+		case mode == DiffModeQuick && mtimeComparable:
 			identical = append(identical, fmt.Sprintf(i18n.T("%s vs %s (size %s, mtime match)", "%s 与 %s（大小 %s，mtime 一致）"),
+				a.String(), b.String(), FormatBytes(ea.Size)))
+		case mode == DiffModeQuick:
+			identical = append(identical, fmt.Sprintf(i18n.T("%s vs %s (size %s, mtime not comparable local<->s3)", "%s 与 %s（大小 %s，本地与 S3 的 mtime 不可比，已跳过）"),
 				a.String(), b.String(), FormatBytes(ea.Size)))
 		default: // MD5 模式：流式对比
 			equal, err := compareContent(a, "", b, "")
@@ -245,6 +251,13 @@ func diffSingleFile(a, b *DiffEndpoint, mode DiffMode, jsonOut bool) error {
 		return nil
 	}
 	if mode == DiffModeQuick {
+		// mtime 只在同种来源间可比: 本地 mtime 与 S3 LastModified 是两个时钟
+		// (后者是上传时刻), 跨来源比较几乎必然误报 DIFFER —— 退化为仅比 size。
+		if a.IsS3 != b.IsS3 {
+			myprint.PrintfGreen(i18n.T("OK      %s  vs  %s  (size %s, mtime not comparable local<->s3)\n", "OK      %s 与 %s（大小 %s，本地与 S3 的 mtime 不可比，已跳过）\n"),
+				a.String(), b.String(), FormatBytes(ea.Size))
+			return nil
+		}
 		if ea.Mtime != eb.Mtime {
 			myprint.PrintfRed(i18n.T("DIFFER  %s  vs  %s  (mtime %d vs %d)\n", "DIFFER  %s 与 %s（mtime %d 与 %d）\n"),
 				a.String(), b.String(), ea.Mtime, eb.Mtime)
@@ -329,6 +342,12 @@ func diffDirectories(opt DiffOptions) error {
 		case DiffModeSize:
 			addIdentical(rel)
 		case DiffModeQuick:
+			// mtime 只在同种来源间可比 (本地 mtime 与 S3 LastModified 是两个时钟),
+			// 跨来源比较几乎必然误报 —— 退化为仅比 size (与 diffSingleFile 一致)。
+			if opt.A.IsS3 != opt.B.IsS3 {
+				addIdentical(rel)
+				continue
+			}
 			if ea.Mtime != eb.Mtime {
 				addDiffer(fmt.Sprintf(i18n.T("%s  (mtime %d vs %d)", "%s（mtime %d 与 %d）"), rel, ea.Mtime, eb.Mtime))
 			} else {

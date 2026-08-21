@@ -9,7 +9,7 @@ import "context"
 // GetObjectLockConfiguration 获取 bucket 的 Object Lock 配置.
 func (c *Client) GetObjectLockConfiguration(ctx context.Context, bucket string) (*ObjectLockConfiguration, error) {
 	var result ObjectLockConfiguration
-	if err := c.getBucketSubresourceXML(ctx, bucket, "objectLock", &result); err != nil {
+	if err := c.getBucketSubresourceXML(ctx, bucket, "object-lock", &result); err != nil {
 		return nil, err
 	}
 	return &result, nil
@@ -21,5 +21,5 @@ func (c *Client) PutObjectLockConfiguration(ctx context.Context, bucket string, 
 	if err != nil {
 		return err
 	}
-	return c.putBucketSubresource(ctx, bucket, "objectLock", body)
+	return c.putBucketSubresource(ctx, bucket, "object-lock", body)
 }

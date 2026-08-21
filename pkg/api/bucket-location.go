@@ -50,5 +50,10 @@ func (c *Client) GetBucketLocation(ctx context.Context, bucket string) (string, 
 	if err := xmlDecoder(resp.Body, &result); err != nil {
 		return "", err
 	}
+	// AWS 对 eu-west-1 的桶返回遗留值 "EU"; 该值会进 bucketLocCache 并被用于
+	// %(region) 模板寻址与签名 scope, 必须映射为真实区域名, 否则错 host + 错签名。
+	if result.LocationConstraint == "EU" {
+		return "eu-west-1", nil
+	}
 	return result.LocationConstraint, nil
 }

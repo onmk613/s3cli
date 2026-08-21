@@ -15,11 +15,46 @@ jobs:
         with:
           go-version: "1.26"
       - name: gofmt 检查
-        run: test -z "$(gofmt -l cmd internal pkg)"
+        run: test -z "$(gofmt -l main.go cmd internal pkg)"
       - name: go vet
         run: go vet ./...
-      - name: go test
-        run: go test ./...
+      - name: go test (race)
+        run: go test -race ./...
+
+  lint:
+    name: 静态检查 (golangci-lint + govulncheck)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.26"
+      - name: golangci-lint
+        uses: golangci/golangci-lint-action@v8
+        with:
+          version: latest
+          args: ./...
+      - name: govulncheck
+        run: go run golang.org/x/vuln/cmd/govulncheck@latest ./...
+
+  cross-build:
+    name: 交叉编译冒烟 (build.sh all)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.26"
+      - name: 全平台编译
+        run: bash build.sh all
+      - name: 产物完整性
+        run: |
+          ls -l bin/
+          test -x bin/s3cli-linux-amd64
+          test -x bin/s3cli-linux-arm64
+          test -x bin/s3cli-darwin-amd64
+          test -x bin/s3cli-darwin-arm64
+          test -f bin/s3cli-windows-amd64.exe
 
   e2e:
     name: MinIO 端到端子命令测试
@@ -32,7 +67,7 @@ jobs:
           go-version: "1.26"
       - name: 构建 s3cli
         run: go build -o s3cli .
-      - name: 运行 e2e 矩阵 (自动下载并启动 MinIO, 结束后自动清理)
+      - name: 运行 e2e 矩阵 (下载固定版本 MinIO 并校验 sha256, 结束后自动清理)
         run: scripts/e2e-minio.sh
         env:
           S3CLI_BIN: ./s3cli

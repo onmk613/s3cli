@@ -8,10 +8,10 @@ import (
 	"github.com/spf13/cobra"
 )
 
-func init() { Register("object", "Object Operations", NewSqlCmd) }
+func init() { Register("object", "Object Operations", NewSQLCmd) }
 
-// NewSqlCmd 对对象执行 SQL 查询.
-func NewSqlCmd() *cobra.Command {
+// NewSQLCmd 对对象执行 SQL 查询.
+func NewSQLCmd() *cobra.Command {
 	var opt action.SelectOptions
 	cmd := &cobra.Command{
 		Use:               "sql [alias:bucket/path] ...",

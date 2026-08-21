@@ -46,7 +46,18 @@ func (c *Action) Mv(opt CopyOptions, srcBucket, srcKey, destBucket, destKey stri
 		myprint.PrintfYellow("check destination (treated as not-exist): %s\n", FormatAPIError(err))
 		state = s3path.DestNone
 	}
+	if state == s3path.DestFile {
+		return fmt.Errorf(i18n.T("%s: destination exists and is a file object; cannot move a directory onto it",
+			"%s：目标已存在且是文件对象；目录无法移动到单个对象上"), c.S3Path(destBucket, destKey))
+	}
 	destPrefix, appendRel := s3path.ResolveDirDestPrefix(srcKey, srcTrailing, destKey, destTrailing, state)
+	if !appendRel {
+		return fmt.Errorf(i18n.T("%s: target of a directory move must be an existing directory or end with '/'",
+			"%s：目录移动的目标必须是已存在的目录或以 '/' 结尾"), c.S3Path(destBucket, destKey))
+	}
+	if err := checkDirPrefixOverlap(srcBucket, srcKey, destBucket, destPrefix); err != nil {
+		return err
+	}
 	return c.mvDirStreaming(opt, srcBucket, srcKey, destBucket, destPrefix, appendRel)
 }
 

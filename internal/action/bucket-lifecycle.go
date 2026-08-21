@@ -737,14 +737,6 @@ func ParseByteSize(s string) (int64, error) {
 	return v, nil
 }
 
-// strOrNil 空字符串转为 nil 指针.
-func strOrNil(s string) *string {
-	if s == "" {
-		return nil
-	}
-	return &s
-}
-
 // ----------------------------------------------------------------------------
 // 文件 / 获取
 // ----------------------------------------------------------------------------
@@ -829,7 +821,7 @@ func buildTTLLifecycle(prefix string, days int) *s3.LifecycleConfig {
 	}
 }
 
-// parseTTLDays 把 TTL 字符串解析为 S3 Expiration 所需的天数 (向上取整, 最小 1).
+// ParseTTLDays 把 TTL 字符串解析为 S3 Expiration 所需的天数 (向上取整, 最小 1).
 // 支持的单位: d/day(s) 天, h/hour(s) 小时, w/week(s) 周, m/mo/month(s) 月(=30天), y/year(s) 年(=365天).
 // 裸数字 (如 "30") 按天处理.
 func ParseTTLDays(s string) (int, error) {

@@ -33,10 +33,10 @@ var (
 // SetAliasConf 写入/覆盖一个别名 (alias set)。
 //   - 1 个参数 (ALIAS): 交互式填写, alias 不存在时从零开始, 已存在时显示旧值并可覆盖
 //   - 4 个参数 (ALIAS URL ACCESSKEY SECRETKEY) 或 5 个 (含 SESSIONTOKEN): 非交互直接写入
-func SetAliasConf(args []string) error {
+func SetAliasConf(ctx context.Context, args []string) error {
 	switch len(args) {
 	case 1:
-		return setAliasInteractive(strings.TrimSpace(args[0]))
+		return setAliasInteractive(ctx, strings.TrimSpace(args[0]))
 	case 4, 5:
 		sessionToken := ""
 		if len(args) == 5 {
@@ -50,7 +50,10 @@ func SetAliasConf(args []string) error {
 
 // setAliasInteractive 交互式创建/覆盖一个别名 (alias set <name>)。
 // 配置文件不存在时自动新建；alias 已存在时从磁盘读入旧值供回车保留。
-func setAliasInteractive(section string) error {
+func setAliasInteractive(ctx context.Context, section string) error {
+	if ctx == nil {
+		ctx = context.Background()
+	}
 	if err := readConfig(G.C); err != nil {
 		// 配置文件不存在时, 建新文件
 		if !errors.Is(err, ErrConfigNotFoundOrEmpty) {
@@ -59,7 +62,7 @@ func setAliasInteractive(section string) error {
 		G.S = map[string]Static{}
 	}
 
-	conf, err := interactEdit(context.Background(), G.S[section])
+	conf, err := interactEdit(ctx, G.S[section])
 	if err != nil {
 		return err
 	}

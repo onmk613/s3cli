@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"strings"
 	"time"
 )
 
@@ -87,7 +88,9 @@ func parseHeadObjectHeaders(h http.Header) *HeadObjectOutput {
 	for k, vv := range h {
 		const prefix = "x-amz-meta-"
 		if len(k) > len(prefix) && http.CanonicalHeaderKey(k[:len(prefix)]) == "X-Amz-Meta-" {
-			metaKey := k[len(prefix):]
+			// 规范化头键为驼峰 (X-Amz-Meta-Foo), 上传时原样拼接小写;
+			// 统一转小写, 保证 put foo=... -> stat/get 读回 foo 而不是 Foo。
+			metaKey := strings.ToLower(k[len(prefix):])
 			if len(vv) > 0 {
 				out.Metadata[metaKey] = vv[0]
 			}

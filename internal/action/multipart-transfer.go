@@ -123,7 +123,7 @@ func (c *Action) uploadMultipartFile(ctx context.Context, bucket, key, localPath
 	parts := make([]s3iface.CompletedPart, 0)
 	if state != nil && state.PartSize == partSize {
 		uploadID = state.UploadID
-		listed, listErr := c.S3.ListParts(ctx, bucket, key, uploadID, 0, int(maxMultipartParts))
+		listedParts, listErr := c.listAllParts(ctx, bucket, key, uploadID)
 		if listErr != nil {
 			if !isNoSuchUploadError(listErr) {
 				// 保留本地状态文件以便稍后重试 (断点续传不因瞬时故障丢失),
@@ -136,8 +136,11 @@ func (c *Action) uploadMultipartFile(ctx context.Context, bucket, key, localPath
 			uploadID = ""
 			parts = nil
 		} else {
-			for index, part := range listed.Parts {
+			for index, part := range listedParts {
 				if part.PartNumber != index+1 {
+					// 分片号不连续: 旧上传无法安全续传。放弃前先 Abort,
+					// 否则服务端会残留孤儿分片上传 (持续占用存储直到生命周期清理)。
+					_ = c.S3.AbortMultipartUpload(context.WithoutCancel(ctx), bucket, key, uploadID)
 					uploadID = ""
 					parts = nil
 					break
@@ -145,6 +148,10 @@ func (c *Action) uploadMultipartFile(ctx context.Context, bucket, key, localPath
 				parts = append(parts, s3iface.CompletedPart{PartNumber: part.PartNumber, ETag: part.ETag})
 			}
 		}
+	} else if state != nil && state.UploadID != "" {
+		// 换了 --part-size: 旧分片与新切片边界不兼容, 无法续传。
+		// 同样先 Abort 再重建, 避免服务端残留孤儿分片上传。
+		_ = c.S3.AbortMultipartUpload(context.WithoutCancel(ctx), bucket, key, state.UploadID)
 	}
 	if uploadID == "" {
 		created, createErr := c.S3.CreateMultipartUpload(ctx, bucket, key, opts)

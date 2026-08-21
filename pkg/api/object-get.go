@@ -7,6 +7,7 @@ import (
 	"context"
 	"net/http"
 	"net/url"
+	"strings"
 	"time"
 )
 
@@ -121,7 +122,9 @@ func (c *Client) GetObject(ctx context.Context, bucket, key string, opts *GetObj
 	for k, vv := range resp.Header {
 		const prefix = "x-amz-meta-"
 		if len(k) > len(prefix) && http.CanonicalHeaderKey(k[:len(prefix)]) == "X-Amz-Meta-" {
-			metaKey := k[len(prefix):]
+			// 规范化头键为驼峰 (X-Amz-Meta-Foo), 上传时原样拼接小写;
+			// 统一转小写, 保证 put foo=... -> stat/get 读回 foo 而不是 Foo。
+			metaKey := strings.ToLower(k[len(prefix):])
 			if len(vv) > 0 {
 				out.Metadata[metaKey] = vv[0]
 			}

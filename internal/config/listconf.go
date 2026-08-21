@@ -1,6 +1,8 @@
 package config
 
 import (
+	"fmt"
+
 	myprint "s3cli/pkg/fmtutil"
 	"slices"
 	"sort"
@@ -45,10 +47,15 @@ func ListAliasConf(alias []string) error {
 	myprint.Printf(" %s\n", G.C)
 	myprint.Println()
 
+	// 显式指定了别名但一个都不存在时, 静默成功 (exit 0) 会让脚本误以为列出了配置。
+	found := make(map[string]bool, len(alias))
+	shown := 0
 	for i, e := range entries {
 		if len(alias) > 0 && !slices.Contains(alias, e.name) {
 			continue
 		}
+		found[e.name] = true
+		shown++
 
 		// 标题：[alias_name]
 		myprint.PrintfBoldCyan("[%s]\n", e.name)
@@ -80,6 +87,10 @@ func ListAliasConf(alias []string) error {
 		if i != len(entries)-1 {
 			myprint.Println()
 		}
+	}
+	// 指定的别名一个都没匹配到时明确报错, 而不是静默成功 (exit 0)。
+	if len(alias) > 0 && shown == 0 {
+		return fmt.Errorf("alias not found: %s (run `s3cli alias list` to see configured aliases)", strings.Join(alias, ", "))
 	}
 	return nil
 }

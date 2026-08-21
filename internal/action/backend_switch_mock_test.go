@@ -116,12 +116,11 @@ func (m *mockS3Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		sort.Strings(keys)
 
 		// 分页测试: prefix=paginate/ 时每页 2 个
-		pageSize := len(keys)
 		start := 0
 		var truncated bool
 		var nextToken string
 		if strings.HasPrefix(prefix, "paginate/") {
-			pageSize = 2
+			pageSize := 2
 			if token != "" {
 				fmt.Sscanf(token, "page-%d", &start)
 			}

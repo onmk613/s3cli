@@ -7,6 +7,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/xml"
+	"fmt"
 	"io"
 	"net/http"
 	"net/url"
@@ -77,6 +78,10 @@ type deleteResult struct {
 //
 // 返回每个对象的删除结果和错误. quiet=true 时响应不包含已删除对象列表.
 func (c *Client) DeleteObjects(ctx context.Context, bucket string, objects []ObjectIdentifier, quiet bool) (*DeleteObjectsOutput, error) {
+	// S3 协议上限 1000: 超量时服务端只报 MalformedXML, 客户端先给出可定位的错误。
+	if len(objects) > 1000 {
+		return nil, fmt.Errorf("delete objects: got %d objects, batch limit is 1000", len(objects))
+	}
 	dr := deleteRequest{
 		Quiet:   quiet,
 		Objects: objects,

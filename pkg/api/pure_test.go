@@ -289,8 +289,9 @@ func TestParseHeadObjectHeaders(t *testing.T) {
 	if out.VersionID != "v1" {
 		t.Errorf("VersionID=%q", out.VersionID)
 	}
-	if out.Metadata["Foo"] != "bar" {
-		t.Errorf("metadata=%+v", out.Metadata)
+	// 元数据键统一小写: 上传 "foo" 经规范头往返后不得读回 "Foo"。
+	if out.Metadata["foo"] != "bar" {
+		t.Errorf("metadata=%+v (keys must be lowercased)", out.Metadata)
 	}
 }
 

@@ -14,13 +14,13 @@ func TestSetAliasConfArgs(t *testing.T) {
 
 	// 0 / 2 / 3 / 6 个参数 → 报错
 	for _, args := range [][]string{nil, {"a", "b"}, {"a", "b", "c"}, {"a", "b", "c", "d", "e", "f"}} {
-		if err := SetAliasConf(args); err == nil {
+		if err := SetAliasConf(context.Background(), args); err == nil {
 			t.Errorf("SetAliasConf(%v) should error", args)
 		}
 	}
 
 	// 4 个参数 → 非交互写入
-	if err := SetAliasConf([]string{"t", "https://h", "ak", "sk"}); err != nil {
+	if err := SetAliasConf(context.Background(), []string{"t", "https://h", "ak", "sk"}); err != nil {
 		t.Fatal(err)
 	}
 	got := G.S["t"]
@@ -29,7 +29,7 @@ func TestSetAliasConfArgs(t *testing.T) {
 	}
 
 	// 5 个参数 → 带 session token
-	if err := SetAliasConf([]string{"t", "https://h", "ak", "sk", "tok"}); err != nil {
+	if err := SetAliasConf(context.Background(), []string{"t", "https://h", "ak", "sk", "tok"}); err != nil {
 		t.Fatal(err)
 	}
 	if G.S["t"].SessionToken != "tok" {
@@ -41,7 +41,7 @@ func TestSetAliasConfArgs(t *testing.T) {
 	if err := saveConfig(path); err != nil {
 		t.Fatal(err)
 	}
-	if err := SetAliasConf([]string{"t", "https://h2", "ak2", "sk2"}); err != nil {
+	if err := SetAliasConf(context.Background(), []string{"t", "https://h2", "ak2", "sk2"}); err != nil {
 		t.Fatal(err)
 	}
 	got = G.S["t"]
@@ -61,13 +61,13 @@ func TestSetAliasStaticValidation(t *testing.T) {
 		{"a", "https://h", "  ", "sk"},  // 空 access key
 		{"a", "https://h", "ak", "  "},  // 空 secret key
 	} {
-		if err := SetAliasConf(args); err == nil {
+		if err := SetAliasConf(context.Background(), args); err == nil {
 			t.Errorf("SetAliasConf(%q) should error", args)
 		}
 	}
 
 	// 值两侧空白应被 trim 后写入
-	if err := SetAliasConf([]string{"t", " https://h ", " ak ", " sk ", " tok "}); err != nil {
+	if err := SetAliasConf(context.Background(), []string{"t", " https://h ", " ak ", " sk ", " tok "}); err != nil {
 		t.Fatal(err)
 	}
 	got := G.S["t"]
@@ -82,7 +82,7 @@ func TestSetAliasInteractive(t *testing.T) {
 	// 无配置文件 → 交互创建全新 alias（8 个字段输入）
 	input := "https://new.example.com\nnewak\nnewsk\n\n\n\ntrue\n64\n"
 	feedStdin(t, input)
-	if err := SetAliasConf([]string{"brand"}); err != nil {
+	if err := SetAliasConf(context.Background(), []string{"brand"}); err != nil {
 		t.Fatal(err)
 	}
 	want := Static{
@@ -99,7 +99,7 @@ func TestSetAliasInteractive(t *testing.T) {
 		t.Fatal(err)
 	}
 	feedStdin(t, "\n\n\n\n\n\n\n\n") // 全部回车保留
-	if err := SetAliasConf([]string{"brand"}); err != nil {
+	if err := SetAliasConf(context.Background(), []string{"brand"}); err != nil {
 		t.Fatal(err)
 	}
 	want = Static{HostBase: "https://old", AccessKey: "oldak", SecretKey: "oldsk", Region: "us-west-2"}
@@ -321,14 +321,14 @@ func TestSetAliasInteractiveErrors(t *testing.T) {
 
 	// readConfig 返回非 NotFound 错误
 	osStat = func(string) (os.FileInfo, error) { return nil, errors.New("boom") }
-	if err := SetAliasConf([]string{"x"}); err == nil || err.Error() != "boom" {
+	if err := SetAliasConf(context.Background(), []string{"x"}); err == nil || err.Error() != "boom" {
 		t.Errorf("want stat error, got %v", err)
 	}
 
 	// 交互中断
 	osStat = os.Stat
 	feedStdin(t, "")
-	if err := SetAliasConf([]string{"x"}); !errors.Is(err, errInterrupted) {
+	if err := SetAliasConf(context.Background(), []string{"x"}); !errors.Is(err, errInterrupted) {
 		t.Errorf("want errInterrupted, got %v", err)
 	}
 }
@@ -343,7 +343,7 @@ func TestEditAliasConfExtra(t *testing.T) {
 
 	// ctx == nil → 使用 Background
 	feedStdin(t, "\n\n\n\n\n\n\n\n")
-	if err := EditAliasConf(nil, "my"); err != nil {
+	if err := EditAliasConf(context.TODO(), "my"); err != nil {
 		t.Fatal(err)
 	}
 
@@ -365,7 +365,7 @@ func TestSetAliasStaticReadError(t *testing.T) {
 	snapshotHooks(t)
 	tempConfPath(t)
 	osStat = func(string) (os.FileInfo, error) { return nil, errors.New("boom") }
-	if err := SetAliasConf([]string{"t", "https://h", "ak", "sk"}); err == nil || err.Error() != "boom" {
+	if err := SetAliasConf(context.Background(), []string{"t", "https://h", "ak", "sk"}); err == nil || err.Error() != "boom" {
 		t.Errorf("want stat error, got %v", err)
 	}
 }

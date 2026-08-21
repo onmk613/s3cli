@@ -9,12 +9,16 @@ import (
 	"bytes"
 	"context"
 	"encoding/xml"
+	"fmt"
 	"io"
 	"net/http"
 	"net/url"
 	"strconv"
 	"time"
 )
+
+// maxMultipartPartNumber 是 S3 分片号的协议上限 (1..10000)。
+const maxMultipartPartNumber = 10000
 
 // CreateMultipartUploadOutput / UploadPartOutput / CompletedPart / CompleteMultipartUploadOutput /
 // ListMultipartUploadsOptions / ListMultipartUploadsOutput / ListPartsOutput 类型别名定义在 s3iface_types.go.
@@ -102,6 +106,12 @@ func (c *Client) CreateMultipartUpload(ctx context.Context, bucket, key string, 
 //
 // partNumber 从 1 开始, 最大 10000. body 需可 Seek.
 func (c *Client) UploadPart(ctx context.Context, bucket, key, uploadID string, partNumber int, body []byte) (*UploadPartOutput, error) {
+	// 客户端先校验分片号, 超界时部分网关返回的 InvalidArgument 缺少上下文,
+	// 不如直接给出可定位的报错。
+	if partNumber < 1 || partNumber > maxMultipartPartNumber {
+		return nil, fmt.Errorf("part number %d out of range [1, %d]", partNumber, maxMultipartPartNumber)
+	}
+
 	urlValues := make(url.Values)
 	urlValues.Set("partNumber", strconv.Itoa(partNumber))
 	urlValues.Set("uploadId", uploadID)
@@ -238,6 +248,16 @@ type completeMultipartUploadResult struct {
 // parts 必须按 partNumber 升序排列; parts 中 ETag 允许带引号,
 // 序列化前统一去引号 (UploadPart 的输出已去引号, 此处兜底调用方自组 ETag 的场景).
 func (c *Client) CompleteMultipartUpload(ctx context.Context, bucket, key, uploadID string, parts []CompletedPart) (*CompleteMultipartUploadOutput, error) {
+	// S3 要求 parts 严格升序; 乱序会收到无上下文的 InvalidPartOrder,
+	// 客户端先校验并指出位置, 同时兜底分片号范围。
+	for i, p := range parts {
+		if p.PartNumber < 1 || p.PartNumber > maxMultipartPartNumber {
+			return nil, fmt.Errorf("part %d: part number %d out of range [1, %d]", i, p.PartNumber, maxMultipartPartNumber)
+		}
+		if i > 0 && p.PartNumber <= parts[i-1].PartNumber {
+			return nil, fmt.Errorf("parts must be in ascending order: part %d (number %d) follows number %d", i, p.PartNumber, parts[i-1].PartNumber)
+		}
+	}
 	normalized := make([]CompletedPart, len(parts))
 	for i, p := range parts {
 		p.ETag = trimQuotes(p.ETag)
@@ -273,8 +293,26 @@ func (c *Client) CompleteMultipartUpload(ctx context.Context, bucket, key, uploa
 		_ = Body.Close()
 	}(resp.Body)
 
+	// AWS 文档明确: CompleteMultipartUpload 可能先返回 200, 再在 body 内嵌入
+	// <Error> (如拼装中途 InternalError)。不探测的话错误会被解码成
+	// "expected element <CompleteMultipartUploadResult>", 丢失 Code/Message。
+	respBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, err
+	}
+	var probe copyObjectError
+	if err := xml.Unmarshal(respBody, &probe); err == nil && probe.XMLName.Local == "Error" {
+		return nil, &ErrorResponse{
+			StatusCode: resp.StatusCode,
+			Code:       probe.Code,
+			Message:    probe.Message,
+			BucketName: bucket,
+			Key:        key,
+		}
+	}
+
 	var result completeMultipartUploadResult
-	if err := xmlDecoder(resp.Body, &result); err != nil {
+	if err := xml.Unmarshal(respBody, &result); err != nil {
 		return nil, err
 	}
 

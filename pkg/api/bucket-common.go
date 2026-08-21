@@ -7,6 +7,7 @@ package api
 import (
 	"bytes"
 	"context"
+	"encoding/xml"
 	"io"
 	"net/http"
 	"net/url"
@@ -45,6 +46,13 @@ type listAllMyBucketsResult struct {
 	}
 }
 
+// createBucketConfiguration 对应 CreateBucket 请求体.
+type createBucketConfiguration struct {
+	XMLName            xml.Name `xml:"CreateBucketConfiguration"`
+	XMLNS              string   `xml:"xmlns,attr,omitempty"`
+	LocationConstraint string   `xml:"LocationConstraint"`
+}
+
 // CreateBucket 创建一个新的 bucket.
 func (c *Client) CreateBucket(ctx context.Context, bucketName string, opts *MakeBucketOptions) error {
 	if err := checkValidBucketNameStrict(bucketName); err != nil {
@@ -63,12 +71,31 @@ func (c *Client) CreateBucket(ctx context.Context, bucketName string, opts *Make
 	}
 
 	reqMeta := requestMetadata{
-		bucketName:     bucketName,
-		bucketLocation: opts.Region,
+		bucketName: bucketName,
+	}
+
+	// 非 us-east-1 区域必须显式携带 LocationConstraint: 无 body 的 PUT /bucket
+	// 会被 AWS 拒绝 (IllegalLocationConstraintException) 或静默建到 us-east-1;
+	// us-east-1 恰好相反, 携带约束会被拒绝, 必须发送空 body。
+	if opts.Region != "us-east-1" {
+		body, err := marshalXMLWithHeader(createBucketConfiguration{
+			XMLNS:              defaultXMLNS,
+			LocationConstraint: opts.Region,
+		})
+		if err != nil {
+			return err
+		}
+		reqMeta.contentBody = bytes.NewReader(body)
+		reqMeta.contentLength = int64(len(body))
+		reqMeta.contentSHA256Hex = sumSHA256Hex(body)
+		reqMeta.customHeader = http.Header{}
+		reqMeta.customHeader.Set("Content-Type", "application/xml")
 	}
 
 	if opts.ObjectLocking {
-		reqMeta.customHeader = http.Header{}
+		if reqMeta.customHeader == nil {
+			reqMeta.customHeader = http.Header{}
+		}
 		reqMeta.customHeader.Set("x-amz-bucket-object-lock-enabled", "true")
 	}
 

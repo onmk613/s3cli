@@ -57,8 +57,43 @@ func (c *Action) CopyObjects(opt CopyOptions, srcBucket, srcKey, destBucket, des
 		myprint.PrintfYellow("check destination (treated as not-exist): %s\n", FormatAPIError(err))
 		state = s3path.DestNone
 	}
+	if state == s3path.DestFile {
+		return fmt.Errorf(i18n.T("%s: destination exists and is a file object; cannot copy a directory onto it",
+			"%s：目标已存在且是文件对象；目录无法复制到单个对象上"), c.S3Path(destBucket, destKey))
+	}
 	destPrefix, appendRel := s3path.ResolveDirDestPrefix(srcKey, srcTrailing, destKey, destTrailing, state)
+	if !appendRel {
+		// appendRel=false 时目录下所有对象都会写到 destPrefix 自身, N 个对象互相
+		// 覆盖只留最后一个 —— 静默数据丢失, 必须拒绝 (目标加 "/" 或指向已存在目录)。
+		return fmt.Errorf(i18n.T("%s: target of a directory copy must be an existing directory or end with '/'",
+			"%s：目录复制的目标必须是已存在的目录或以 '/' 结尾"), c.S3Path(destBucket, destKey))
+	}
+	if err := checkDirPrefixOverlap(srcBucket, srcKey, destBucket, destPrefix); err != nil {
+		return err
+	}
 	return c.copyDirStreaming(opt, srcBucket, srcKey, destBucket, destPrefix, appendRel)
+}
+
+// checkDirPrefixOverlap 禁止同桶上源/目标前缀互相包含的目录复制/移动:
+// 流式列举源前缀的同时向其内部写入新 key, 新 key 字典序更靠后, 会被后续分页
+// 再次列出 —— cp 会级联复制到更深层, mv 会不断向更深处搬运, 二者都无法终止。
+func checkDirPrefixOverlap(srcBucket, srcKey, destBucket, destPrefix string) error {
+	if srcBucket != destBucket {
+		return nil
+	}
+	src := normalizeMirrorPrefix(strings.Trim(srcKey, "/"))
+	tgt := normalizeMirrorPrefix(strings.Trim(destPrefix, "/"))
+	// 目标为桶根且源非空: 相对路径展开到根, 写入落在源前缀之外, 不会级联, 放行;
+	// 其余同桶情形 (整桶为源 / 前缀互相包含 / 完全相同) 都会在列举进行中写入源前缀内部。
+	overlap := src == tgt || (src == "" && tgt != "") ||
+		(src != "" && tgt != "" && (strings.HasPrefix(src, tgt) || strings.HasPrefix(tgt, src)))
+	if overlap {
+		return fmt.Errorf(i18n.T(
+			"source and target prefixes overlap on the same bucket (%q vs %q); copy/move to a sibling prefix instead",
+			"同一存储桶上源与目标前缀重叠（%q 与 %q）；请复制/移动到兄弟前缀"),
+			src, tgt)
+	}
+	return nil
 }
 
 // copyObject 单对象复制, 透传存储级别/标签/元数据参数.

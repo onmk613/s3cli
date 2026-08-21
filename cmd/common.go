@@ -69,7 +69,7 @@ func splitArgs(cmd *cobra.Command, args []string) ([]string, ArgParseMode, error
 
 	case FirstLocalFileOrPath: // 首参非 s3 路径，如 put localfile s3://...
 		if len(args) < 2 {
-			return nil, nil, fmt.Errorf("%s: 至少需要 2 个参数, 实际 %d", cmd.CommandPath(), len(args))
+			return nil, nil, fmt.Errorf(i18n.T("%s: at least 2 arguments required, got %d", "%s：至少需要 2 个参数，实际 %d"), cmd.CommandPath(), len(args))
 		}
 		opts[LocalFileOrPath] = args[0]
 		return args[1:], opts, nil
@@ -82,8 +82,8 @@ func splitArgs(cmd *cobra.Command, args []string) ([]string, ArgParseMode, error
 		return args[:len(args)-1], opts, nil
 
 	default:
-		return nil, nil, fmt.Errorf("%s: 不支持的 %s=%q（双 s3 路径请用 NewRunETwoPaths）",
-			cmd.CommandPath(), AnnoArgParseMode, mode)
+		return nil, nil, fmt.Errorf(i18n.T("%s: unsupported argument parse mode %s=%q",
+			"%s：不支持的参数解析模式 %s=%q"), cmd.CommandPath(), AnnoArgParseMode, mode)
 	}
 }
 
@@ -118,7 +118,7 @@ func newRunEWithMode(allowAliasOnly bool, fn ActionFuncWithMode) func(*cobra.Com
 			}
 
 			S3, sp, err := parseClient(ctx, arg)
-			if err != nil && !(allowAliasOnly && errors.Is(err, s3path.ErrAliasOnly)) {
+			if err != nil && (!allowAliasOnly || !errors.Is(err, s3path.ErrAliasOnly)) {
 				displayError(err)
 				errs = append(errs, err)
 				continue

@@ -229,7 +229,8 @@ func formatBytes(bytes int64) string {
 	if bytes <= 0 {
 		return "0B"
 	}
-	units := []string{"B", "KB", "MB", "GB"}
+	// 单位扩展到 PB: 封顶 GB 会让 TB 级传输显示成 "1024GB" (保持进度条紧凑的无空格风格)。
+	units := []string{"B", "KB", "MB", "GB", "TB", "PB"}
 	base := 1024.0
 	exp := int(math.Log(float64(bytes)) / math.Log(base))
 	if exp >= len(units) {

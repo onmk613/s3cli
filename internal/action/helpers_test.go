@@ -18,8 +18,9 @@ func TestIsCanceled(t *testing.T) {
 	if !IsCanceled(context.Canceled) {
 		t.Error("context.Canceled should be detected")
 	}
-	if !IsCanceled(context.DeadlineExceeded) {
-		t.Error("DeadlineExceeded should be detected")
+	// 超时不是用户取消: 以 130 静默退出会吞掉超时错误, 应按普通错误报错退出。
+	if IsCanceled(context.DeadlineExceeded) {
+		t.Error("DeadlineExceeded must NOT be treated as user cancellation")
 	}
 	if !IsCanceled(errors.New("something: context canceled")) {
 		t.Error("text fallback should detect 'context canceled'")

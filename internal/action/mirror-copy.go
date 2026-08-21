@@ -25,14 +25,71 @@ func sameEndpoint(src, tgt *S3PathOptions) bool {
 	return strings.EqualFold(normalize(sc.BaseEndpoint), normalize(tc.BaseEndpoint))
 }
 
+// maxCopyObjectSize 是单次 CopyObject 的 AWS 协议上限 (5GiB);
+// 更大的源对象会得到 EntityTooLarge, 必须改走 UploadPartCopy 分片复制。
+const maxCopyObjectSize = 5 * 1024 * 1024 * 1024
+
 // copyObjectSameEndpoint 同 endpoint 服务端复制.
+// >5GiB 的对象走 CreateMultipartUpload + UploadPartCopy 分片复制 (服务端零下载)。
 func copyObjectSameEndpoint(c *Action, srcBucket, srcKey, tgtBucket, tgtKey, storageClass string) error {
-	_, err := c.S3.CopyObject(c.Ctx, srcBucket, srcKey, tgtBucket, tgtKey, &s3iface.CopyObjectOptions{
+	head, err := c.S3.HeadObject(c.Ctx, srcBucket, srcKey, "")
+	if err != nil {
+		return fmt.Errorf("head %s: %s", c.S3Path(srcBucket, srcKey), FormatAPIError(err))
+	}
+	if head.ContentLength > maxCopyObjectSize {
+		return copyMultipartSameEndpoint(c, srcBucket, srcKey, tgtBucket, tgtKey, storageClass, head)
+	}
+	_, err = c.S3.CopyObject(c.Ctx, srcBucket, srcKey, tgtBucket, tgtKey, &s3iface.CopyObjectOptions{
 		MetadataDirective: "COPY",
 		StorageClass:      storageClass,
 	})
 	if err != nil {
 		return fmt.Errorf("copy: %s", FormatAPIError(err))
+	}
+	return nil
+}
+
+// copyMultipartSameEndpoint 同 endpoint 大对象分片复制: 每片用 UploadPartCopy
+// 从源对象按 Range 截取, 全程服务端完成、零下载。失败/取消时 Abort 已创建的上传。
+func copyMultipartSameEndpoint(c *Action, srcBucket, srcKey, tgtBucket, tgtKey, storageClass string, head *s3iface.HeadObjectOutput) (err error) {
+	create, err := c.S3.CreateMultipartUpload(c.Ctx, tgtBucket, tgtKey, &s3iface.PutObjectOptions{
+		ContentType:        head.ContentType,
+		ContentEncoding:    head.ContentEncoding,
+		ContentDisposition: head.ContentDisposition,
+		ContentLanguage:    head.ContentLanguage,
+		CacheControl:       head.CacheControl,
+		Metadata:           head.Metadata,
+		StorageClass:       storageClass,
+	})
+	if err != nil {
+		return fmt.Errorf("create mpu %s: %s", c.S3Path(tgtBucket, tgtKey), FormatAPIError(err))
+	}
+	uploadID := create.UploadID
+	defer func() {
+		if err != nil {
+			// 清理用 WithoutCancel: 失败/取消 (Ctrl+C) 时 c.Ctx 可能已被取消,
+			// 直接传它会连 Abort 一起取消, 服务端残留分片。
+			_ = c.S3.AbortMultipartUpload(context.WithoutCancel(c.Ctx), tgtBucket, tgtKey, uploadID)
+		}
+	}()
+
+	partSize := int64(maxCopyObjectSize)
+	var completed []s3iface.CompletedPart
+	for partNum, offset := 1, int64(0); offset < head.ContentLength; partNum, offset = partNum+1, offset+partSize {
+		end := offset + partSize - 1
+		if end >= head.ContentLength {
+			end = head.ContentLength - 1
+		}
+		part, cpErr := c.S3.UploadPartCopy(c.Ctx, srcBucket, srcKey, tgtBucket, tgtKey, uploadID, partNum,
+			&s3iface.UploadPartCopyOptions{CopySourceRange: fmt.Sprintf("bytes=%d-%d", offset, end)})
+		if cpErr != nil {
+			err = fmt.Errorf("copy part %d: %s", partNum, FormatAPIError(cpErr))
+			return err
+		}
+		completed = append(completed, s3iface.CompletedPart{PartNumber: partNum, ETag: part.ETag})
+	}
+	if _, err = c.S3.CompleteMultipartUpload(c.Ctx, tgtBucket, tgtKey, uploadID, completed); err != nil {
+		return fmt.Errorf("complete mpu: %s", FormatAPIError(err))
 	}
 	return nil
 }
@@ -189,9 +246,14 @@ func deleteObjectsBatch(c *Action, bucket string, keys []string) error {
 		for j, k := range batch {
 			objs[j] = s3iface.ObjectIdentifier{Key: k}
 		}
-		_, err := c.S3.DeleteObjects(c.Ctx, bucket, objs, true)
+		result, err := c.S3.DeleteObjects(c.Ctx, bucket, objs, true)
 		if err != nil {
 			return fmt.Errorf("delete batch on s3://%s: %s", bucket, FormatAPIError(err))
+		}
+		// quiet 模式下部分对象仍可能失败, 静默跳过会让 --remove 的同步结果失真。
+		if len(result.Errors) > 0 {
+			first := result.Errors[0]
+			return fmt.Errorf("delete batch on s3://%s: %d object(s) failed (first %q: %s: %s)", bucket, len(result.Errors), first.Key, first.Code, first.Message)
 		}
 	}
 	return nil

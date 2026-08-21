@@ -152,12 +152,9 @@ func (c *Client) SessionToken() string {
 // requestMetadata 描述一次 S3 API 请求所需的全部元数据.
 type requestMetadata struct {
 	// 请求路由
-	bucketName     string
-	objectName     string
-	bucketLocation string // 可选, 用于创建 bucket 时指定区域
+	bucketName string
+	objectName string
 
-	// 可选, 用于指定自定义路径
-	customPath string
 	// forcePathStyle 强制用基准 endpoint 的 path-style 寻址, 跳过自定义模板与 region 解析。
 	// 用于 GetBucketLocation 探测, 打破自定义 region 寻址的引导环。
 	forcePathStyle bool
@@ -186,7 +183,7 @@ func (c *Client) newRequest(ctx context.Context, method string, meta requestMeta
 	var err error
 	var targetURL *url.URL
 	if meta.forcePathStyle {
-		targetURL, err = c.buildURL(c.endpointURL.Host, c.endpointURL.Scheme, meta.bucketName, meta.objectName, meta.queryValues, BucketLookupPath)
+		targetURL, err = c.buildURL(c.endpointURL.Host, c.endpointURL.Scheme, c.endpointURL.Path, meta.bucketName, meta.objectName, meta.queryValues, BucketLookupPath)
 	} else {
 		targetURL, err = c.resolveURL(ctx, meta.bucketName, meta.objectName, meta.queryValues)
 	}
@@ -223,19 +220,14 @@ func (c *Client) newRequest(ctx context.Context, method string, meta requestMeta
 		req.Header.Set("Content-MD5", meta.contentMD5Base64)
 	}
 
-	if meta.customPath != "" {
-		req.URL.Path = meta.customPath
-		req.URL.RawPath = meta.customPath
-	}
-
 	// x-amz-content-sha256:
 	//   - 调用方预计算优先
 	//   - 无 body 时使用空串 SHA256
 	//   - 有 body 时若可全部读入/Seek 则计算, 否则 UNSIGNED-PAYLOAD
 	shaHex := meta.contentSHA256Hex
 	if shaHex == "" {
-		switch {
-		case meta.contentBody == nil:
+		switch meta.contentBody {
+		case nil:
 			shaHex = emptySHA256Hex
 		default:
 			if s, ok := meta.contentBody.(io.ReadSeeker); ok {

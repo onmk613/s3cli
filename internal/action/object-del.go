@@ -190,6 +190,7 @@ func (c *Action) deleteVersionsOfObject(bucket, key string, opt DelOptions) erro
 func (c *Action) deleteFromStdin(bucket string, opt DelOptions) error {
 	sc := bufio.NewScanner(os.Stdin)
 	sc.Buffer(make([]byte, 64*1024), 4*1024*1024)
+	var deleted, failed int
 	for sc.Scan() {
 		key := strings.TrimSpace(sc.Text())
 		if key == "" {
@@ -202,9 +203,20 @@ func (c *Action) deleteFromStdin(bucket string, opt DelOptions) error {
 		}
 		if err := c.deleteSingleObject(bucket, key); err != nil {
 			myprint.PrintfRed("%v\n", err)
+			failed++
+			continue
 		}
+		deleted++
 	}
-	return sc.Err()
+	if scanErr := sc.Err(); scanErr != nil {
+		return scanErr
+	}
+	// 逐 key 删除失败不能静默成功: 脚本依赖退出码判断删除结果。
+	if failed > 0 {
+		return fmt.Errorf(i18n.T("deleted %d object(s), %d failed (see errors above)",
+			"已删除 %d 个对象，%d 个失败（见上方错误）"), deleted, failed)
+	}
+	return nil
 }
 
 // deletePrefixIncomplete 中止 prefix 下所有进行中的分片上传 (-I).
@@ -214,7 +226,7 @@ func (c *Action) deletePrefixIncomplete(bucket, prefix string, opt DelOptions) e
 	if err != nil {
 		return fmt.Errorf("list multipart uploads: %s", FormatAPIError(err))
 	}
-	var aborted int
+	var aborted, failed int
 	for _, u := range uploads {
 		if opt.DryRun {
 			myprint.PrintfYellow(i18n.T("would abort %s  uploadId=%s\n", "将中止 %s  uploadId=%s\n"), c.S3Path(bucket, u.Key), u.UploadID)
@@ -222,11 +234,16 @@ func (c *Action) deletePrefixIncomplete(bucket, prefix string, opt DelOptions) e
 		}
 		if err := c.S3.AbortMultipartUpload(c.Ctx, bucket, u.Key, u.UploadID); err != nil {
 			myprint.PrintfRed("abort %s/%s: %s\n", bucket, u.Key, FormatAPIError(err))
+			failed++
 			continue
 		}
 		aborted++
 	}
 	myprint.PrintfBoldGreen(i18n.T("aborted %d in-progress uploads under %s\n", "已中止 %d 个进行中的上传（位于 %s）\n"), aborted, c.S3Path(bucket, prefix))
+	if failed > 0 {
+		return fmt.Errorf(i18n.T("aborted %d of %d in-progress uploads: %d failed (see errors above)",
+			"已中止 %d/%d 个进行中的上传：%d 个失败（见上方错误）"), aborted, len(uploads), failed)
+	}
 	return nil
 }
 
@@ -340,15 +357,19 @@ func (c *Action) deleteObjectsWithPrefix(bucket, prefix string, opt DelOptions) 
 
 	// 显式删除目录标记对象本身（如 prefix="a/b/" 时删除 "a/b/" 这个零字节对象）。
 	// 同时也尝试删除 prefix+"/"（当 prefix 不以 "/" 结尾时），确保两种情况都能覆盖。
-	if _, err := c.S3.DeleteObject(c.Ctx, bucket, prefix, ""); err != nil {
-		if !isBenignNotFound(err) {
-			return fmt.Errorf("delete directory marker %s: %s", c.S3Path(bucket, prefix), FormatAPIError(err))
-		}
-	}
-	if !strings.HasSuffix(prefix, "/") {
-		if _, err := c.S3.DeleteObject(c.Ctx, bucket, prefix+"/", ""); err != nil {
+	// prefix==""（整桶根）时必须跳过：空 key 的 DELETE /bucket 是 DeleteBucket API，
+	// 语义是删桶本身而不是删对象 —— 用户 `rm -r --force alias:bucket` 的意图是清空对象。
+	if prefix != "" {
+		if _, err := c.S3.DeleteObject(c.Ctx, bucket, prefix, ""); err != nil {
 			if !isBenignNotFound(err) {
-				return fmt.Errorf("delete directory marker %s/: %s", c.S3Path(bucket, prefix), FormatAPIError(err))
+				return fmt.Errorf("delete directory marker %s: %s", c.S3Path(bucket, prefix), FormatAPIError(err))
+			}
+		}
+		if !strings.HasSuffix(prefix, "/") {
+			if _, err := c.S3.DeleteObject(c.Ctx, bucket, prefix+"/", ""); err != nil {
+				if !isBenignNotFound(err) {
+					return fmt.Errorf("delete directory marker %s/: %s", c.S3Path(bucket, prefix), FormatAPIError(err))
+				}
 			}
 		}
 	}

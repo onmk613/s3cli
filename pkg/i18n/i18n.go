@@ -66,21 +66,28 @@ func normalize(l Lang) Lang {
 }
 
 // chinaTimeZones 是中国地区的 IANA 时区名。
-// 部分平台（如 Windows 中文系统）把中国标准时间记为 CST / China Standard Time。
 var chinaTimeZones = map[string]bool{
-	"Asia/Shanghai":       true,
-	"Asia/Chongqing":      true,
-	"Asia/Harbin":         true,
-	"Asia/Urumqi":         true,
-	"Asia/Hong_Kong":      true,
-	"Asia/Macau":          true,
-	"Asia/Taipei":         true,
+	"Asia/Shanghai":  true,
+	"Asia/Chongqing": true,
+	"Asia/Harbin":    true,
+	"Asia/Urumqi":    true,
+	"Asia/Hong_Kong": true,
+	"Asia/Macau":     true,
+	"Asia/Taipei":    true,
+}
+
+// ambiguousChinaZoneNames 是 Windows 中文系统的中国时区显示名, 语义有歧义:
+// "CST" 在 Unix 上同时是 America/Chicago 冬令时 (UTC-6) 的缩写。
+// 若无条件命中, 美国中部用户冬季会被误判为中国时区 (夏季 CDT 又恢复),
+// 随季节变化的错判极难排查 —— 因此仅当偏移恰为 UTC+8 时才视为中国时区。
+var ambiguousChinaZoneNames = map[string]bool{
 	"CST":                 true,
 	"China Standard Time": true,
 }
 
 // isChinaRegion 检测当前系统时区与 locale 是否指向中国地区：
-//   - 时区名命中 chinaTimeZones（含 Windows 的 "China Standard Time"）→ 是
+//   - 时区名命中 chinaTimeZones（IANA 名）→ 是
+//   - 歧义名（CST 等）且偏移为 UTC+8 → 是
 //   - 否则偏移为 UTC+8 且时区名为空（POSIX 环境固定偏移的兜底）→ 是
 //   - 否则偏移为 UTC+8 且 locale 含中文标志（zh_CN/zh/中文）→ 是
 //   - 其余情况（如 Asia/Singapore + en_US）→ 否
@@ -93,7 +100,7 @@ func isChinaRegion() bool {
 	if offset != 8*3600 {
 		return false
 	}
-	if name == "" {
+	if ambiguousChinaZoneNames[name] || name == "" {
 		return true
 	}
 	return hasZhLocale()

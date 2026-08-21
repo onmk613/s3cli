@@ -51,6 +51,27 @@ func (c *Action) listAllMultipartUploads(ctx context.Context, bucket, prefix str
 	}
 }
 
+// listAllParts 分页列举一个分片上传的全部已上传分片。
+//
+// ListParts 单页服务端上限为 1000 (AWS 对更大的 max-parts 返回 InvalidArgument),
+// 超过后通过 PartNumberMarker -> NextPartNumberMarker 驱动翻页;
+// 不翻页会在 >1000 片时拿到截断结果, 导致续传对账错位。
+func (c *Action) listAllParts(ctx context.Context, bucket, key, uploadID string) ([]s3iface.PartInfo, error) {
+	var all []s3iface.PartInfo
+	marker := 0
+	for {
+		out, err := c.S3.ListParts(ctx, bucket, key, uploadID, marker, mpuListPageSize)
+		if err != nil {
+			return nil, err
+		}
+		all = append(all, out.Parts...)
+		if !out.IsTruncated || out.NextPartNumberMarker == 0 {
+			return all, nil
+		}
+		marker = out.NextPartNumberMarker
+	}
+}
+
 // MpuListOptions mpu list 命令参数.
 type MpuListOptions struct {
 	JSON bool // --json: JSON lines 输出
@@ -142,15 +163,21 @@ func (c *Action) MpuAbort(bucket, prefix, uploadID string) error {
 	if err != nil {
 		return fmt.Errorf("list mpu: %s", FormatAPIError(err))
 	}
-	var aborted int
+	var aborted, failed int
 	for _, u := range uploads {
 		if err := c.S3.AbortMultipartUpload(c.Ctx, bucket, u.Key, u.UploadID); err != nil {
 			myprint.PrintfRed("abort %s/%s: %s\n", bucket, u.Key, FormatAPIError(err))
+			failed++
 			continue
 		}
 		aborted++
 	}
 	myprint.PrintfBoldGreen(i18n.T("aborted %d in-progress uploads under %s\n", "已中止 %d 个进行中的上传（位于 %s）\n"), aborted, c.S3Path(bucket, prefix))
+	// 逐对象失败不能静默成功: 脚本依赖退出码判断是否清理干净。
+	if failed > 0 {
+		return fmt.Errorf(i18n.T("aborted %d of %d in-progress uploads: %d failed (see errors above)",
+			"已中止 %d/%d 个进行中的上传：%d 个失败（见上方错误）"), aborted, len(uploads), failed)
+	}
 	return nil
 }
 

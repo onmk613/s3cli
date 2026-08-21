@@ -305,7 +305,7 @@ func TestBuildURLDNS(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	u, err := c.buildURL("s3.example.com", "https", "mybucket", "obj/key", nil, BucketLookupDNS)
+	u, err := c.buildURL("s3.example.com", "https", "", "mybucket", "obj/key", nil, BucketLookupDNS)
 	if err != nil {
 		t.Fatal(err)
 	}

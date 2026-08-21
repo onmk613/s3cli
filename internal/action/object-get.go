@@ -117,9 +117,7 @@ func writeHeadLines(r io.Reader, n int) error {
 	var count int
 	for sc.Scan() {
 		line := sc.Text()
-		if strings.HasSuffix(line, "\r") {
-			line = strings.TrimSuffix(line, "\r")
-		}
+		line = strings.TrimSuffix(line, "\r")
 		fmt.Fprintln(os.Stdout, line)
 		count++
 		if count >= n {
@@ -280,11 +278,20 @@ func (c *Action) downloadFile(key, localPath, bucket string, report func(n int64
 	if err := file.Close(); err != nil {
 		return 0, fmt.Errorf("close file: %w", err)
 	}
+	// os.CreateTemp 的 0600 权限对下载产物过严 (脚本/配置下载后不可执行、不可共读),
+	// 按 umask 放宽到常规新建文件权限 (通常 0644)。
+	chmodDownloaded(tmpPath)
+	// 保留服务端 LastModified: 否则 put 后立刻 diff --quick 会因时钟不同必报差异。
+	if !out.LastModified.IsZero() {
+		_ = os.Chtimes(tmpPath, out.LastModified, out.LastModified)
+	}
 	if err := os.Rename(tmpPath, localPath); err != nil {
 		return 0, fmt.Errorf("replace file: %w", err)
 	}
 	return n, nil
 }
+
+// chmodDownloaded 的平台实现见 umask_unix.go / umask_windows.go。
 
 // countingReader 包装 io.Reader, 按读取进度实时上报字节增量.
 type countingReader struct {

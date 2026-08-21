@@ -13,15 +13,6 @@ import (
 	"strings"
 )
 
-// marshalXMLWithHeader 序列化为 XML 并加上 XML 声明头.
-func marshalXMLWithHeader(v any) ([]byte, error) {
-	body, err := xml.Marshal(v)
-	if err != nil {
-		return nil, err
-	}
-	return append([]byte(xml.Header), body...), nil
-}
-
 // ----------------------------------------------------------------------------
 // CORS
 // ----------------------------------------------------------------------------

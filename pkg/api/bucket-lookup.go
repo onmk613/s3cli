@@ -65,7 +65,7 @@ func (c *Client) resolveURL(ctx context.Context, bucketName, objectName string, 
 	if lookup == BucketLookupAuto {
 		lookup = BucketLookupPath
 	}
-	return c.buildURL(c.endpointURL.Host, c.endpointURL.Scheme, bucketName, objectName, queryValues, lookup)
+	return c.buildURL(c.endpointURL.Host, c.endpointURL.Scheme, c.endpointURL.Path, bucketName, objectName, queryValues, lookup)
 }
 
 // resolveBucketRegion 解析 bucket 的 region: 优先读缓存, 未命中则探测 GetBucketLocation 并写缓存。
@@ -127,21 +127,35 @@ func validateResolvedCustomEndpoint(u *url.URL, bucketName string) error {
 }
 
 // buildURL 根据寻址方式拼接最终请求 URL.
-// host/scheme 为基准地址; DNS 风格会把 bucket 前置到 host, path 风格把 bucket 放入路径.
-func (c *Client) buildURL(host, scheme, bucketName, objectName string, queryValues url.Values, lookup BucketLookupType) (*url.URL, error) {
+// host/scheme/basePath 为基准地址 (basePath 是 endpoint 的路径前缀, 如网关
+// "https://gw.example.com/s3" 的 "/s3", 不参与 bucket 注入但必须保留, 否则
+// path/DNS 寻址对带路径前缀的 endpoint 全部 404); DNS 风格会把 bucket 前置到
+// host, path 风格把 bucket 放入路径.
+func (c *Client) buildURL(host, scheme, basePath, bucketName, objectName string, queryValues url.Values, lookup BucketLookupType) (*url.URL, error) {
+	// 统一为 "/a/b" 形态 (无尾斜杠, 可为空), 拼接时再补 "/"
+	basePath = strings.Trim(basePath, "/")
 	var p string
 	switch {
 	case bucketName == "":
 		// service 级请求, 如 ListBuckets
 		p = "/"
+		if basePath != "" {
+			p = "/" + basePath + "/"
+		}
 	case lookup == BucketLookupDNS:
 		host = bucketName + "." + host
 		p = "/"
+		if basePath != "" {
+			p = "/" + basePath + "/"
+		}
 		if objectName != "" {
 			p += objectName
 		}
 	default: // BucketLookupPath
 		p = "/" + bucketName
+		if basePath != "" {
+			p = "/" + basePath + p
+		}
 		if objectName != "" {
 			p += "/" + objectName
 		}

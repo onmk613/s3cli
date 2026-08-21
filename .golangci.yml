@@ -1,0 +1,34 @@
+version: "2"
+
+# 务实配置: 标准五件套 (errcheck/govet/ineffassign/staticcheck/unused),
+# 豁免两类"惯例性"告警 —— 测试文件里的忽略返回值, 与生产代码中有意的
+# best-effort 调用 (清理临时文件 / 向 stdout 打印 / 还原环境变量 / defer Close)。
+linters:
+  default: standard
+  settings:
+    errcheck:
+      exclude-functions:
+        - fmt.Fprint
+        - fmt.Fprintf
+        - fmt.Fprintln
+        - os.Remove
+        - os.Setenv
+        - (io.Closer).Close
+        - (*os.File).Close
+        - (*bufio.Writer).Flush
+    staticcheck:
+      checks:
+        - all
+        - -QF1008 # 测试里嵌入式字面量字段名省略是常见写法
+        - -ST1000 # 包注释: 项目按文件头功能性注释组织, 不强制 package comment
+        - -ST1021 # 类型注释格式: 大量装饰性分节注释是既有风格, 强制改名收益为零
+  exclusions:
+    rules:
+      - path: _test\.go
+        linters:
+          - errcheck
+      - path: scripts/
+        linters:
+          - all
+    paths:
+      - \.tmp-gocache

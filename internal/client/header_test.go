@@ -67,12 +67,28 @@ func TestNewHeaderTransport(t *testing.T) {
 	})
 }
 
-// TestHeaderTransportSpecialKeys Host / Content-Length 是 http.Request 的结构字段,
-// 写在 Header map 里会被 http.Client 静默忽略; 现在应在构造时拆出并在 RoundTrip 中生效。
+// TestHeaderTransportSpecialKeys Host / Content-Length 是 SigV4 签名头,
+// transport 层的事后改写必然导致 SignatureDoesNotMatch, 必须在构造期拒绝。
 func TestHeaderTransportSpecialKeys(t *testing.T) {
-	t.Run("host and content-length take effect", func(t *testing.T) {
+	t.Run("host rejected with explanation", func(t *testing.T) {
+		_, err := newHeaderTransport(&captureTransport{}, []string{"Host:custom.example.com"})
+		if err == nil {
+			t.Fatal("expected Host override to be rejected")
+		}
+		if !strings.Contains(err.Error(), "SigV4") {
+			t.Errorf("error should explain the SigV4 reason, got: %v", err)
+		}
+	})
+
+	t.Run("content-length rejected", func(t *testing.T) {
+		if _, err := newHeaderTransport(&captureTransport{}, []string{"Content-Length: 42"}); err == nil {
+			t.Fatal("expected Content-Length override to be rejected")
+		}
+	})
+
+	t.Run("other headers still work", func(t *testing.T) {
 		capture := &captureTransport{}
-		rt, err := newHeaderTransport(capture, []string{"Host:custom.example.com", "Content-Length: 42", "X-Extra:1"})
+		rt, err := newHeaderTransport(capture, []string{"X-Extra:1"})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -80,26 +96,8 @@ func TestHeaderTransportSpecialKeys(t *testing.T) {
 		if _, err := rt.RoundTrip(req); err != nil {
 			t.Fatal(err)
 		}
-		if capture.req.Host != "custom.example.com" {
-			t.Errorf("Host = %q, want custom.example.com", capture.req.Host)
-		}
-		if capture.req.ContentLength != 42 {
-			t.Errorf("ContentLength = %d, want 42", capture.req.ContentLength)
-		}
 		if capture.req.Header.Get("X-Extra") != "1" {
 			t.Errorf("X-Extra = %q, want 1", capture.req.Header.Get("X-Extra"))
-		}
-		if capture.req.Header.Get("Content-Length") != "" || capture.req.Header.Get("Host") != "" {
-			t.Error("special keys should not leak into the Header map")
-		}
-	})
-
-	t.Run("invalid content-length rejected", func(t *testing.T) {
-		if _, err := newHeaderTransport(&captureTransport{}, []string{"Content-Length:abc"}); err == nil {
-			t.Fatal("expected error for non-numeric Content-Length")
-		}
-		if _, err := newHeaderTransport(&captureTransport{}, []string{"Content-Length:-1"}); err == nil {
-			t.Fatal("expected error for negative Content-Length")
 		}
 	})
 }

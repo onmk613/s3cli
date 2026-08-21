@@ -3,19 +3,13 @@ package client
 import (
 	"fmt"
 	"net/http"
-	"strconv"
 	"strings"
 )
 
 // headerTransport 在请求发出前注入自定义 HTTP header。
-// Host 与 Content-Length 是 http.Request 的结构字段, 写在 Header map 里会被
-// http.Client 忽略 (静默无效); 这里单独处理, 保证用户意图真正生效。
 type headerTransport struct {
-	base          http.RoundTripper
-	headers       http.Header
-	host          string
-	contentLength int64
-	hasContentLen bool
+	base    http.RoundTripper
+	headers http.Header
 }
 
 func newHeaderTransport(base http.RoundTripper, items []string) (http.RoundTripper, error) {
@@ -42,15 +36,13 @@ func newHeaderTransport(base http.RoundTripper, items []string) (http.RoundTripp
 			return base, fmt.Errorf("invalid header %q, key is empty", raw)
 		}
 		switch http.CanonicalHeaderKey(key) {
-		case "Host":
-			t.host = val
-		case "Content-Length":
-			n, err := strconv.ParseInt(val, 10, 64)
-			if err != nil || n < 0 {
-				return base, fmt.Errorf("invalid header %q: Content-Length must be a non-negative integer", raw)
-			}
-			t.contentLength = n
-			t.hasContentLen = true
+		case "Host", "Content-Length":
+			// Host 与 Content-Length 是 SigV4 签名头 (SignedHeaders 恒含 host,
+			// 带体请求含 content-length)。签名发生在 api 层, 而 transport 改写
+			// 发生在签名之后, 事后改写必然导致服务端 SignatureDoesNotMatch,
+			// 且报错毫无线索 —— 不如在配置期直接拒绝并说明原因。
+			// 需要换 host 请改 endpoint (alias 的 host_base), 而不是 --header。
+			return base, fmt.Errorf("header %q cannot be overridden: Host and Content-Length are part of the SigV4 signature and overriding them after signing always yields SignatureDoesNotMatch (adjust the alias endpoint instead)", key)
 		default:
 			t.headers.Add(key, val)
 		}
@@ -66,12 +58,6 @@ func (t *headerTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 		for _, v := range vs {
 			clone.Header.Add(k, v)
 		}
-	}
-	if t.host != "" {
-		clone.Host = t.host
-	}
-	if t.hasContentLen {
-		clone.ContentLength = t.contentLength
 	}
 	return t.base.RoundTrip(clone)
 }

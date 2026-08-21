@@ -51,6 +51,10 @@ func (c *Client) PresignedURL(ctx context.Context, bucket, key string, opts *Pre
 	if expires > maxPresignExpiry {
 		return "", fmt.Errorf("presign expiration %s exceeds the SigV4 maximum of %s", expires, maxPresignExpiry)
 	}
+	// 不足 1 秒会被 int64(Seconds()) 截断为 X-Amz-Expires=0, 生成服务端必拒的非法 URL。
+	if expires < time.Second {
+		return "", fmt.Errorf("presign expiration %s is below the minimum of 1s", expires)
+	}
 
 	// 构造查询参数
 	urlValues := make(url.Values)

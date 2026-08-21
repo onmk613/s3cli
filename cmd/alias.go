@@ -1,6 +1,8 @@
 package cmd
 
 import (
+	"fmt"
+
 	"s3cli/internal/config"
 	"s3cli/pkg/i18n"
 
@@ -41,7 +43,7 @@ func setAliasCmd() *cobra.Command {
 		ValidArgsFunction: AutoCompleteAlias,
 		Args:              cobra.RangeArgs(1, 5),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return config.SetAliasConf(args)
+			return config.SetAliasConf(cmd.Context(), args)
 		},
 	}
 }
@@ -82,7 +84,11 @@ func delAliasCmd() *cobra.Command {
 		ValidArgsFunction: AutoCompleteAlias,
 		Args:              cobra.MinimumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return config.DelConf(args)
+			// DelConf 内部已逐项红字输出错误, 包装 errAlreadyDisplayed 避免二次打印。
+			if err := config.DelConf(args); err != nil {
+				return fmt.Errorf("%w: %w", errAlreadyDisplayed, err)
+			}
+			return nil
 		},
 	}
 }

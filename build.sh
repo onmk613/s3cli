@@ -5,7 +5,8 @@ set -euo pipefail
 #   ./build.sh        编译当前平台
 #   ./build.sh all    全平台交叉编译
 
-gofmt -w .
+# 构建脚本不应有副作用: 不在构建时改写源码 (gofmt -w) 或依赖清单 (go mod tidy)。
+# 格式化交给开发者/CI 的 gofmt -l 检查, tidy 交给 go mod tidy -diff。
 rm -rf bin/
 
 ALL=""
@@ -23,7 +24,12 @@ done
 
 VERSION=${VERSION:-$(git describe --tags --always 2>/dev/null || echo "dev")}
 COMMIT=$(git rev-parse --short HEAD 2>/dev/null || echo "none")
-DATE=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+# SOURCE_DATE_EPOCH 支持可复现构建: 同一 commit 两次构建产物一致。
+if [ -n "${SOURCE_DATE_EPOCH:-}" ]; then
+  DATE=$(date -u -r "${SOURCE_DATE_EPOCH}" +"%Y-%m-%dT%H:%M:%SZ" 2>/dev/null || date -u -d "@${SOURCE_DATE_EPOCH}" +"%Y-%m-%dT%H:%M:%SZ")
+else
+  DATE=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+fi
 GOVERSION=$(go version | awk '{print $3}')
 
 # 版本变量位于 cmd/root.go（包路径 s3cli/cmd）。
@@ -35,8 +41,6 @@ LDFLAGS="-s -w \
   -X 's3cli/cmd.GoVersion=${GOVERSION}'"
 
 ENTRY=.
-
-go mod tidy
 
 build_one() {
   local os=$1 arch=$2 out=$3

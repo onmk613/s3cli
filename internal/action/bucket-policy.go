@@ -243,7 +243,7 @@ func (c *Action) applyCannedPolicy(name, bucket, prefix string) error {
 		if err := c.S3.DeleteBucketPolicy(c.Ctx, bucket); err != nil {
 			// 无策略 (已私有) 视为成功, 保持幂等。
 			var apiErr *s3iface.ErrorResponse
-			if !(errors.As(err, &apiErr) && (apiErr.Code == "NoSuchBucketPolicy" || apiErr.Code == "NoSuchBucket" || apiErr.Code == "404")) {
+			if !errors.As(err, &apiErr) || (apiErr.Code != "NoSuchBucketPolicy" && apiErr.Code != "NoSuchBucket" && apiErr.Code != "404") {
 				return FormatAPIError(err)
 			}
 		}

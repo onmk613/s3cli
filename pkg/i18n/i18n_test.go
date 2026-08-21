@@ -61,6 +61,13 @@ func TestIsChinaRegion(t *testing.T) {
 		t.Error("expect China region by zone name")
 	}
 
+	// 回归: America/Chicago 冬令时的缩写恰为 "CST" (Central Standard Time, UTC-6),
+	// 不得因名字撞车被误判为中国时区 (用户会突然看到中文帮助, 夏季又恢复英文)。
+	time.Local = time.FixedZone("CST", -6*3600)
+	if isChinaRegion() {
+		t.Error("CST at UTC-6 (US Central) must NOT be China region")
+	}
+
 	// UTC+8 但时区名非中国 (新加坡) + en locale -> 不判定为中国
 	time.Local = time.FixedZone("Asia/Singapore", 8*3600)
 	if isChinaRegion() {
@@ -88,45 +95,40 @@ func TestIsChinaRegion(t *testing.T) {
 }
 
 func TestHasZhLocale(t *testing.T) {
-	oldLANG := os.Getenv("LANG")
-	oldLCAll := os.Getenv("LC_ALL")
-	oldLCCType := os.Getenv("LC_CTYPE")
-	defer func() {
-		os.Setenv("LANG", oldLANG)
-		os.Setenv("LC_ALL", oldLCAll)
-		os.Setenv("LC_CTYPE", oldLCCType)
-	}()
-
-	os.Setenv("LC_ALL", "")
-	os.Setenv("LC_CTYPE", "")
-	os.Setenv("LANG", "en_US.UTF-8")
+	// t.Setenv 保证三个 locale 变量被完全钉住: 实现按 LC_ALL > LC_CTYPE > LANG
+	// 优先级检测, 宿主机 (如 macOS 终端默认导出 LC_CTYPE) 的残留值会污染测试。
+	t.Setenv("LC_ALL", "")
+	t.Setenv("LC_CTYPE", "")
+	t.Setenv("LANG", "en_US.UTF-8")
 	if hasZhLocale() {
 		t.Error("en_US.UTF-8 should not be zh locale")
 	}
-	os.Setenv("LANG", "zh_CN.UTF-8")
+	t.Setenv("LANG", "zh_CN.UTF-8")
 	if !hasZhLocale() {
 		t.Error("zh_CN.UTF-8 should be zh locale")
 	}
-	os.Setenv("LANG", "C")
-	os.Setenv("LC_CTYPE", "zh_TW.UTF-8")
+	t.Setenv("LANG", "C")
+	t.Setenv("LC_CTYPE", "zh_TW.UTF-8")
 	if !hasZhLocale() {
 		t.Error("LC_CTYPE=zh_TW.UTF-8 should be zh locale")
 	}
-	os.Setenv("LC_CTYPE", "")
-	os.Setenv("LANG", "中文")
+	t.Setenv("LC_CTYPE", "")
+	t.Setenv("LANG", "中文")
 	if !hasZhLocale() {
 		t.Error("LANG=中文 should be zh locale")
 	}
 }
 
 func TestIsUTF8Terminal(t *testing.T) {
-	oldLANG := os.Getenv("LANG")
-	defer os.Setenv("LANG", oldLANG)
-	os.Setenv("LANG", "zh_CN.UTF-8")
+	// 同上: 必须清空 LC_ALL/LC_CTYPE, 只用 LANG 驱动断言,
+	// 否则 macOS 宿主机的 LC_CTYPE=C.UTF-8 会让 "C locale" 分支误报。
+	t.Setenv("LC_ALL", "")
+	t.Setenv("LC_CTYPE", "")
+	t.Setenv("LANG", "zh_CN.UTF-8")
 	if !isUTF8Terminal() {
 		t.Error("zh_CN.UTF-8 should be treated as UTF-8 capable")
 	}
-	os.Setenv("LANG", "C")
+	t.Setenv("LANG", "C")
 	if isUTF8Terminal() {
 		t.Error("C locale should not be treated as UTF-8 capable")
 	}
