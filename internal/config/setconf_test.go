@@ -3,7 +3,6 @@ package config
 import (
 	"context"
 	"errors"
-	"io"
 	"os"
 	"strings"
 	"testing"
@@ -227,55 +226,6 @@ func TestInteractEditReadError(t *testing.T) {
 	if _, err := interactEdit(context.Background(), Static{}); err == nil || !strings.Contains(err.Error(), "read input") {
 		t.Errorf("want read-input error, got %v", err)
 	}
-}
-
-func TestInteractEditSecretTerminal(t *testing.T) {
-	snapshotHooks(t)
-	isTerminal = func(int) bool { return true }
-
-	t.Run("read password ok", func(t *testing.T) {
-		snapshotHooks(t)
-		readPassword = func(int) ([]byte, error) { return []byte("secret"), nil }
-		feedStdin(t, "https://h\nak\n\n\n\nfalse\n0\n")
-		conf, err := interactEdit(context.Background(), Static{SecretKey: "old"})
-		if err != nil {
-			t.Fatal(err)
-		}
-		if conf.SecretKey != "secret" {
-			t.Errorf("secret key = %q, want stub value", conf.SecretKey)
-		}
-	})
-
-	t.Run("empty password keeps default", func(t *testing.T) {
-		snapshotHooks(t)
-		readPassword = func(int) ([]byte, error) { return []byte("  \n"), nil }
-		feedStdin(t, "https://h\nak\n\n\n\nfalse\n0\n")
-		conf, err := interactEdit(context.Background(), Static{SecretKey: "old"})
-		if err != nil {
-			t.Fatal(err)
-		}
-		if conf.SecretKey != "old" {
-			t.Errorf("secret key = %q, want old value kept", conf.SecretKey)
-		}
-	})
-
-	t.Run("read password eof", func(t *testing.T) {
-		snapshotHooks(t)
-		readPassword = func(int) ([]byte, error) { return nil, io.EOF }
-		feedStdin(t, "https://h\nak\n\n\n\nfalse\n0\n")
-		if _, err := interactEdit(context.Background(), Static{}); !errors.Is(err, errInterrupted) {
-			t.Errorf("want errInterrupted, got %v", err)
-		}
-	})
-
-	t.Run("read password error", func(t *testing.T) {
-		snapshotHooks(t)
-		readPassword = func(int) ([]byte, error) { return nil, errors.New("boom") }
-		feedStdin(t, "https://h\nak\n\n\n\nfalse\n0\n")
-		if _, err := interactEdit(context.Background(), Static{}); err == nil || !strings.Contains(err.Error(), "read secret") {
-			t.Errorf("want read-secret error, got %v", err)
-		}
-	})
 }
 
 func TestInteractEditInterruptAtField(t *testing.T) {

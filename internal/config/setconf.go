@@ -7,8 +7,11 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/signal"
 	"strconv"
 	"strings"
+	"sync"
+	"syscall"
 
 	myprint "s3cli/pkg/fmtutil"
 
@@ -22,6 +25,131 @@ var errInterrupted = errors.New("cancelled")
 type lineResult struct {
 	s   string
 	err error
+}
+
+type inputReq struct {
+	secret bool
+	resp   chan lineResult // cap 1，owner 发送不会阻塞
+}
+
+func stdinOwner(ctx context.Context, reqs <-chan inputReq) {
+	reader := bufio.NewReader(os.Stdin)
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case req, ok := <-reqs:
+			if !ok {
+				return
+			}
+			var res lineResult
+			if req.secret {
+				res.s, res.err = readSecretLine(reader)
+			} else {
+				res.s, res.err = readPlainLine(reader)
+			}
+			req.resp <- res
+		}
+	}
+}
+
+func readPlainLine(r *bufio.Reader) (string, error) {
+	s, err := r.ReadString('\n')
+	s = strings.TrimRight(s, "\r\n") // 统一吃掉 CRLF
+	if err != nil && !errors.Is(err, io.EOF) {
+		return "", err
+	}
+	return s, err // 带数据的 EOF 交给调用方判定
+}
+
+func readSecretLine(r *bufio.Reader) (string, error) {
+	fd := int(os.Stdin.Fd())
+	if !isTerminal(fd) {
+		return readPlainLine(r) // 管道/重定向
+	}
+	old, err := term.MakeRaw(fd)
+	if err != nil {
+		return readPlainLine(r)
+	}
+	var once sync.Once
+	restore := func() { once.Do(func() { _ = term.Restore(fd, old) }) }
+	defer restore()
+
+	// raw 模式下 ISIG 被关闭，Ctrl+C 以字节 3 到达；但仍要防 SIGTERM/SIGHUP
+	// 打断导致终端残留 raw+无回显（补救命令：stty sane）
+	sig := make(chan os.Signal, 1)
+	signal.Notify(sig, syscall.SIGTERM, syscall.SIGHUP)
+	defer signal.Stop(sig)
+	go func() {
+		if _, ok := <-sig; ok {
+			restore()
+			myprint.Print("\r\n")
+			os.Exit(143)
+		}
+	}()
+
+	var buf []rune
+	for {
+		c, _, err := r.ReadRune()
+		if err != nil {
+			myprint.Print("\r\n")
+			if errors.Is(err, io.EOF) && len(buf) > 0 {
+				return string(buf), nil
+			}
+			return "", err
+		}
+		switch {
+		case c == '\r' || c == '\n':
+			// 粘贴常见 CRLF：把配对的另一半吃掉，别留给下一个 prompt
+			if r.Buffered() > 0 {
+				if p, _ := r.Peek(1); len(p) == 1 &&
+					(p[0] == '\r' || p[0] == '\n') && rune(p[0]) != c {
+					_, _ = r.Discard(1)
+				}
+			}
+			myprint.Print("\r\n") // raw 模式必须 \r\n，否则光标不回行首→阶梯错位
+			return string(buf), nil
+
+		case c == 3: // Ctrl+C
+			myprint.Print("\r\n")
+			return "", errInterrupted
+		case c == 4: // Ctrl+D
+			if len(buf) == 0 {
+				myprint.Print("\r\n")
+				return "", io.EOF
+			}
+		case c == 127 || c == 8: // Backspace
+			if len(buf) > 0 {
+				buf = buf[:len(buf)-1]
+			}
+		case c == 21: // Ctrl+U
+			buf = buf[:0]
+		case c == 27: // 吞掉方向键 / bracketed-paste 的 ESC[200~、ESC[201~
+			if r.Buffered() > 0 {
+				skipEscape(r)
+			}
+		case c == '\t' || c >= 32:
+			buf = append(buf, c)
+		}
+	}
+}
+
+func skipEscape(r *bufio.Reader) {
+	b, err := r.Peek(1)
+	if err != nil || len(b) == 0 || (b[0] != '[' && b[0] != 'O') {
+		return
+	}
+	_, _ = r.Discard(1)
+	for {
+		c, err := r.ReadByte()
+		if err != nil || (c >= 0x40 && c <= 0x7e) { // CSI 终止符，含 '~' 'A'
+			return
+		}
+	}
+}
+
+func resp2req(secret bool, resp chan lineResult) inputReq {
+	return inputReq{secret: secret, resp: resp}
 }
 
 // 终端能力钩子（测试注入用），避免直接依赖运行时终端状态。
@@ -105,94 +233,58 @@ func EditAliasConf(ctx context.Context, section string) error {
 // 终端下密钥不回显；非终端（管道/重定向）回退普通行读取。
 func interactEdit(ctx context.Context, old Static) (Static, error) {
 	conf := old
+	reqs := make(chan inputReq)
+	go stdinOwner(ctx, reqs)
 
-	reader := bufio.NewReader(os.Stdin)
-	// 常驻单 goroutine 读 stdin，避免每次读取都新起一个阻塞 goroutine。
-	// 注意：ReadString 对 stdin 的阻塞无法被 ctx 取消解除，只能随进程退出释放；
-	// 发送侧用缓冲 channel + ctx 检查，避免 ctx 取消后发送永久阻塞。
-	lines := make(chan lineResult, 1)
-	go func() {
-		defer close(lines)
-		for {
-			s, err := reader.ReadString('\n')
-			if err != nil {
-				// 纯 EOF（无数据）直接关闭通道, 由 read 的 !ok 分支统一处理;
-				// 带数据的 EOF（管道末尾无换行）与其它错误仍发送, 保留数据与错误细节。
-				if errors.Is(err, io.EOF) && strings.TrimSpace(s) == "" {
-					return
-				}
-				select {
-				case lines <- lineResult{s, err}:
-				case <-ctx.Done():
-					return
-				}
-				return
-			}
-			select {
-			case lines <- lineResult{s, nil}:
-			case <-ctx.Done():
-				return
-			}
-		}
-	}()
-
-	// read 读取一行；空输入返回默认值 def（回车即保留旧值）。
-	// ctx 取消或 stdin 无数据关闭时返回 errInterrupted，调用方应立即终止。
-	read := func(prompt, def string) (string, error) {
+	ask := func(prompt, def string, secret bool) (string, error) {
 		def = strings.TrimSpace(def)
-		for {
-			if def != "" {
-				myprint.Printf("%s [%s]: ", prompt, def)
-			} else {
-				myprint.Printf("%s: ", prompt)
+		switch {
+		case secret && def != "":
+			myprint.Printf("%s [keep current]: ", prompt) // 绝不回显旧密钥
+		case def != "":
+			myprint.Printf("%s [%s]: ", prompt, def)
+		default:
+			myprint.Printf("%s: ", prompt)
+		}
+
+		resp := make(chan lineResult, 1)
+		select {
+		case <-ctx.Done():
+			myprint.Println("")
+			return "", errInterrupted
+		case reqs <- resp2req(secret, resp):
+		}
+
+		select {
+		case <-ctx.Done():
+			myprint.Println("")
+			return "", errInterrupted
+		case res := <-resp:
+			s := res.s
+			if !secret {
+				s = strings.TrimSpace(s) // 密钥只裁 CRLF，首尾空格可能是合法字符
 			}
-			select {
-			case <-ctx.Done():
-				myprint.Println("")
+			switch {
+			case res.err == nil:
+			case errors.Is(res.err, errInterrupted):
 				return "", errInterrupted
-			case r, ok := <-lines:
-				if !ok {
+			case errors.Is(res.err, io.EOF):
+				if s == "" { // 纯 EOF
 					myprint.Println("")
 					return "", errInterrupted
-				}
-				s := strings.TrimSpace(r.s)
-				if r.err != nil {
-					// 纯 EOF（无数据）由 goroutine 直接关闭通道, 走上面的 !ok 分支;
-					// 此处只处理带数据的 EOF（管道末尾无换行, 数据应接受）与其它错误。
-					if errors.Is(r.err, io.EOF) && s != "" {
-						return s, nil
-					}
-					return "", fmt.Errorf("read input: %w", r.err)
-				}
-				if s == "" && def != "" {
-					return def, nil
-				}
-				return s, nil
+				} // 带数据的 EOF（管道末尾无换行）→ 接受
+			default:
+				return "", fmt.Errorf("read input: %w", res.err)
 			}
+			if s == "" && def != "" {
+				return def, nil
+			}
+			return s, nil
 		}
 	}
 
-	// readSecret 读取密钥: 终端下不回显 (term.ReadPassword)，
-	// 非终端 (管道/重定向) 回退到 read；空输入保留旧值。
-	readSecret := func(prompt, def string) (string, error) {
-		if !isTerminal(int(os.Stdin.Fd())) {
-			return read(prompt, def)
-		}
-		myprint.Print(prompt)
-		pw, err := readPassword(int(os.Stdin.Fd()))
-		myprint.Println("")
-		if errors.Is(err, io.EOF) {
-			return "", errInterrupted
-		}
-		if err != nil {
-			return "", fmt.Errorf("read secret: %w", err)
-		}
-		s := strings.TrimSpace(string(pw))
-		if s == "" {
-			return def, nil
-		}
-		return s, nil
-	}
+	read := func(p, d string) (string, error) { return ask(p, d, false) }
+	readSecret := func(p, d string) (string, error) { return ask(p, d, true) }
 
 	var err error
 	for {

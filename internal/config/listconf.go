@@ -69,6 +69,7 @@ func ListAliasConf(alias []string) error {
 			{"host_base", e.s.HostBase},
 			{"access_key", e.s.AccessKey},
 			{"secret_key", e.s.SecretKey},
+			{"session_token", e.s.SessionToken},
 		}
 		for _, f := range fields {
 			val := strings.TrimSpace(f.val)
@@ -78,6 +79,12 @@ func ListAliasConf(alias []string) error {
 			if f.key == "secret_key" && !G.F.ShowSecret {
 				val = maskSecret(val)
 			}
+
+			// 如果有 session_token 字段且不为空，则也打码显示
+			if f.key == "session_token" && !G.F.ShowSecret {
+				val = maskSecret(val)
+			}
+
 			myprint.Printf("  ")
 			myprint.PrintfGreen("%s", f.key)
 			myprint.PrintfDim(" = ")
