@@ -59,7 +59,7 @@ if [ -n "${ALL}" ]; then
   build_one windows amd64   bin/s3cli-windows-amd64.exe
   echo "=== done, binaries in bin/ ==="
 else
-  # 默认：编译当前平台到当前目录
+  # 默认：编译当前平台到 bin/ (不污染仓库根目录; .gitignore 已忽略 bin/)
   OS=$(uname -s | tr '[:upper:]' '[:lower:]')
   ARCH=$(uname -m)
   case "${ARCH}" in
@@ -67,8 +67,7 @@ else
     aarch64) ARCH="arm64" ;;
     arm64)   ARCH="arm64" ;;
   esac
-  OUT="s3cli"
-  [ "${OS}" = "windows" ] || true  # windows 不走这里（uname 在 msys 下可能不同）
+  OUT="bin/s3cli"
   echo "=== building ${OS}/${ARCH} -> ${OUT} ==="
   build_one "${OS}" "${ARCH}" "${OUT}"
   echo "=== done: ${OUT} ==="

@@ -2,8 +2,8 @@ package cmd
 
 import (
 	"s3cli/internal/action"
+	"s3cli/internal/i18n"
 	"s3cli/internal/s3path"
-	"s3cli/pkg/i18n"
 
 	"github.com/spf13/cobra"
 )
@@ -47,7 +47,7 @@ func PolicyGetCmd() *cobra.Command {
 			return S3.GetPolicy(opt, dst.Bucket)
 		}),
 	}
-	cmd.Flags().BoolVar(&opt.JSON, "json", false, i18n.T("Print the original policy JSON instead of the type", "打印原始策略 JSON，而非策略类型"))
+	cmd.Flags().BoolVar(&opt.Raw, "raw", false, i18n.T("Print the raw policy JSON instead of the classified type", "打印原始策略 JSON，而非分类后的策略类型"))
 	return cmd
 }
 

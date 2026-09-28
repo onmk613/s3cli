@@ -3,7 +3,7 @@ package config
 import (
 	"fmt"
 
-	myprint "s3cli/pkg/fmtutil"
+	myprint "s3cli/internal/fmtutil"
 	"slices"
 	"sort"
 	"strings"

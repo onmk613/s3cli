@@ -4,13 +4,14 @@
 package action
 
 import (
+	"s3cli/internal/action/render"
 	"sort"
 	"strconv"
 	"strings"
 
-	myprint "s3cli/pkg/fmtutil"
-	"s3cli/pkg/i18n"
-	"s3cli/pkg/s3iface"
+	"s3cli/internal/api"
+	myprint "s3cli/internal/fmtutil"
+	"s3cli/internal/i18n"
 )
 
 // DuOptions du 命令参数.
@@ -27,7 +28,7 @@ func (c *Action) DuObject(opt DuOptions, bucket, prefix string) error {
 	}
 
 	var totalSize, count int64
-	err := c.forEachObject(c.Ctx, bucket, prefix, func(o s3iface.ObjectInfo) error {
+	err := c.forEachObject(c.Ctx, bucket, prefix, func(o api.ObjectInfo) error {
 		totalSize += o.Size
 		count++
 		return nil
@@ -37,7 +38,7 @@ func (c *Action) DuObject(opt DuOptions, bucket, prefix string) error {
 	}
 
 	if opt.JSON {
-		return printJSONLine(map[string]any{
+		return render.JSONLine(map[string]any{
 			"path":    c.S3Path(bucket, prefix),
 			"fileNum": count,
 			"size":    totalSize,
@@ -48,7 +49,7 @@ func (c *Action) DuObject(opt DuOptions, bucket, prefix string) error {
 	tbl.AddRow(
 		myprint.Cell{Text: c.S3Path(bucket, prefix), Color: myprint.BoldBlue},
 		myprint.Cell{Text: strconv.FormatInt(count, 10)},
-		myprint.Cell{Text: FormatBytes(totalSize)},
+		myprint.Cell{Text: myprint.FormatBytes(totalSize)},
 	)
 	tbl.Render()
 	return nil
@@ -66,7 +67,7 @@ func (c *Action) duRecursive(opt DuOptions, bucket, prefix string) error {
 	dirCount := map[string]int64{}
 	dirSet := map[string]bool{}
 
-	err := c.forEachObject(c.Ctx, bucket, prefix, func(o s3iface.ObjectInfo) error {
+	err := c.forEachObject(c.Ctx, bucket, prefix, func(o api.ObjectInfo) error {
 		key := o.Key
 		sz := o.Size
 		// 相对 prefix 的路径段
@@ -118,7 +119,7 @@ func (c *Action) duRecursive(opt DuOptions, bucket, prefix string) error {
 			display = base + "/" + dir
 		}
 		if opt.JSON {
-			if err := printJSONLine(map[string]any{
+			if err := render.JSONLine(map[string]any{
 				"path":    c.S3Path(bucket, display),
 				"fileNum": dirCount[dir],
 				"size":    dirTotal[dir],
@@ -132,7 +133,7 @@ func (c *Action) duRecursive(opt DuOptions, bucket, prefix string) error {
 		tbl.AddRow(
 			myprint.Cell{Text: c.S3Path(bucket, display), Color: myprint.BoldBlue},
 			myprint.Cell{Text: strconv.FormatInt(dirCount[dir], 10)},
-			myprint.Cell{Text: FormatBytes(dirTotal[dir])},
+			myprint.Cell{Text: myprint.FormatBytes(dirTotal[dir])},
 		)
 	}
 
@@ -149,7 +150,7 @@ func (c *Action) duRecursive(opt DuOptions, bucket, prefix string) error {
 		return err
 	}
 	if opt.JSON {
-		return printJSONLine(map[string]any{
+		return render.JSONLine(map[string]any{
 			"path":    c.S3Path(bucket, prefix),
 			"fileNum": rootCount,
 			"size":    rootTotal,
@@ -159,7 +160,7 @@ func (c *Action) duRecursive(opt DuOptions, bucket, prefix string) error {
 	tbl.AddRow(
 		myprint.Cell{Text: c.S3Path(bucket, prefix), Color: myprint.BoldBlue},
 		myprint.Cell{Text: strconv.FormatInt(rootCount, 10)},
-		myprint.Cell{Text: FormatBytes(rootTotal)},
+		myprint.Cell{Text: myprint.FormatBytes(rootTotal)},
 	)
 	tbl.Render()
 	return nil
@@ -167,7 +168,7 @@ func (c *Action) duRecursive(opt DuOptions, bucket, prefix string) error {
 
 // prefixUsage 统计前缀下对象总数与总大小.
 func (c *Action) prefixUsage(bucket, prefix string) (total int64, count int64, err error) {
-	err = c.forEachObject(c.Ctx, bucket, prefix, func(o s3iface.ObjectInfo) error {
+	err = c.forEachObject(c.Ctx, bucket, prefix, func(o api.ObjectInfo) error {
 		total += o.Size
 		count++
 		return nil

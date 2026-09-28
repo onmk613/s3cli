@@ -185,7 +185,7 @@ func TestGetPolicyDefaultOutputsType(t *testing.T) {
 func TestGetPolicyJSONOutputsRaw(t *testing.T) {
 	c := newJSONTestClient(t)
 	out := captureStdout(t, func() {
-		if err := c.GetPolicy(GetPolicyOptions{JSON: true}, "mybucket"); err != nil {
+		if err := c.GetPolicy(GetPolicyOptions{Raw: true}, "mybucket"); err != nil {
 			t.Error(err)
 		}
 	})
@@ -211,7 +211,7 @@ func TestGetPolicyPrivate(t *testing.T) {
 	if !strings.Contains(out, "type: private") {
 		t.Fatalf("private policy output = %q", out)
 	}
-	if err := c.GetPolicy(GetPolicyOptions{JSON: true}, "mybucket"); err == nil {
+	if err := c.GetPolicy(GetPolicyOptions{Raw: true}, "mybucket"); err == nil {
 		t.Fatal("--json on a bucket without policy should fail")
 	}
 }

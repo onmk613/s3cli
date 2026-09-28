@@ -1,63 +1,41 @@
-// parse-path.go 提供 action 包内复用的通用工具: 取消/超时判断 (IsCanceled)、
-// S3 错误格式化 (FormatAPIError)、字节单位换算 (FormatBytes)、MIME 类型注册 (AddMime)、
-// JSON lines 输出 (printJSONLine).
+// utils.go 提供 action 包内复用的通用工具: 取消判断 (IsCanceled)、
+// 校验和算法解析 (parseChecksumAlg)、MIME 类型注册 (AddMime)。
+// 字节单位换算与 JSON 输出分别由 fmtutil 与 action/render 提供。
 
 package action
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"mime"
-	"os"
-	"strings"
 	"sync"
 
-	myprint "s3cli/pkg/fmtutil"
-	"s3cli/pkg/s3iface"
+	"s3cli/internal/api"
+	"s3cli/internal/i18n"
 )
 
 // IsCanceled 判断 err 是否由用户主动取消（Ctrl+C / SIGTERM）或超时引起。
+//
+// 只依赖 errors.Is: 全代码库的错误包装统一使用 %w, context.Canceled 一定
+// 留在错误链上, 不再需要字符串匹配兜底。
 func IsCanceled(err error) bool {
 	if err == nil {
 		return false
 	}
 	// 注意: DeadlineExceeded (超时) 不是用户取消 —— 以 130 静默退出会吞掉超时错误,
 	// 超时应正常报错并退出 1。
-	if errors.Is(err, context.Canceled) {
-		return true
-	}
-	// 兜底：部分路径会把 context.Canceled 文本包进普通 error，丢失了可 Is 的链。
-	return strings.Contains(err.Error(), "context canceled")
+	return errors.Is(err, context.Canceled)
 }
 
-// FormatAPIError 格式化 S3 错误为对用户友好的字符串.
-func FormatAPIError(err error) error {
-	if err == nil {
-		return nil
+// parseChecksumAlg 解析 put/get 的 --checksum 取值; 空串经
+// api.ParseChecksumAlgorithm 归一为不启用。两个命令共用同一份报错文案。
+func parseChecksumAlg(v string) (api.ChecksumAlgorithm, error) {
+	alg, ok := api.ParseChecksumAlgorithm(v)
+	if !ok {
+		return "", fmt.Errorf(i18n.T("unsupported checksum algorithm %q (expected CRC32 / CRC32C / SHA1 / SHA256)", "不支持的校验和算法 %q（可选 CRC32 / CRC32C / SHA1 / SHA256）"), v)
 	}
-	var apiErr *s3iface.ErrorResponse
-	if errors.As(err, &apiErr) {
-		return fmt.Errorf("%s: %s", apiErr.Code, apiErr.Message)
-	}
-	return err
-}
-
-// FormatBytes 委托给 fmtutil.FormatBytes
-func FormatBytes(bytes int64) string {
-	return myprint.FormatBytes(bytes)
-}
-
-// printJSONLine 以单行 JSON (JSON lines) 输出结构化结果。
-// 各命令 --json 模式统一经此输出, 保证 schema 稳定 (见 doc/OUTPUT_SCHEMA.md)。
-func printJSONLine(v any) error {
-	b, err := json.Marshal(v)
-	if err != nil {
-		return fmt.Errorf("marshal json: %w", err)
-	}
-	_, err = fmt.Fprintln(os.Stdout, string(b))
-	return err
+	return alg, nil
 }
 
 var addMimeOnce sync.Once

@@ -1,13 +1,15 @@
 package action
 
 import (
+	"bytes"
 	"encoding/json"
+	"io"
 	"os"
 	"path/filepath"
 	"testing"
 	"time"
 
-	"s3cli/pkg/s3iface"
+	"s3cli/internal/api"
 )
 
 func setupMpuHome(t *testing.T) string {
@@ -104,7 +106,7 @@ func TestLoadMultipartState(t *testing.T) {
 	mt := time.Unix(1700000000, 12345)
 
 	// 文件不存在 -> (nil, path, nil)
-	st, _, err := loadMultipartState("/tmp/myfile", "bk", "k", 100, mt)
+	st, _, err := loadMultipartState("/tmp/myfile", "bk", "k")
 	if err != nil || st != nil {
 		t.Errorf("expected nil state for missing file, got st=%v err=%v", st, err)
 	}
@@ -112,24 +114,145 @@ func TestLoadMultipartState(t *testing.T) {
 	// 写入匹配的 state
 	path, _ := multipartStatePath("/tmp/myfile", "bk", "k")
 	os.MkdirAll(filepath.Dir(path), 0o700)
-	good := multipartState{Version: 1, UploadID: "uid", Bucket: "bk", Key: "k", TotalSize: 100, ModTimeUnixNs: mt.UnixNano()}
+	good := multipartState{Version: 1, UploadID: "uid", Bucket: "bk", Key: "k", TotalSize: 100, ModTimeUnixNs: mt.UnixNano(), ContentDigest: "digest-a"}
 	os.WriteFile(path, mustJSON(good), 0o600)
 
-	st, _, err = loadMultipartState("/tmp/myfile", "bk", "k", 100, mt)
+	// loadMultipartState 只负责"存在且可解析"; 是否可复用由 stateMatches 判定,
+	// 这样指纹/大小不匹配时调用方仍能拿到 UploadID 去 Abort, 不留下孤儿分片。
+	st, _, err = loadMultipartState("/tmp/myfile", "bk", "k")
 	if err != nil || st == nil || st.UploadID != "uid" {
-		t.Errorf("expected matching state, got st=%v err=%v", st, err)
+		t.Errorf("expected parsed state, got st=%v err=%v", st, err)
+	}
+	if !stateMatches(st, "bk", "k", 100, mt, "digest-a") {
+		t.Error("identical fingerprint/size/mtime must match")
 	}
 
-	// 字段不匹配 (size 不同) -> nil
-	st, _, _ = loadMultipartState("/tmp/myfile", "bk", "k", 999, mt)
-	if st != nil {
-		t.Error("size mismatch should give nil")
+	// 各项不匹配都必须判为不可复用, 但 state 本身仍返回 (供调用方 Abort)。
+	mismatches := []struct {
+		name    string
+		bucket  string
+		key     string
+		size    int64
+		modTime time.Time
+		digest  string
+	}{
+		{"size", "bk", "k", 999, mt, "digest-a"},
+		{"mtime", "bk", "k", 100, mt.Add(time.Second), "digest-a"},
+		{"bucket", "other", "k", 100, mt, "digest-a"},
+		{"key", "bk", "other", 100, mt, "digest-a"},
+		// 核心场景: size 与 mtime 完全相同, 只有内容变了 (rsync -t / tar -p /
+		// touch -r 还原)。旧实现只看 size+mtime, 这里会错误地判定可续传,
+		// 把旧分片与新内容拼成一个半新半旧的对象且不报任何错。
+		{"content-changed-size-and-mtime-identical", "bk", "k", 100, mt, "digest-b"},
+		{"legacy-state-without-digest", "bk", "k", 100, mt, ""},
+	}
+	for _, tc := range mismatches {
+		t.Run(tc.name, func(t *testing.T) {
+			st, _, err := loadMultipartState("/tmp/myfile", "bk", "k")
+			if err != nil || st == nil {
+				t.Fatalf("state should still be readable for abort: st=%v err=%v", st, err)
+			}
+			if stateMatches(st, tc.bucket, tc.key, tc.size, tc.modTime, tc.digest) {
+				t.Fatal("state must NOT be considered reusable")
+			}
+		})
 	}
 
 	// 损坏 JSON -> error
 	os.WriteFile(path, []byte("{bad"), 0o600)
-	if _, _, err := loadMultipartState("/tmp/myfile", "bk", "k", 100, mt); err == nil {
+	if _, _, err := loadMultipartState("/tmp/myfile", "bk", "k"); err == nil {
 		t.Error("expected error for malformed json")
+	}
+}
+
+// TestFingerprintFileDetectsInPlaceEdits 覆盖内容指纹本身:
+// 长度不变、mtime 可保持不变的原地改写必须被检测出来。
+func TestFingerprintFileDetectsInPlaceEdits(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "f.bin")
+
+	write := func(b []byte) *os.File {
+		t.Helper()
+		if err := os.WriteFile(path, b, 0o600); err != nil {
+			t.Fatal(err)
+		}
+		f, err := os.Open(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { _ = f.Close() })
+		return f
+	}
+
+	base := bytes.Repeat([]byte("A"), 4096)
+	f1 := write(base)
+	d1, err := fingerprintFile(f1, int64(len(base)))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// 同长度、只有首字节不同 -> 指纹必须变化
+	edited := append([]byte(nil), base...)
+	edited[0] = 'B'
+	f2 := write(edited)
+	d2, err := fingerprintFile(f2, int64(len(edited)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if d1 == d2 {
+		t.Fatal("in-place edit with identical length must change the fingerprint")
+	}
+
+	// 同长度、只有末字节不同 -> 指纹也必须变化 (尾部采样)
+	tailEdited := append([]byte(nil), base...)
+	tailEdited[len(tailEdited)-1] = 'C'
+	f3 := write(tailEdited)
+	d3, err := fingerprintFile(f3, int64(len(tailEdited)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if d1 == d3 {
+		t.Fatal("tail edit with identical length must change the fingerprint")
+	}
+
+	// 内容相同 -> 指纹稳定 (同一文件重复计算必须一致)
+	f4 := write(base)
+	d4, err := fingerprintFile(f4, int64(len(base)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if d1 != d4 {
+		t.Fatal("identical content must produce an identical fingerprint")
+	}
+
+	// 指纹计算不得改变文件偏移 (调用方随后要 Seek 到续传位置)
+	f5 := write(base)
+	if _, err := f5.Seek(7, io.SeekStart); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := fingerprintFile(f5, int64(len(base))); err != nil {
+		t.Fatal(err)
+	}
+	if pos, err := f5.Seek(0, io.SeekCurrent); err != nil || pos != 7 {
+		t.Fatalf("fingerprintFile moved the file offset to %d, want 7 (err=%v)", pos, err)
+	}
+
+	// 大于采样窗口: 首尾两个窗口都要参与
+	big := bytes.Repeat([]byte("Z"), 3*fingerprintSampleSize)
+	f6 := write(big)
+	d6, err := fingerprintFile(f6, int64(len(big)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	bigTail := append([]byte(nil), big...)
+	bigTail[len(bigTail)-1] = 'Y'
+	f7 := write(bigTail)
+	d7, err := fingerprintFile(f7, int64(len(bigTail)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if d6 == d7 {
+		t.Fatal("tail edit on a large file must change the fingerprint")
 	}
 }
 
@@ -664,7 +787,7 @@ func TestBuildSelectSerializations(t *testing.T) {
 }
 
 func TestStatMetadata(t *testing.T) {
-	head := &s3iface.HeadObjectOutput{
+	head := &api.HeadObjectOutput{
 		ContentType:          "text/plain",
 		ContentEncoding:      "gzip",
 		ContentDisposition:   "inline",
@@ -687,7 +810,7 @@ func TestStatMetadata(t *testing.T) {
 		t.Errorf("user metadata missing: %v", meta)
 	}
 	// 空 head 不应 panic, 返回空 map
-	if len(statMetadata(&s3iface.HeadObjectOutput{})) != 0 {
+	if len(statMetadata(&api.HeadObjectOutput{})) != 0 {
 		t.Error("empty head should give empty metadata")
 	}
 }

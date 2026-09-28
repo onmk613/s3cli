@@ -13,18 +13,10 @@ import (
 	"strings"
 	"time"
 
-	myprint "s3cli/pkg/fmtutil"
-	"s3cli/pkg/i18n"
-	"s3cli/pkg/s3iface"
+	"s3cli/internal/api"
+	myprint "s3cli/internal/fmtutil"
+	"s3cli/internal/i18n"
 )
-
-// isBenignNotFound 判断错误是否为"对象不存在"（删除目录标记时的良性 404）。
-// 用类型断言而非字符串嗅探, 避免后端改变错误包装方式后判断失效。
-func isBenignNotFound(err error) bool {
-	var apiErr *s3iface.ErrorResponse
-	return errors.As(err, &apiErr) &&
-		(apiErr.StatusCode == 404 || strings.Contains(apiErr.Code, "NoSuch"))
-}
 
 // DelOptions rm 命令参数.
 type DelOptions struct {
@@ -89,7 +81,7 @@ func (c *Action) DeleteObjects(bucket, prefix string, opt DelOptions) error {
 
 	ok, err := c.IsS3File(bucket, prefix)
 	if err != nil {
-		return fmt.Errorf("check s3 path: %s", FormatAPIError(err))
+		return fmt.Errorf("check s3 path: %w", err)
 	}
 	switch {
 	case !ok && opt.Recursive:
@@ -122,67 +114,64 @@ func (c *Action) DeleteObjects(bucket, prefix string, opt DelOptions) error {
 	return nil
 }
 
-// deleteVersionsOfObject 删除单个对象的全部版本 (--versions) 或非当前版本 (--non-current).
-func (c *Action) deleteVersionsOfObject(bucket, key string, opt DelOptions) error {
-	paginator := c.S3.NewListObjectVersionsPaginator(bucket,
-		&s3iface.ListObjectVersionsOptions{Prefix: key})
+// versionDeleter 累积待删除的对象版本, 达到批上限时落盘。
+//
+// rm --versions 与 --non-current 两条路径原本各写了一份 flush 闭包 + 分页循环,
+// 差异只在"哪些版本该删"的谓词上。这里把累积/分批/干跑打印收敛成一份。
+type versionDeleter struct {
+	c       *Action
+	bucket  string
+	opt     DelOptions
+	pending []api.ObjectIdentifier
+	total   int
+}
 
-	var toDelete []s3iface.ObjectIdentifier
-	var total int
-	flush := func() error {
-		if len(toDelete) == 0 {
-			return nil
-		}
-		if opt.DryRun {
-			for _, o := range toDelete {
-				myprint.PrintfYellow(i18n.T("would delete %s (version %s)\n", "将删除 %s（版本 %s）\n"), c.S3Path(bucket, o.Key), o.VersionID)
-			}
-			total += len(toDelete)
-			toDelete = toDelete[:0]
-			return nil
-		}
-		if err := c.deleteBatch(bucket, toDelete); err != nil {
-			return err
-		}
-		total += len(toDelete)
-		toDelete = toDelete[:0]
+// add 记录一个待删除版本, 达到批上限时自动落盘。
+func (d *versionDeleter) add(key, versionID string) error {
+	d.pending = append(d.pending, api.ObjectIdentifier{Key: key, VersionID: versionID})
+	if len(d.pending) >= s3DeleteBatchSize {
+		return d.flush()
+	}
+	return nil
+}
+
+// flush 执行当前批次 (--dry-run 时只打印)。
+func (d *versionDeleter) flush() error {
+	if len(d.pending) == 0 {
 		return nil
 	}
-
-	for paginator.HasMorePages() {
-		page, err := paginator.NextPage(c.Ctx)
-		if err != nil {
-			return fmt.Errorf("list versions: %s", FormatAPIError(err))
+	if d.opt.DryRun {
+		for _, o := range d.pending {
+			myprint.PrintfYellow(i18n.T("would delete %s (version %s)\n", "将删除 %s（版本 %s）\n"),
+				d.c.S3Path(d.bucket, o.Key), o.VersionID)
 		}
-		for _, v := range page.Versions {
-			if v.Key != key {
-				continue
-			}
-			if opt.NonCurrent && v.IsLatest {
-				continue
-			}
-			toDelete = append(toDelete, s3iface.ObjectIdentifier{Key: v.Key, VersionID: v.VersionID})
-		}
-		for _, m := range page.DeleteMarkers {
-			if m.Key != key {
-				continue
-			}
-			if opt.NonCurrent && m.IsLatest {
-				continue
-			}
-			toDelete = append(toDelete, s3iface.ObjectIdentifier{Key: m.Key, VersionID: m.VersionID})
-		}
-		if len(toDelete) >= 1000 {
-			if err := flush(); err != nil {
-				return err
-			}
-		}
+	} else if err := d.c.deleteObjectsInBatches(d.c.Ctx, d.bucket, d.pending); err != nil {
+		return err
 	}
-	if err := flush(); err != nil {
+	d.total += len(d.pending)
+	d.pending = d.pending[:0]
+	return nil
+}
+
+// deleteVersionsOfObject 删除单个对象的全部版本 (--versions) 或非当前版本 (--non-current).
+func (c *Action) deleteVersionsOfObject(bucket, key string, opt DelOptions) error {
+	d := &versionDeleter{c: c, bucket: bucket, opt: opt}
+	if err := c.forEachVersion(c.Ctx, bucket, key, func(v VersionEntry) error {
+		if v.Key != key {
+			return nil
+		}
+		if opt.NonCurrent && v.IsLatest {
+			return nil
+		}
+		return d.add(v.Key, v.VersionID)
+	}); err != nil {
+		return err
+	}
+	if err := d.flush(); err != nil {
 		return err
 	}
 
-	myprint.PrintfBoldGreen(i18n.T("Delete %d version(s) of %s: success\n", "已删除 %d 个版本（%s）：成功\n"), total, c.S3Path(bucket, key))
+	myprint.PrintfBoldGreen(i18n.T("Delete %d version(s) of %s: success\n", "已删除 %d 个版本（%s）：成功\n"), d.total, c.S3Path(bucket, key))
 	return nil
 }
 
@@ -224,7 +213,7 @@ func (c *Action) deletePrefixIncomplete(bucket, prefix string, opt DelOptions) e
 	// 翻页列举: ListMultipartUploads 单次上限 1000 条, 不做翻页会漏掉第 1000 条之后的上传。
 	uploads, err := c.listAllMultipartUploads(c.Ctx, bucket, prefix)
 	if err != nil {
-		return fmt.Errorf("list multipart uploads: %s", FormatAPIError(err))
+		return fmt.Errorf("list multipart uploads: %w", err)
 	}
 	var aborted, failed int
 	for _, u := range uploads {
@@ -233,7 +222,7 @@ func (c *Action) deletePrefixIncomplete(bucket, prefix string, opt DelOptions) e
 			continue
 		}
 		if err := c.S3.AbortMultipartUpload(c.Ctx, bucket, u.Key, u.UploadID); err != nil {
-			myprint.PrintfRed("abort %s/%s: %s\n", bucket, u.Key, FormatAPIError(err))
+			myprint.PrintfRed("abort %s/%s: %s\n", bucket, u.Key, err)
 			failed++
 			continue
 		}
@@ -250,7 +239,7 @@ func (c *Action) deletePrefixIncomplete(bucket, prefix string, opt DelOptions) e
 func (c *Action) deleteSingleObject(bucket, key string) error {
 	_, err := c.S3.DeleteObject(c.Ctx, bucket, key, "")
 	if err != nil {
-		return fmt.Errorf("delete %s: %s", c.S3Path(bucket, key), FormatAPIError(err))
+		return fmt.Errorf("delete %s: %w", c.S3Path(bucket, key), err)
 	}
 	if err := c.deleteEmptyParentDirectories(bucket, parentDirectory(key)); err != nil {
 		return err
@@ -263,7 +252,7 @@ func (c *Action) deleteSingleObject(bucket, key string) error {
 func (c *Action) deleteObjectVersion(bucket, key, versionID string) error {
 	_, err := c.S3.DeleteObject(c.Ctx, bucket, key, versionID)
 	if err != nil {
-		return fmt.Errorf("delete %s (version %s): %s", c.S3Path(bucket, key), versionID, FormatAPIError(err))
+		return fmt.Errorf("delete %s (version %s): %w", c.S3Path(bucket, key), versionID, err)
 	}
 
 	myprint.PrintfBoldGreen(i18n.T("Delete %s (version %s): success\n", "已删除 %s（版本 %s）：成功\n"), c.S3Path(bucket, key), versionID)
@@ -285,13 +274,13 @@ func (c *Action) deleteObjectsWithPrefix(bucket, prefix string, opt DelOptions) 
 	// 以兼容 SeaweedFS 等仅通过 filer 目录而非 S3 对象来表示空目录的后端。
 	if prefix != "" && !strings.HasSuffix(prefix, "/") {
 		dirPrefix := prefix + "/"
-		listResp, err := c.S3.ListObjectsV2(c.Ctx, bucket, &s3iface.ListObjectsV2Options{
+		listResp, err := c.S3.ListObjectsV2(c.Ctx, bucket, &api.ListObjectsV2Options{
 			Prefix:    dirPrefix,
 			Delimiter: "/",
 			MaxKeys:   1,
 		})
 		if err != nil {
-			return fmt.Errorf("list objects: %s", FormatAPIError(err))
+			return fmt.Errorf("list objects: %w", err)
 		}
 		if len(listResp.Contents) > 0 || len(listResp.CommonPrefixes) > 0 {
 			prefix = dirPrefix
@@ -303,24 +292,26 @@ func (c *Action) deleteObjectsWithPrefix(bucket, prefix string, opt DelOptions) 
 		return c.deleteVersionsUnderPrefix(bucket, prefix, opt, newer, older)
 	}
 
-	paginator := c.S3.NewListObjectsV2Paginator(bucket, &s3iface.ListObjectsV2Options{
-		Prefix: prefix,
-	})
-
-	var toDelete []s3iface.ObjectIdentifier
+	var toDelete []api.ObjectIdentifier
 	var total int
-	for paginator.HasMorePages() {
-		page, err := paginator.NextPage(c.Ctx)
-		if err != nil {
-			return fmt.Errorf("list objects: %s", FormatAPIError(err))
+	flush := func() error {
+		if len(toDelete) == 0 {
+			return nil
 		}
+		if err := c.deleteObjectsInBatches(c.Ctx, bucket, toDelete); err != nil {
+			return err
+		}
+		total += len(toDelete)
+		toDelete = toDelete[:0]
+		return nil
+	}
+
+	err = c.forEachObjectPage(c.Ctx, bucket, &api.ListObjectsV2Options{Prefix: prefix}, func(page *api.ListObjectsV2Output) error {
 		for _, item := range page.Contents {
 			if len(opt.Include) > 0 || len(opt.Exclude) > 0 {
 				// --include/--exclude 按「相对参数前缀的相对 key」匹配, 与 mirror
 				// 的基准一致: 用户在 `rm -r alias:bucket/dir --include 'sub/*'` 里
 				// 写的 glob 相对 dir/ 而言 (即匹配 "dir/sub/..." 下的相对路径)。
-				// 此前按完整 key 匹配, "sub/*" 这类含 "/" 的 pattern 永远匹配不到
-				// "dir/sub/..." (路径前缀不同), 行为与 mirror 不一致。
 				if !matchesMirrorFilters(relKeyForDelete(item.Key, prefix), opt.Include, opt.Exclude) {
 					continue
 				}
@@ -333,21 +324,15 @@ func (c *Action) deleteObjectsWithPrefix(bucket, prefix string, opt DelOptions) 
 				total++
 				continue
 			}
-			toDelete = append(toDelete, s3iface.ObjectIdentifier{Key: item.Key})
+			toDelete = append(toDelete, api.ObjectIdentifier{Key: item.Key})
 		}
-		if len(toDelete) >= 1000 {
-			if err := c.deleteBatch(bucket, toDelete); err != nil {
-				return err
-			}
-			total += len(toDelete)
-			toDelete = toDelete[:0]
-		}
+		return flush()
+	})
+	if err != nil {
+		return err
 	}
-	if len(toDelete) > 0 {
-		if err := c.deleteBatch(bucket, toDelete); err != nil {
-			return err
-		}
-		total += len(toDelete)
+	if err := flush(); err != nil {
+		return err
 	}
 
 	if opt.DryRun {
@@ -361,14 +346,14 @@ func (c *Action) deleteObjectsWithPrefix(bucket, prefix string, opt DelOptions) 
 	// 语义是删桶本身而不是删对象 —— 用户 `rm -r --force alias:bucket` 的意图是清空对象。
 	if prefix != "" {
 		if _, err := c.S3.DeleteObject(c.Ctx, bucket, prefix, ""); err != nil {
-			if !isBenignNotFound(err) {
-				return fmt.Errorf("delete directory marker %s: %s", c.S3Path(bucket, prefix), FormatAPIError(err))
+			if !api.IsNotFound(err) {
+				return fmt.Errorf("delete directory marker %s: %w", c.S3Path(bucket, prefix), err)
 			}
 		}
 		if !strings.HasSuffix(prefix, "/") {
 			if _, err := c.S3.DeleteObject(c.Ctx, bucket, prefix+"/", ""); err != nil {
-				if !isBenignNotFound(err) {
-					return fmt.Errorf("delete directory marker %s/: %s", c.S3Path(bucket, prefix), FormatAPIError(err))
+				if !api.IsNotFound(err) {
+					return fmt.Errorf("delete directory marker %s/: %w", c.S3Path(bucket, prefix), err)
 				}
 			}
 		}
@@ -426,72 +411,30 @@ func matchDeleteTime(lastModified time.Time, newer, older time.Time) bool {
 // deleteVersionsUnderPrefix 删除前缀下所有对象的版本 (--versions 全删;
 // --non-current 只删非当前版本).
 func (c *Action) deleteVersionsUnderPrefix(bucket, prefix string, opt DelOptions, newer, older time.Time) error {
-	paginator := c.S3.NewListObjectVersionsPaginator(bucket,
-		&s3iface.ListObjectVersionsOptions{Prefix: prefix})
-
-	var toDelete []s3iface.ObjectIdentifier
-	var total int
-	flush := func() error {
-		if len(toDelete) == 0 {
+	d := &versionDeleter{c: c, bucket: bucket, opt: opt}
+	if err := c.forEachVersion(c.Ctx, bucket, prefix, func(v VersionEntry) error {
+		if len(opt.Include) > 0 || len(opt.Exclude) > 0 {
+			// 同 deleteObjectsWithPrefix: 相对参数前缀匹配 (与 mirror 基准一致)。
+			if !matchesMirrorFilters(relKeyForDelete(v.Key, prefix), opt.Include, opt.Exclude) {
+				return nil
+			}
+		}
+		// --non-current: 跳过最新版本
+		if opt.NonCurrent && v.IsLatest {
 			return nil
 		}
-		if opt.DryRun {
-			for _, o := range toDelete {
-				myprint.PrintfYellow(i18n.T("would delete %s (version %s)\n", "将删除 %s（版本 %s）\n"), c.S3Path(bucket, o.Key), o.VersionID)
-			}
-			total += len(toDelete)
-			toDelete = toDelete[:0]
+		if !matchDeleteTime(v.LastModified, newer, older) {
 			return nil
 		}
-		if err := c.deleteBatch(bucket, toDelete); err != nil {
-			return err
-		}
-		total += len(toDelete)
-		toDelete = toDelete[:0]
-		return nil
+		return d.add(v.Key, v.VersionID)
+	}); err != nil {
+		return err
 	}
-
-	for paginator.HasMorePages() {
-		page, err := paginator.NextPage(c.Ctx)
-		if err != nil {
-			return fmt.Errorf("list versions: %s", FormatAPIError(err))
-		}
-		for _, v := range page.Versions {
-			if len(opt.Include) > 0 || len(opt.Exclude) > 0 {
-				// 同 deleteObjectsWithPrefix: 相对参数前缀匹配 (与 mirror 基准一致)。
-				if !matchesMirrorFilters(relKeyForDelete(v.Key, prefix), opt.Include, opt.Exclude) {
-					continue
-				}
-			}
-			// --non-current: 跳过最新版本
-			if opt.NonCurrent && v.IsLatest {
-				continue
-			}
-			if !matchDeleteTime(v.LastModified, newer, older) {
-				continue
-			}
-			toDelete = append(toDelete, s3iface.ObjectIdentifier{Key: v.Key, VersionID: v.VersionID})
-		}
-		for _, m := range page.DeleteMarkers {
-			if opt.NonCurrent && m.IsLatest {
-				continue
-			}
-			if !matchDeleteTime(m.LastModified, newer, older) {
-				continue
-			}
-			toDelete = append(toDelete, s3iface.ObjectIdentifier{Key: m.Key, VersionID: m.VersionID})
-		}
-		if len(toDelete) >= 1000 {
-			if err := flush(); err != nil {
-				return err
-			}
-		}
-	}
-	if err := flush(); err != nil {
+	if err := d.flush(); err != nil {
 		return err
 	}
 
-	myprint.PrintfBoldGreen(i18n.T("Delete %d version(s) from %s: success\n", "已删除 %d 个版本（来自 %s）：成功\n"), total, c.S3Path(bucket, prefix))
+	myprint.PrintfBoldGreen(i18n.T("Delete %d version(s) from %s: success\n", "已删除 %d 个版本（来自 %s）：成功\n"), d.total, c.S3Path(bucket, prefix))
 	return nil
 }
 
@@ -507,12 +450,12 @@ func parentDirectory(key string) string {
 // deleteEmptyParentDirectories removes explicit directory marker objects left empty by a deletion.
 func (c *Action) deleteEmptyParentDirectories(bucket, directory string) error {
 	for directory != "" {
-		listResp, err := c.S3.ListObjectsV2(c.Ctx, bucket, &s3iface.ListObjectsV2Options{
+		listResp, err := c.S3.ListObjectsV2(c.Ctx, bucket, &api.ListObjectsV2Options{
 			Prefix:  directory,
 			MaxKeys: 2,
 		})
 		if err != nil {
-			return fmt.Errorf("list objects: %s", FormatAPIError(err))
+			return fmt.Errorf("list objects: %w", err)
 		}
 
 		isEmptyMarker := len(listResp.Contents) == 1 && listResp.Contents[0].Key == directory && !listResp.IsTruncated
@@ -520,21 +463,9 @@ func (c *Action) deleteEmptyParentDirectories(bucket, directory string) error {
 			return nil
 		}
 		if _, err := c.S3.DeleteObject(c.Ctx, bucket, directory, ""); err != nil {
-			return fmt.Errorf("delete empty directory %s: %s", c.S3Path(bucket, directory), FormatAPIError(err))
+			return fmt.Errorf("delete empty directory %s: %w", c.S3Path(bucket, directory), err)
 		}
 		directory = parentDirectory(directory)
-	}
-	return nil
-}
-
-func (c *Action) deleteBatch(bucket string, objects []s3iface.ObjectIdentifier) error {
-	result, err := c.S3.DeleteObjects(c.Ctx, bucket, objects, true)
-	if err != nil {
-		return fmt.Errorf("delete batch of %d: %s", len(objects), FormatAPIError(err))
-	}
-	if len(result.Errors) > 0 {
-		first := result.Errors[0]
-		return fmt.Errorf("delete batch of %d: %d object(s) failed (first %q: %s: %s)", len(objects), len(result.Errors), first.Key, first.Code, first.Message)
 	}
 	return nil
 }

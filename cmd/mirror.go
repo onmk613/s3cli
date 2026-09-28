@@ -5,8 +5,8 @@ import (
 
 	"s3cli/internal/action"
 	"s3cli/internal/config"
+	"s3cli/internal/i18n"
 	"s3cli/internal/s3path"
-	"s3cli/pkg/i18n"
 
 	"github.com/spf13/cobra"
 )
@@ -64,6 +64,10 @@ func newCopyMoveCmd(spec copyMoveSpec) *cobra.Command {
 	f.StringVar(&opt.Tags, "tags", "", spec.TagsDesc)
 	f.StringToStringVar(&opt.Metadata, "metadata", nil, i18n.T("Replace object metadata (x-amz-meta-*). Can repeat. Format: key=value", "替换对象元数据（x-amz-meta-*）。可重复。格式：key=value"))
 	f.BoolVarP(&opt.NoProgress, "quiet", "q", false, quietDesc())
+	f.IntVar(&opt.Concurrency, "concurrency", config.DefaultConcurrency, i18n.T("Number of concurrent files when copying/moving a directory", "目录复制/移动时的并发文件数"))
+	f.BoolVar(&opt.DryRun, "dry-run", false, i18n.T("Show what would be copied/moved without making any change", "只显示将复制/移动的内容，不做任何变更"))
+	f.StringSliceVar(&opt.Include, "include", nil, i18n.T("Only process keys matching this glob (relative to the source prefix; can repeat)", "只处理匹配该通配模式的 key（相对源前缀；可重复）"))
+	f.StringSliceVar(&opt.Exclude, "exclude", nil, i18n.T("Skip keys matching this glob (relative to the source prefix; can repeat)", "跳过匹配该通配模式的 key（相对源前缀；可重复）"))
 	return cmd
 }
 

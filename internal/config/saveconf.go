@@ -91,6 +91,7 @@ func saveConfig(confPath string) error {
 //   - multipart_chunk_size_mb: > 0 且 != 15 才写
 //   - max_retries: > 0 才写
 //   - tls_min_version: 非空且 != 默认 1.2 才写
+//   - 厂商差异开关: 非空 / true 才写 (缺省即严格 AWS 语义)
 func buildOutputMap(s Static) map[string]any {
 	m := map[string]any{
 		"access_key": s.AccessKey,
@@ -120,6 +121,24 @@ func buildOutputMap(s Static) map[string]any {
 	}
 	if v := strings.TrimSpace(s.TLSMinVersion); v != "" && v != DefaultTLSMinVersion {
 		m["tls_min_version"] = v
+	}
+	if s.LifecycleRootElement != "" {
+		m["lifecycle_root_element"] = s.LifecycleRootElement
+	}
+	if s.LambdaNotificationElement != "" {
+		m["lambda_notification_element"] = s.LambdaNotificationElement
+	}
+	if s.DisableRegionRedirect {
+		m["disable_region_redirect"] = true
+	}
+	if s.DisableRegionProbe {
+		m["disable_region_probe"] = true
+	}
+	if s.ForceUnsignedPayload {
+		m["force_unsigned_payload"] = true
+	}
+	if s.XMLNS != "" {
+		m["xmlns"] = s.XMLNS
 	}
 	return m
 }

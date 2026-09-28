@@ -4,7 +4,7 @@ import (
 	"fmt"
 
 	"s3cli/internal/config"
-	"s3cli/pkg/i18n"
+	"s3cli/internal/i18n"
 
 	"github.com/spf13/cobra"
 )

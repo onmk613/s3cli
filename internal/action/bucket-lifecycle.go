@@ -24,9 +24,9 @@ import (
 	"strings"
 	"time"
 
-	myprint "s3cli/pkg/fmtutil"
-	"s3cli/pkg/i18n"
-	s3 "s3cli/pkg/s3iface"
+	"s3cli/internal/api"
+	myprint "s3cli/internal/fmtutil"
+	"s3cli/internal/i18n"
 )
 
 // LifecycleOptions 控制 SetLifecycle 的参数 (兼容旧入口).
@@ -84,7 +84,7 @@ type ListLifecycleOptions struct {
 // SetLifecycle 设置生命周期: ConfigFile 非空时从本地文件 (JSON/XML) 加载,
 // 否则按 Prefix + TTL 生成一条过期规则. 两种模式必须给出其一.
 func (c *Action) SetLifecycle(opt LifecycleOptions, bucket string) error {
-	var cfg *s3.LifecycleConfig
+	var cfg *api.LifecycleConfig
 	if opt.ConfigFile != "" {
 		loaded, err := loadLifecycleFile(opt.ConfigFile)
 		if err != nil {
@@ -106,7 +106,7 @@ func (c *Action) SetLifecycle(opt LifecycleOptions, bucket string) error {
 		return err
 	}
 	if err := c.S3.SetBucketLifecycle(c.Ctx, bucket, cfg); err != nil {
-		return fmt.Errorf("set lifecycle %s: %s", bucket, FormatAPIError(err))
+		return fmt.Errorf("set lifecycle %s: %w", bucket, err)
 	}
 
 	myprint.PrintfBoldGreen(i18n.T("Lifecycle set for %s %s (%d rules)\n", "已为 %s %s 设置生命周期 (%d 条规则)\n"), c.Alias, bucket, len(cfg.Rules))
@@ -133,7 +133,7 @@ func (c *Action) SetLifecycleRule(opt LifecycleRuleOptions, bucket string) error
 		if cfg.Rules[i].ID == rule.ID {
 			cfg.Rules[i] = rule
 			if err := c.S3.SetBucketLifecycle(c.Ctx, bucket, cfg); err != nil {
-				return fmt.Errorf("set lifecycle rule %s: %s", bucket, FormatAPIError(err))
+				return fmt.Errorf("set lifecycle rule %s: %w", bucket, err)
 			}
 			myprint.PrintfBoldGreen(i18n.T("Lifecycle rule %s updated on %s %s\n", "生命周期规则 %s 已在 %s %s 上更新\n"), rule.ID, c.Alias, bucket)
 			return nil
@@ -141,7 +141,7 @@ func (c *Action) SetLifecycleRule(opt LifecycleRuleOptions, bucket string) error
 	}
 	cfg.Rules = append(cfg.Rules, rule)
 	if err := c.S3.SetBucketLifecycle(c.Ctx, bucket, cfg); err != nil {
-		return fmt.Errorf("set lifecycle rule %s: %s", bucket, FormatAPIError(err))
+		return fmt.Errorf("set lifecycle rule %s: %w", bucket, err)
 	}
 	myprint.PrintfBoldGreen(i18n.T("Lifecycle rule %s added to %s %s\n", "生命周期规则 %s 已添加到 %s %s\n"), rule.ID, c.Alias, bucket)
 	return nil
@@ -155,13 +155,12 @@ func (c *Action) RemoveLifecycleRules(opt RemoveLifecycleOptions, bucket string)
 			return errors.New(i18n.T("lifecycle remove: --all requires --force", "lifecycle remove: --all 必须配合 --force"))
 		}
 		if err := c.S3.DeleteBucketLifecycle(c.Ctx, bucket); err != nil {
-			// 无配置时视为已删除 (幂等)
-			var apiErr *s3.ErrorResponse
-			if errors.As(err, &apiErr) && (apiErr.Code == "NoSuchLifecycleConfiguration" || apiErr.StatusCode == 404) {
+			// 无配置时视为已删除 (幂等); 403 等真实错误必须上抛。
+			if api.IsNotFound(err) {
 				myprint.PrintfBoldGreen(i18n.T("Lifecycle deleted for %s %s\n", "已删除 %s %s 的生命周期配置\n"), c.Alias, bucket)
 				return nil
 			}
-			return fmt.Errorf("remove lifecycle %s: %s", bucket, FormatAPIError(err))
+			return fmt.Errorf("remove lifecycle %s: %w", bucket, err)
 		}
 		myprint.PrintfBoldGreen("Lifecycle deleted for %s %s\n", c.Alias, bucket)
 		return nil
@@ -191,18 +190,17 @@ func (c *Action) RemoveLifecycleRules(opt RemoveLifecycleOptions, bucket string)
 	// 此时改走 DeleteBucketLifecycle (与 --all 路径一致)。
 	if len(cfg.Rules) == 0 {
 		if err := c.S3.DeleteBucketLifecycle(c.Ctx, bucket); err != nil {
-			var apiErr *s3.ErrorResponse
-			if errors.As(err, &apiErr) && (apiErr.Code == "NoSuchLifecycleConfiguration" || apiErr.Code == "NoSuchBucket") {
+			if api.IsNotFound(err) {
 				myprint.PrintfBoldGreen(i18n.T("Lifecycle rule %s removed from %s %s\n", "生命周期规则 %s 已从 %s %s 移除\n"), opt.ID, c.Alias, bucket)
 				return nil
 			}
-			return fmt.Errorf("remove lifecycle %s: %s", bucket, FormatAPIError(err))
+			return fmt.Errorf("remove lifecycle %s: %w", bucket, err)
 		}
 		myprint.PrintfBoldGreen(i18n.T("Lifecycle rule %s removed from %s %s\n", "生命周期规则 %s 已从 %s %s 移除\n"), opt.ID, c.Alias, bucket)
 		return nil
 	}
 	if err := c.S3.SetBucketLifecycle(c.Ctx, bucket, cfg); err != nil {
-		return fmt.Errorf("remove lifecycle rule %s: %s", bucket, FormatAPIError(err))
+		return fmt.Errorf("remove lifecycle rule %s: %w", bucket, err)
 	}
 	myprint.PrintfBoldGreen(i18n.T("Lifecycle rule %s removed from %s %s\n", "生命周期规则 %s 已从 %s %s 移除\n"), opt.ID, c.Alias, bucket)
 	return nil
@@ -228,7 +226,7 @@ func (c *Action) ListLifecycle(bucket string, opt ListLifecycleOptions) error {
 	}
 	var sections []section
 
-	prefixOf := func(r s3.LifecycleRule) string {
+	prefixOf := func(r api.LifecycleRule) string {
 		if r.Filter != nil {
 			if r.Filter.Prefix != "" {
 				return r.Filter.Prefix
@@ -239,7 +237,7 @@ func (c *Action) ListLifecycle(bucket string, opt ListLifecycleOptions) error {
 		}
 		return "-"
 	}
-	tagsOf := func(r s3.LifecycleRule) string {
+	tagsOf := func(r api.LifecycleRule) string {
 		if r.Filter == nil {
 			return "-"
 		}
@@ -255,7 +253,7 @@ func (c *Action) ListLifecycle(bucket string, opt ListLifecycleOptions) error {
 		}
 		return "-"
 	}
-	base := func(r s3.LifecycleRule) [2]string { return [2]string{r.ID, r.Status} }
+	base := func(r api.LifecycleRule) [2]string { return [2]string{r.ID, r.Status} }
 
 	// 1) 当前版本过期 (Expiration)
 	if !opt.Transition {
@@ -433,8 +431,8 @@ func printLifecycleSection(title string, header []string, rows [][6]string) {
 }
 
 // buildLifecycleRule 按参数构造一条完整规则 (set 语义: 以显式字段为准).
-func buildLifecycleRule(opt LifecycleRuleOptions) (s3.LifecycleRule, error) {
-	rule := s3.LifecycleRule{
+func buildLifecycleRule(opt LifecycleRuleOptions) (api.LifecycleRule, error) {
+	rule := api.LifecycleRule{
 		ID:     opt.ID,
 		Status: "Enabled",
 		Filter: buildRuleFilter(opt.Prefix, opt.Tags, opt.SizeLT, opt.SizeGT),
@@ -450,7 +448,7 @@ func buildLifecycleRule(opt LifecycleRuleOptions) (s3.LifecycleRule, error) {
 	expiryCount := 0
 	if opt.ExpiryDays != nil {
 		days := *opt.ExpiryDays
-		rule.Expiration = &s3.Expiration{Days: &days}
+		rule.Expiration = &api.Expiration{Days: &days}
 		expiryCount++
 	}
 	if opt.ExpiryDate != nil {
@@ -458,12 +456,12 @@ func buildLifecycleRule(opt LifecycleRuleOptions) (s3.LifecycleRule, error) {
 			return rule, err
 		}
 		date, _ := normalizeLifecycleDate(*opt.ExpiryDate)
-		rule.Expiration = &s3.Expiration{Date: date}
+		rule.Expiration = &api.Expiration{Date: date}
 		expiryCount++
 	}
 	if opt.ExpireDeleteMarker != nil {
 		dm := *opt.ExpireDeleteMarker
-		rule.Expiration = &s3.Expiration{ExpiredObjectDeleteMarker: &dm}
+		rule.Expiration = &api.Expiration{ExpiredObjectDeleteMarker: &dm}
 		expiryCount++
 	}
 	if expiryCount > 1 {
@@ -472,7 +470,7 @@ func buildLifecycleRule(opt LifecycleRuleOptions) (s3.LifecycleRule, error) {
 	if opt.ExpireAllObjectVersions != nil {
 		all := *opt.ExpireAllObjectVersions
 		if rule.Expiration == nil {
-			rule.Expiration = &s3.Expiration{}
+			rule.Expiration = &api.Expiration{}
 		}
 		rule.Expiration.ExpiredObjectAllVersions = &all
 	}
@@ -482,13 +480,13 @@ func buildLifecycleRule(opt LifecycleRuleOptions) (s3.LifecycleRule, error) {
 			return rule, errors.New(i18n.T("--transition-tier is required when --transition-days is set", "设置 --transition-days 时必须提供 --transition-tier"))
 		}
 		days := *opt.TransitionDays
-		rule.Transitions = []s3.Transition{{Days: &days, StorageClass: strings.ToUpper(*opt.TransitionTier)}}
+		rule.Transitions = []api.Transition{{Days: &days, StorageClass: strings.ToUpper(*opt.TransitionTier)}}
 	} else if opt.TransitionTier != nil {
 		return rule, errors.New(i18n.T("--transition-days is required when --transition-tier is set", "设置 --transition-tier 时必须提供 --transition-days"))
 	}
 
 	if opt.NoncurrentExpireDays != nil || opt.NoncurrentExpireNewer != nil {
-		n := &s3.NoncurrentVersionExpiration{}
+		n := &api.NoncurrentVersionExpiration{}
 		if opt.NoncurrentExpireDays != nil {
 			d := *opt.NoncurrentExpireDays
 			n.NoncurrentDays = &d
@@ -505,7 +503,7 @@ func buildLifecycleRule(opt LifecycleRuleOptions) (s3.LifecycleRule, error) {
 			return rule, errors.New(i18n.T("--noncurrent-transition-tier is required when --noncurrent-transition-days is set", "设置 --noncurrent-transition-days 时必须提供 --noncurrent-transition-tier"))
 		}
 		days := *opt.NoncurrentTransitionDays
-		rule.NoncurrentVersionTransitions = []s3.NoncurrentVersionTransition{
+		rule.NoncurrentVersionTransitions = []api.NoncurrentVersionTransition{
 			{NoncurrentDays: &days, StorageClass: strings.ToUpper(*opt.NoncurrentTransitionTier)},
 		}
 	} else if opt.NoncurrentTransitionTier != nil {
@@ -524,9 +522,9 @@ func buildLifecycleRule(opt LifecycleRuleOptions) (s3.LifecycleRule, error) {
 
 // buildRuleFilter 构造 Filter:
 // 单个条件直接落到 Prefix/Tag/ObjectSize*; 多个条件合并到 And.
-func buildRuleFilter(prefix, tags *string, sizeLT, sizeGT *int64) *s3.Filter {
-	f := &s3.Filter{}
-	var tagList []s3.Tag
+func buildRuleFilter(prefix, tags *string, sizeLT, sizeGT *int64) *api.Filter {
+	f := &api.Filter{}
+	var tagList []api.Tag
 	predCount := 0
 	if tags != nil {
 		tagList = parseILMTags(*tags)
@@ -548,7 +546,7 @@ func buildRuleFilter(prefix, tags *string, sizeLT, sizeGT *int64) *s3.Filter {
 		return nil
 	}
 	if predCount >= 2 {
-		f.And = &s3.And{
+		f.And = &api.And{
 			Prefix:                f.Prefix,
 			Tags:                  tagList,
 			ObjectSizeLessThan:    f.ObjectSizeLessThan,
@@ -564,7 +562,7 @@ func buildRuleFilter(prefix, tags *string, sizeLT, sizeGT *int64) *s3.Filter {
 }
 
 // hasLifecycleAction 判断规则是否至少包含一个动作.
-func hasLifecycleAction(r s3.LifecycleRule) bool {
+func hasLifecycleAction(r api.LifecycleRule) bool {
 	if r.Expiration != nil {
 		return true
 	}
@@ -581,7 +579,7 @@ func hasLifecycleAction(r s3.LifecycleRule) bool {
 }
 
 // validateLifecycleConfig 校验整份配置的基本合法性.
-func validateLifecycleConfig(cfg *s3.LifecycleConfig) error {
+func validateLifecycleConfig(cfg *api.LifecycleConfig) error {
 	if len(cfg.Rules) == 0 {
 		return fmt.Errorf("no lifecycle rules configured")
 	}
@@ -622,7 +620,7 @@ func normalizeLifecycleDate(date string) (string, error) {
 
 // genLifecycleRuleID 按规则内容生成确定性 ID: <action>-<scope>-<hash8>.
 // 同一命令重复执行产生相同 ID, set 因此幂等 (不会追加重复规则).
-func genLifecycleRuleID(rule s3.LifecycleRule) string {
+func genLifecycleRuleID(rule api.LifecycleRule) string {
 	action := "rule"
 	switch {
 	case rule.Expiration != nil:
@@ -675,14 +673,14 @@ func sanitizeIDPart(s string) string {
 }
 
 // parseILMTags 解析 'k1=v1&k2=v2' 标签串; 无 '=' 的项 Key 生效、Value 为空.
-func parseILMTags(s string) []s3.Tag {
-	var out []s3.Tag
-	for _, part := range strings.Split(s, "&") {
+func parseILMTags(s string) []api.Tag {
+	var out []api.Tag
+	for part := range strings.SplitSeq(s, "&") {
 		if part == "" {
 			continue
 		}
 		kv := strings.SplitN(part, "=", 2)
-		t := s3.Tag{Key: kv[0]}
+		t := api.Tag{Key: kv[0]}
 		if len(kv) == 2 {
 			t.Value = kv[1]
 		}
@@ -691,46 +689,20 @@ func parseILMTags(s string) []s3.Tag {
 	return out
 }
 
-// ParseByteSize 解析大小字符串, 支持裸数字 (字节) 与带单位写法, 如
-// "1048576" / "1MiB" / "1MB" / "10k" / "1.5G". 单位均为 1024 进制.
+// ParseByteSize 解析大小字符串 (裸数字按字节, 或带 B/K/KB/KiB/M/MB/MiB/G/... 单位)。
+//
+// 实现在 fmtutil.ParseBytes —— 这里只补一层本地化的错误文案。曾经这里有第二份
+// 独立的解析器 (单位表与溢出保护都与 fmtutil 不同), 两边的行为会各自漂移。
 func ParseByteSize(s string) (int64, error) {
-	s = strings.TrimSpace(s)
-	if s == "" {
+	if strings.TrimSpace(s) == "" {
 		return 0, errors.New(i18n.T("empty size", "大小为必填项"))
 	}
-	i := 0
-	for i < len(s) {
-		c := s[i]
-		if (c >= '0' && c <= '9') || c == '.' || c == '-' {
-			i++
-			continue
-		}
-		break
+	v, err := myprint.ParseBytes(s)
+	if err != nil {
+		return 0, fmt.Errorf(i18n.T(
+			"invalid size %q: expected a positive number with an optional unit (B/K/KB/KiB/M/MB/MiB/G/GB/GiB/T/P)",
+			"大小 %q 无效: 应为正数, 可带单位 (B/K/KB/KiB/M/MB/MiB/G/GB/GiB/T/P)"), s)
 	}
-	numStr := s[:i]
-	unit := strings.ToLower(strings.TrimSpace(s[i:]))
-	n, err := strconv.ParseFloat(numStr, 64)
-	if err != nil || n <= 0 {
-		return 0, fmt.Errorf(i18n.T("invalid size %q: expected a positive number", "大小 %q 无效: 必须为正数"), s)
-	}
-	var mult float64
-	switch unit {
-	case "", "b":
-		mult = 1
-	case "k", "kb", "kib":
-		mult = 1 << 10
-	case "m", "mb", "mib":
-		mult = 1 << 20
-	case "g", "gb", "gib":
-		mult = 1 << 30
-	case "t", "tb", "tib":
-		mult = 1 << 40
-	case "p", "pb", "pib":
-		mult = 1 << 50
-	default:
-		return 0, fmt.Errorf(i18n.T("unknown size unit %q in %q: use B/K/M/G/T/P (KiB/MiB/GiB...)", "大小单位 %q 无效 (在 %q 中): 请使用 B/K/M/G/T/P (KiB/MiB/GiB...)"), unit, s)
-	}
-	v := int64(math.Round(n * mult))
 	if v <= 0 {
 		return 0, fmt.Errorf(i18n.T("invalid size %q", "大小 %q 无效"), s)
 	}
@@ -774,25 +746,25 @@ func detectConfigFormat(data []byte) ([]byte, string, error) {
 }
 
 // getLifecycle 读取桶生命周期配置; 桶无配置 (NoSuchLifecycleConfiguration) 时返回空配置.
-func (c *Action) getLifecycle(bucket string) (*s3.LifecycleConfig, error) {
+func (c *Action) getLifecycle(bucket string) (*api.LifecycleConfig, error) {
 	cfg, err := c.S3.GetBucketLifecycle(c.Ctx, bucket)
 	if err == nil {
 		if cfg == nil {
-			cfg = &s3.LifecycleConfig{}
+			cfg = &api.LifecycleConfig{}
 		}
 		return cfg, nil
 	}
-	var apiErr *s3.ErrorResponse
+	var apiErr *api.ErrorResponse
 	// 只把 "无配置" 当作空配置; 桶不存在 (NoSuchBucket, 同样是 404) 必须上抛,
 	// 否则 set 会对不存在的桶继续 PUT (部分服务端会静默接收, 产生孤儿配置)。
 	if errors.As(err, &apiErr) && apiErr.Code == "NoSuchLifecycleConfiguration" {
-		return &s3.LifecycleConfig{}, nil
+		return &api.LifecycleConfig{}, nil
 	}
-	return nil, fmt.Errorf("get lifecycle %s: %s", bucket, FormatAPIError(err))
+	return nil, fmt.Errorf("get lifecycle %s: %w", bucket, err)
 }
 
 // loadLifecycleFile 从本地文件加载生命周期配置 (自动识别 JSON / XML).
-func loadLifecycleFile(file string) (*s3.LifecycleConfig, error) {
+func loadLifecycleFile(file string) (*api.LifecycleConfig, error) {
 	data, format, err := loadAWSConfigArg(file)
 	if err != nil {
 		return nil, err
@@ -806,14 +778,14 @@ func loadLifecycleFile(file string) (*s3.LifecycleConfig, error) {
 
 // buildTTLLifecycle 按前缀 + 过期天数构造一条 Enabled 过期规则.
 // XMLNS 留空: SetBucketLifecycle -> LifecycleConfig.ToXML 会自动补齐.
-func buildTTLLifecycle(prefix string, days int) *s3.LifecycleConfig {
-	return &s3.LifecycleConfig{
-		Rules: []s3.LifecycleRule{
+func buildTTLLifecycle(prefix string, days int) *api.LifecycleConfig {
+	return &api.LifecycleConfig{
+		Rules: []api.LifecycleRule{
 			{
 				ID:     "ttl-expire",
 				Status: "Enabled",
-				Filter: &s3.Filter{Prefix: prefix},
-				Expiration: &s3.Expiration{
+				Filter: &api.Filter{Prefix: prefix},
+				Expiration: &api.Expiration{
 					Days: new(days),
 				},
 			},
@@ -862,24 +834,21 @@ func ParseTTLDays(s string) (int, error) {
 		return 0, fmt.Errorf("invalid --ttl unit %q: use d/h/w/m/y", unit)
 	}
 
-	d := int(math.Ceil(days))
-	if d < 1 {
-		d = 1
-	}
+	d := max(int(math.Ceil(days)), 1)
 	return d, nil
 }
 
 // parseLifecycleConfig 解析生命周期配置文件, 支持 JSON 和 XML 格式.
-func parseLifecycleConfig(data []byte, format string) (*s3.LifecycleConfig, error) {
+func parseLifecycleConfig(data []byte, format string) (*api.LifecycleConfig, error) {
 	switch format {
 	case "json":
-		var c s3.LifecycleConfig
+		var c api.LifecycleConfig
 		if err := unmarshalAWS(data, "json", &c); err != nil {
 			return nil, err
 		}
 		return &c, nil
 	case "xml":
-		return s3.ParseBucketLifecycleConfig(bytes.NewReader(data))
+		return api.ParseBucketLifecycleConfig(bytes.NewReader(data))
 	}
 	return nil, fmt.Errorf("unknown format %q", format)
 }

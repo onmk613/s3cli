@@ -8,12 +8,12 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"s3cli/pkg/fmtutil"
-	"s3cli/pkg/progress"
+	"s3cli/internal/fmtutil"
+	"s3cli/internal/progress"
 	"sync"
 	"sync/atomic"
 
-	"s3cli/pkg/s3iface"
+	"s3cli/internal/api"
 )
 
 // StreamJob 流式操作中的一个任务。
@@ -56,6 +56,11 @@ func RunStream(ctx context.Context, cfg StreamConfig) error {
 	if cfg.Concurrency <= 0 {
 		cfg.Concurrency = defaultConcurrency
 	}
+	// 兜底校验: 各命令入口已校验, 这里是最后一道防线 —— 下面立刻会用
+	// cfg.Concurrency*2 申请 channel 缓冲并起 N 个 worker。
+	if err := validateConcurrency(cfg.Concurrency); err != nil {
+		return err
+	}
 
 	pt := progress.New()
 	if cfg.NoProgress {
@@ -77,9 +82,7 @@ func RunStream(ctx context.Context, cfg StreamConfig) error {
 	countCtx, cancelCount := context.WithCancel(ctx)
 	defer cancelCount()
 	if countTotals {
-		countWg.Add(1)
-		go func() {
-			defer countWg.Done()
+		countWg.Go(func() {
 			if err := cfg.Count(countCtx, func(n, size int64) {
 				if n != 0 {
 					pt.AddTotal(n)
@@ -90,7 +93,7 @@ func RunStream(ctx context.Context, cfg StreamConfig) error {
 			}); err != nil && countCtx.Err() == nil {
 				countFailed.Store(true)
 			}
-		}()
+		})
 	}
 
 	jobs := make(chan StreamJob, cfg.Concurrency*2)
@@ -104,20 +107,16 @@ func RunStream(ctx context.Context, cfg StreamConfig) error {
 	// 协程：RunStream 返回前统一等待扫描链路全部结束，杜绝返回后仍有后台
 	// 扫描 IO/协程泄漏（如目录遍历继续 walk、分页请求仍 in-flight）。
 	var scanWg sync.WaitGroup
-	scanWg.Add(1)
-	go func() {
-		defer scanWg.Done()
+	scanWg.Go(func() {
 		defer close(jobs)
 		// 包一层 channel，扫描器每写入一个 job 就累加一次 total。
 		relay := make(chan StreamJob, cfg.Concurrency*2)
-		scanWg.Add(1)
-		go func() {
-			defer scanWg.Done()
+		scanWg.Go(func() {
 			defer close(relay)
 			if err := cfg.Scan(ctx, relay); err != nil {
 				scanErr <- err
 			}
-		}()
+		})
 		for j := range relay {
 			if !countTotals || countFailed.Load() {
 				pt.AddTotal(1)
@@ -128,23 +127,29 @@ func RunStream(ctx context.Context, cfg StreamConfig) error {
 			case <-ctx.Done():
 				// 提前退出时排空 relay, 否则内部 Scan 协程会永远阻塞在写入上。
 				// drain 协程纳入 scanWg, 由 RunStream 返回前统一等待。
-				scanWg.Add(1)
-				go func() {
-					defer scanWg.Done()
+				scanWg.Go(func() {
 					for range relay {
 					}
-				}()
+				})
 				return
 			}
 		}
-	}()
+	})
 
 	// 工作协程：只负责处理与累加 done。
+	//
+	// 失败既要逐个报给进度条（用户能看到具体是哪个文件），也要汇总后由
+	// RunStream 返回 —— 否则 `put -r` / `get -r` / `cp -r` / `mv -r` 在部分
+	// 文件失败时仍以退出码 0 结束，脚本无法感知数据没传全。
+	var (
+		failMu    sync.Mutex
+		failCount int64
+		firstErr  error
+		attempted atomic.Int64
+	)
 	var wg sync.WaitGroup
 	for i := 0; i < cfg.Concurrency; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			for j := range jobs {
 				// 已被取消（Ctrl+C）则停止处理剩余任务，
 				// 不把中断导致的错误误记为"失败"。
@@ -154,35 +159,44 @@ func RunStream(ctx context.Context, cfg StreamConfig) error {
 
 				// reported 记录本任务已通过 report 累加到进度条的字节数，
 				// 便于成功后对账补齐、失败后回退，保证进度条字节精确。
-				var reported int64
+				// 用 atomic: 分片上传会从多个 worker goroutine 并发回调 report。
+				var reported atomic.Int64
 				report := func(n int64) {
 					if n == 0 {
 						return
 					}
-					reported += n
+					reported.Add(n)
 					pt.AddTotalSizeDone(n)
 				}
 
 				msg := fmt.Sprintf("%s → %s (%s)", j.Src, j.Dst, fmtutil.FormatBytes(j.Size))
+				attempted.Add(1)
 				if err := cfg.Work(ctx, j, report); err != nil {
 					if ctx.Err() != nil {
 						return
 					}
 					// 失败：回退本任务已上报的字节，避免失败文件虚增进度。
-					if reported != 0 {
-						pt.AddTotalSizeDone(-reported)
+					if r := reported.Load(); r != 0 {
+						pt.AddTotalSizeDone(-r)
 					}
 					pt.AddFailed(1, fmt.Sprintf("Failed %s: %s", msg, err))
+
+					failMu.Lock()
+					failCount++
+					if firstErr == nil {
+						firstErr = fmt.Errorf("%s: %w", msg, err)
+					}
+					failMu.Unlock()
 				} else {
 					// 成功：对账，把进度精确补齐到 job.Size。
 					// 适配无分片进度的操作（report 未被调用，reported==0）。
-					if diff := j.Size - reported; diff != 0 {
+					if diff := j.Size - reported.Load(); diff != 0 {
 						pt.AddTotalSizeDone(diff)
 					}
 					pt.AddTotalDone(1, msg)
 				}
 			}
-		}()
+		})
 	}
 	wg.Wait()
 
@@ -195,11 +209,31 @@ func RunStream(ctx context.Context, cfg StreamConfig) error {
 	// 再检查扫描错误并返回, 杜绝 RunStream 返回后仍有后台 IO/协程泄漏。
 	scanWg.Wait()
 
+	// 用户取消必须显式上抛 ctx 错误。
+	//
+	// 各 worker 在 ctx 取消时是"提前 return"而不是记 failCount (见上面的
+	// `if ctx.Err() != nil { return }`), 扫描器同理; 若列举早已结束 (典型场景:
+	// 列举很快、传输很久), scanErr 也是空的 —— 于是本函数会返回 nil, 上层
+	// cmd/root.go 便以退出码 0 结束。Ctrl+C 被报告成"传输成功", 脚本据此认为
+	// 数据已完整同步。这里补上唯一的权威判据: ctx 已取消就是未完成。
+	// 放在 scanErr 之前: 取消时的扫描错误通常是取消的副作用, 报 130 更准确。
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+
 	// 检查扫描错误
 	select {
 	case err := <-scanErr:
 		return err
 	default:
+	}
+
+	// 任务失败必须上抛: 进度条已经把每个失败对象打印给用户, 这里返回一个
+	// 带计数的汇总错误 (firstErr 保留错误链, 供退出码映射识别 404/403)。
+	// 用户主动取消时不算失败 —— 各 worker 已提前返回, 不进入 failCount。
+	if failCount > 0 {
+		return fmt.Errorf("%d of %d transfer(s) failed; first: %w",
+			failCount, attempted.Load(), firstErr)
 	}
 	return nil
 }
@@ -208,7 +242,7 @@ func RunStream(ctx context.Context, cfg StreamConfig) error {
 // 用作 StreamConfig.Count 的 S3 端实现（get/cp/mv 的预统计）。
 // skipDirMarker=true 时跳过 0 字节的目录占位对象（与 get 的扫描逻辑保持一致）。
 func (c *Action) countS3Prefix(ctx context.Context, bucket, prefix string, skipDirMarker bool, add func(n, size int64)) error {
-	return c.forEachObject(ctx, bucket, prefix, func(obj s3iface.ObjectInfo) error {
+	return c.forEachObject(ctx, bucket, prefix, func(obj api.ObjectInfo) error {
 		size := obj.Size
 		if skipDirMarker && size == 0 {
 			key := obj.Key

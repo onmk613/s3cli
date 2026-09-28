@@ -6,8 +6,8 @@ import (
 	"strings"
 
 	"s3cli/internal/action"
+	"s3cli/internal/i18n"
 	"s3cli/internal/s3path"
-	"s3cli/pkg/i18n"
 
 	"github.com/spf13/cobra"
 )

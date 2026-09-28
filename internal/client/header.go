@@ -1,3 +1,10 @@
+// header.go 解析 CLI 的 -H/--header 自定义请求头。
+//
+// 这些头由 api 层在 SigV4 签名之前注入 (api.Options.ExtraHeaders), 而不是通过
+// RoundTripper 在签名之后追加 —— 签名覆盖除 Authorization / User-Agent /
+// Accept-Encoding 之外的全部头, 事后注入会让服务端算出不同的规范请求, 结果是
+// 毫无线索的 SignatureDoesNotMatch。
+
 package client
 
 import (
@@ -6,14 +13,14 @@ import (
 	"strings"
 )
 
-// headerTransport 在请求发出前注入自定义 HTTP header。
-type headerTransport struct {
-	base    http.RoundTripper
-	headers http.Header
-}
-
-func newHeaderTransport(base http.RoundTripper, items []string) (http.RoundTripper, error) {
-	t := &headerTransport{base: base, headers: http.Header{}}
+// parseCustomHeaders 把 "key:value" / "key=value" 形式的重复参数解析为 http.Header。
+//
+// 分隔符取 ':' 与 '=' 中先出现的一个 (兼容两种写法)。返回 nil 表示未指定任何头。
+func parseCustomHeaders(items []string) (http.Header, error) {
+	if len(items) == 0 {
+		return nil, nil
+	}
+	headers := make(http.Header, len(items))
 	for _, raw := range items {
 		ci := strings.IndexByte(raw, ':')
 		ei := strings.IndexByte(raw, '=')
@@ -27,37 +34,15 @@ func newHeaderTransport(base http.RoundTripper, items []string) (http.RoundTripp
 		case ei >= 0:
 			sep = ei
 		default:
-			return base, fmt.Errorf("invalid header %q, expected format key:value or key=value", raw)
+			return nil, fmt.Errorf("invalid header %q, expected format key:value or key=value", raw)
 		}
 
 		key := strings.TrimSpace(raw[:sep])
 		val := strings.TrimSpace(raw[sep+1:])
 		if key == "" {
-			return base, fmt.Errorf("invalid header %q, key is empty", raw)
+			return nil, fmt.Errorf("invalid header %q, key is empty", raw)
 		}
-		switch http.CanonicalHeaderKey(key) {
-		case "Host", "Content-Length":
-			// Host 与 Content-Length 是 SigV4 签名头 (SignedHeaders 恒含 host,
-			// 带体请求含 content-length)。签名发生在 api 层, 而 transport 改写
-			// 发生在签名之后, 事后改写必然导致服务端 SignatureDoesNotMatch,
-			// 且报错毫无线索 —— 不如在配置期直接拒绝并说明原因。
-			// 需要换 host 请改 endpoint (alias 的 host_base), 而不是 --header。
-			return base, fmt.Errorf("header %q cannot be overridden: Host and Content-Length are part of the SigV4 signature and overriding them after signing always yields SignatureDoesNotMatch (adjust the alias endpoint instead)", key)
-		default:
-			t.headers.Add(key, val)
-		}
+		headers.Add(key, val)
 	}
-	return t, nil
-}
-
-func (t *headerTransport) RoundTrip(req *http.Request) (*http.Response, error) {
-	// 克隆请求, 避免修改调用方持有的 *http.Request(SDK 可能重试)。
-	clone := req.Clone(req.Context())
-	for k, vs := range t.headers {
-		clone.Header.Del(k) // 用户指定的值覆盖 SDK 默认值
-		for _, v := range vs {
-			clone.Header.Add(k, v)
-		}
-	}
-	return t.base.RoundTrip(clone)
+	return headers, nil
 }

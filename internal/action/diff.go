@@ -13,20 +13,21 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"s3cli/internal/action/render"
 	"s3cli/internal/s3path"
 	"sort"
 	"strings"
 	"sync"
 	"sync/atomic"
 
-	myprint "s3cli/pkg/fmtutil"
-	"s3cli/pkg/i18n"
-	"s3cli/pkg/s3iface"
+	"s3cli/internal/api"
+	myprint "s3cli/internal/fmtutil"
+	"s3cli/internal/i18n"
 )
 
 type DiffEndpoint struct {
 	IsS3          bool
-	S3            s3iface.S3Operations
+	S3            api.S3Operations
 	Ctx           context.Context
 	Alias         string
 	Bucket        string
@@ -80,7 +81,7 @@ type fileEntry struct {
 //   - 否则视为本地路径（不要求文件存在；后续会单独检查）
 //
 // 调用方需提供一个判断 alias 是否存在的回调（保持 action 包不依赖 config）。
-func ParseDiffArg(ctx context.Context, arg string, aliasExists func(string) bool, makeClient func(*s3path.Path) (s3iface.S3Operations, error)) (*DiffEndpoint, error) {
+func ParseDiffArg(ctx context.Context, arg string, aliasExists func(string) bool, makeClient func(*s3path.Path) (api.S3Operations, error)) (*DiffEndpoint, error) {
 	// 先尝试 ParseS3Path
 	if colon := strings.Index(arg, ":"); colon > 0 {
 		alias := arg[:colon]
@@ -126,6 +127,10 @@ func Diff(opt DiffOptions) error {
 	}
 	if opt.Concurrency <= 0 {
 		opt.Concurrency = defaultConcurrency
+	}
+	// 数值上界校验: 目录比对会用 opt.Concurrency 申请信号量 channel。
+	if err := validateConcurrency(opt.Concurrency); err != nil {
+		return err
 	}
 
 	aIsDir, aErr := endpointIsDir(opt.A)
@@ -210,19 +215,19 @@ func diffSingleFile(a, b *DiffEndpoint, mode DiffMode, jsonOut bool) error {
 		switch {
 		case ea.Size != eb.Size:
 			differ = append(differ, fmt.Sprintf(i18n.T("%s vs %s (size %s vs %s)", "%s 与 %s（大小 %s 与 %s）"),
-				a.String(), b.String(), FormatBytes(ea.Size), FormatBytes(eb.Size)))
+				a.String(), b.String(), myprint.FormatBytes(ea.Size), myprint.FormatBytes(eb.Size)))
 		case mode == DiffModeSize:
 			identical = append(identical, fmt.Sprintf(i18n.T("%s vs %s (size %s)", "%s 与 %s（大小 %s）"),
-				a.String(), b.String(), FormatBytes(ea.Size)))
+				a.String(), b.String(), myprint.FormatBytes(ea.Size)))
 		case mode == DiffModeQuick && mtimeComparable && ea.Mtime != eb.Mtime:
 			differ = append(differ, fmt.Sprintf(i18n.T("%s vs %s (mtime %d vs %d)", "%s 与 %s（mtime %d 与 %d）"),
 				a.String(), b.String(), ea.Mtime, eb.Mtime))
 		case mode == DiffModeQuick && mtimeComparable:
 			identical = append(identical, fmt.Sprintf(i18n.T("%s vs %s (size %s, mtime match)", "%s 与 %s（大小 %s，mtime 一致）"),
-				a.String(), b.String(), FormatBytes(ea.Size)))
+				a.String(), b.String(), myprint.FormatBytes(ea.Size)))
 		case mode == DiffModeQuick:
 			identical = append(identical, fmt.Sprintf(i18n.T("%s vs %s (size %s, mtime not comparable local<->s3)", "%s 与 %s（大小 %s，本地与 S3 的 mtime 不可比，已跳过）"),
-				a.String(), b.String(), FormatBytes(ea.Size)))
+				a.String(), b.String(), myprint.FormatBytes(ea.Size)))
 		default: // MD5 模式：流式对比
 			equal, err := compareContent(a, "", b, "")
 			if err != nil {
@@ -232,7 +237,7 @@ func diffSingleFile(a, b *DiffEndpoint, mode DiffMode, jsonOut bool) error {
 				differ = append(differ, fmt.Sprintf(i18n.T("%s vs %s (content)", "%s 与 %s（内容不同）"), a.String(), b.String()))
 			} else {
 				identical = append(identical, fmt.Sprintf(i18n.T("%s vs %s (size %s, md5 match)", "%s 与 %s（大小 %s，md5 一致）"),
-					a.String(), b.String(), FormatBytes(ea.Size)))
+					a.String(), b.String(), myprint.FormatBytes(ea.Size)))
 			}
 		}
 		return printDiffJSON(DiffOptions{Mode: mode, A: a, B: b}, nil, nil, identical, differ, 0)
@@ -241,13 +246,13 @@ func diffSingleFile(a, b *DiffEndpoint, mode DiffMode, jsonOut bool) error {
 	if ea.Size != eb.Size {
 		myprint.PrintfRed(i18n.T("DIFFER  %s  vs  %s  (size %s vs %s)\n", "DIFFER  %s 与 %s（大小 %s 与 %s）\n"),
 			a.String(), b.String(),
-			FormatBytes(ea.Size), FormatBytes(eb.Size))
+			myprint.FormatBytes(ea.Size), myprint.FormatBytes(eb.Size))
 		return errDiffer
 	}
 
 	if mode == DiffModeSize {
 		myprint.PrintfGreen(i18n.T("OK      %s  vs  %s  (size %s)\n", "OK      %s 与 %s（大小 %s）\n"),
-			a.String(), b.String(), FormatBytes(ea.Size))
+			a.String(), b.String(), myprint.FormatBytes(ea.Size))
 		return nil
 	}
 	if mode == DiffModeQuick {
@@ -255,7 +260,7 @@ func diffSingleFile(a, b *DiffEndpoint, mode DiffMode, jsonOut bool) error {
 		// (后者是上传时刻), 跨来源比较几乎必然误报 DIFFER —— 退化为仅比 size。
 		if a.IsS3 != b.IsS3 {
 			myprint.PrintfGreen(i18n.T("OK      %s  vs  %s  (size %s, mtime not comparable local<->s3)\n", "OK      %s 与 %s（大小 %s，本地与 S3 的 mtime 不可比，已跳过）\n"),
-				a.String(), b.String(), FormatBytes(ea.Size))
+				a.String(), b.String(), myprint.FormatBytes(ea.Size))
 			return nil
 		}
 		if ea.Mtime != eb.Mtime {
@@ -264,7 +269,7 @@ func diffSingleFile(a, b *DiffEndpoint, mode DiffMode, jsonOut bool) error {
 			return errDiffer
 		}
 		myprint.PrintfGreen(i18n.T("OK      %s  vs  %s  (size %s, mtime match)\n", "OK      %s 与 %s（大小 %s，mtime 一致）\n"),
-			a.String(), b.String(), FormatBytes(ea.Size))
+			a.String(), b.String(), myprint.FormatBytes(ea.Size))
 		return nil
 	}
 
@@ -278,12 +283,17 @@ func diffSingleFile(a, b *DiffEndpoint, mode DiffMode, jsonOut bool) error {
 		return errDiffer
 	}
 	myprint.PrintfGreen(i18n.T("OK      %s  vs  %s  (size %s, md5 match)\n", "OK      %s 与 %s（大小 %s，md5 一致）\n"),
-		a.String(), b.String(), FormatBytes(ea.Size))
+		a.String(), b.String(), myprint.FormatBytes(ea.Size))
 	return nil
 }
 
 // errDiffer 用于让上层（命令）以非零退出码退出。
-var errDiffer = errors.New(i18n.T("differences found", "存在差异"))
+//
+// 刻意使用固定的英文标识串而非 i18n.T: 包级变量的初始化发生在 main 之前,
+// 那时 i18n.Resolve 还没跑, 语言必然是默认值 —— 把 i18n 放进包级初始化
+// 只会固化一个错误语言。这个文本也不会展示给用户 (只用于 errors.Is),
+// 差异提示由调用点用 i18n.T 单独渲染。
+var errDiffer = errors.New("differences found")
 
 // IsDifferErr 命令层用它来识别“存在差异”这一非错误异常。
 func IsDifferErr(err error) bool { return errors.Is(err, errDiffer) }
@@ -335,7 +345,7 @@ func diffDirectories(opt DiffOptions) error {
 		// size 先比
 		if ea.Size != eb.Size {
 			addDiffer(fmt.Sprintf(i18n.T("%s  (size %s vs %s)", "%s（大小 %s 与 %s）"),
-				rel, FormatBytes(ea.Size), FormatBytes(eb.Size)))
+				rel, myprint.FormatBytes(ea.Size), myprint.FormatBytes(eb.Size)))
 			continue
 		}
 		switch opt.Mode {
@@ -388,12 +398,14 @@ func diffDirectories(opt DiffOptions) error {
 
 	wg.Wait()
 
-	// 用户主动取消（Ctrl+C）：结果不完整，静默返回，不打印误导性的摘要。
+	// 用户主动取消（Ctrl+C）：结果不完整, 不打印误导性的摘要, 但必须把 ctx
+	// 错误上抛 —— 返回 nil 会让 cmd 层的 isCanceled 永远看不到取消, diff 被
+	// 中断时反而以退出码 0 结束, 脚本会误以为"比对完成且无差异"。
 	if opt.A.Ctx != nil && opt.A.Ctx.Err() != nil {
-		return nil
+		return opt.A.Ctx.Err()
 	}
 	if opt.B.Ctx != nil && opt.B.Ctx.Err() != nil {
-		return nil
+		return opt.B.Ctx.Err()
 	}
 
 	sort.Strings(onlyA)
@@ -441,10 +453,10 @@ func diffDirectories(opt DiffOptions) error {
 	return nil
 }
 
-// printDiffJSON 输出 diff 的单个 JSON 文档 (schema 见 doc/OUTPUT_SCHEMA.md)。
+// printDiffJSON 输出 diff 的单个 JSON 文档 (schema 见 docs/OUTPUT_SCHEMA.md)。
 // differ/onlyA/onlyB/identical 均为与文本模式一致的描述字符串; 空集合输出 [] 而非 null。
 func printDiffJSON(opt DiffOptions, onlyA, onlyB, identical, differ []string, failed int64) error {
-	return printJSONLine(map[string]any{
+	return render.JSONLine(map[string]any{
 		"mode":           opt.Mode,
 		"a":              opt.A.String(),
 		"b":              opt.B.String(),
@@ -513,19 +525,19 @@ func listLocalDir(root string) ([]fileEntry, error) {
 	return out, nil
 }
 
-func listS3Dir(cli s3iface.S3Operations, ctx context.Context, alias, bucket, prefix string) ([]fileEntry, error) {
+func listS3Dir(cli api.S3Operations, ctx context.Context, alias, bucket, prefix string) ([]fileEntry, error) {
 	// 规范化 prefix，确保 "目录" 风格
 	if prefix != "" && !strings.HasSuffix(prefix, "/") {
 		prefix += "/"
 	}
-	paginator := cli.NewListObjectsV2Paginator(bucket, &s3iface.ListObjectsV2Options{
+	paginator := cli.NewListObjectsV2Paginator(bucket, &api.ListObjectsV2Options{
 		Prefix: prefix,
 	})
 	var out []fileEntry
 	for paginator.HasMorePages() {
 		page, err := paginator.NextPage(ctx)
 		if err != nil {
-			return nil, fmt.Errorf("list %s: %s", S3PathStatic(alias, bucket, prefix), FormatAPIError(err))
+			return nil, fmt.Errorf("list %s: %w", S3PathStatic(alias, bucket, prefix), err)
 		}
 		for _, obj := range page.Contents {
 			key := obj.Key
@@ -574,7 +586,7 @@ func statOneFile(e *DiffEndpoint, rel string) (fileEntry, error) {
 	}
 	out, err := e.S3.HeadObject(e.Ctx, e.Bucket, key, "")
 	if err != nil {
-		return fileEntry{}, fmt.Errorf("head %s: %s", S3PathStatic(e.Alias, e.Bucket, key), FormatAPIError(err))
+		return fileEntry{}, fmt.Errorf("head %s: %w", S3PathStatic(e.Alias, e.Bucket, key), err)
 	}
 	mtime := int64(0)
 	if !out.LastModified.IsZero() {
@@ -668,7 +680,7 @@ func openReader(e *DiffEndpoint, rel string) (io.ReadCloser, error) {
 	}
 	out, err := e.S3.GetObject(e.Ctx, e.Bucket, key, nil)
 	if err != nil {
-		return nil, fmt.Errorf("get %s: %s", S3PathStatic(e.Alias, e.Bucket, key), FormatAPIError(err))
+		return nil, fmt.Errorf("get %s: %w", S3PathStatic(e.Alias, e.Bucket, key), err)
 	}
 	return out.Body, nil
 }

@@ -4,17 +4,17 @@ import (
 	"errors"
 	"fmt"
 	"reflect"
+	"s3cli/internal/api"
 	"s3cli/internal/config"
+	"s3cli/internal/kvcache"
 	"s3cli/internal/s3path"
-	"s3cli/pkg/kvcache"
-	"s3cli/pkg/s3iface"
 )
 
 // cachedBackend 缓存项: 已构造的后端客户端 + 构造它时使用的静态配置。
 // 命中缓存时会比对静态配置: 同一进程内别名配置变化 (如未来的交互式/常驻模式)
 // 时自动重建, 不再返回陈旧凭证的客户端。
 type cachedBackend struct {
-	client s3iface.S3Operations
+	client api.S3Operations
 	static config.Static
 }
 
@@ -22,9 +22,9 @@ type cachedBackend struct {
 var S3Clients = &kvcache.Cache[string, cachedBackend]{}
 
 // NewClient 按 alias 的静态配置构造编译期选定的 S3 后端客户端,
-// 返回 s3iface.S3Operations 接口. 底层实现为自建请求的 api.Client,
+// 返回 api.S3Operations 接口. 底层实现为自建请求的 api.Client,
 // 调用方不感知具体实现.
-func NewClient(alias string, static config.Static) (s3iface.S3Operations, error) {
+func NewClient(alias string, static config.Static) (api.S3Operations, error) {
 	if cached, ok := S3Clients.Get(alias); ok && reflect.DeepEqual(cached.static, static) {
 		return cached.client, nil
 	}
@@ -38,7 +38,7 @@ func NewClient(alias string, static config.Static) (s3iface.S3Operations, error)
 	return s3Client, nil
 }
 
-func ParsePathAndNewClient(arg string) (s3iface.S3Operations, *s3path.Path, error) {
+func ParsePathAndNewClient(arg string) (api.S3Operations, *s3path.Path, error) {
 	p, err := s3path.Parse(arg)
 
 	// ErrAliasOnly 表明输入只包含 alias，不包含 bucket/key 部分：

@@ -1,0 +1,220 @@
+// signer.go 实现 AWS Signature Version 4 签名 (纯标准库, 不依赖 SDK).
+// 包含规范请求构建、签名密钥派生、HMAC-SHA256 计算等 SigV4 所需的全部逻辑.
+// 参考: https://docs.aws.amazon.com/AmazonS3/latest/developerguide/sigv4-auth-using-authorization-header.html
+
+package api
+
+import (
+	"net/http"
+	"net/url"
+	"strconv"
+	"strings"
+	"time"
+)
+
+const (
+	signV4Algorithm = "AWS4-HMAC-SHA256"
+	serviceS3       = "s3"
+	iso8601Format   = "20060102T150405Z"
+	yyyymmddFormat  = "20060102"
+)
+
+// 这些头不参与签名 (随代理/网络层变化).
+var ignoredSigningHeaders = map[string]struct{}{
+	"Authorization":   {},
+	"User-Agent":      {},
+	"Accept-Encoding": {},
+}
+
+// signV4 对请求做 SigV4 header 签名 (service 固定为 s3), 直接修改 req 的 Header.
+// https://docs.aws.amazon.com/AmazonS3/latest/developerguide/sigv4-auth-using-authorization-header.html
+func signV4(req *http.Request, accessKey, secretKey, region, payloadSHA256Hex string, t time.Time) {
+	signV4Service(req, accessKey, secretKey, region, serviceS3, payloadSHA256Hex, t)
+}
+
+// signV4Service 是 signV4 的通用形式, service 可指定 (如官方向量回归测试用 "service")。
+func signV4Service(req *http.Request, accessKey, secretKey, region, service, payloadSHA256Hex string, t time.Time) {
+	amzDate := t.Format(iso8601Format)
+	scopeDate := t.Format(yyyymmddFormat)
+
+	req.Header.Set("X-Amz-Date", amzDate)
+	if req.Header.Get("Host") == "" {
+		req.Host = req.URL.Host
+	}
+
+	canonicalRequest, signedHeaders := buildCanonicalRequest(req, payloadSHA256Hex)
+
+	scope := strings.Join([]string{scopeDate, region, service, "aws4_request"}, "/")
+	stringToSign := strings.Join([]string{
+		signV4Algorithm,
+		amzDate,
+		scope,
+		sumSHA256Hex([]byte(canonicalRequest)),
+	}, "\n")
+
+	signingKey := deriveSigningKeyService(secretKey, scopeDate, region, service)
+	signature := hexHMAC(signingKey, stringToSign)
+
+	authorization := signV4Algorithm +
+		" Credential=" + accessKey + "/" + scope +
+		", SignedHeaders=" + signedHeaders +
+		", Signature=" + signature
+
+	req.Header.Set("Authorization", authorization)
+}
+
+// buildCanonicalRequest 构建规范请求串, 返回 (canonicalRequest, signedHeaders).
+func buildCanonicalRequest(req *http.Request, payloadSHA256Hex string) (string, string) {
+	// 1. 规范 URI
+	canonicalURI := req.URL.EscapedPath()
+	if canonicalURI == "" {
+		canonicalURI = "/"
+	}
+
+	// 2. 规范查询串: 键值均编码, 按键排序
+	canonicalQuery := canonicalQueryString(req.URL.Query())
+
+	// 3. 规范头: 小写键, 值做 SigV4 空白归一, 按键排序
+	headerMap := make(map[string]string, len(req.Header)+1)
+
+	// Go 把 Host 放在 req.Host / req.URL.Host 而不是 Header, 需单独纳入签名。
+	// 这里先写 map 再统一从 map 生成 key 列表: 若改成"先 append host 再由 Header
+	// 覆盖", headerKeys 会出现两次 "host", SignedHeaders 变成 "host;host",
+	// 服务端必然判定签名不匹配。
+	host := req.Host
+	if host == "" {
+		host = req.URL.Host
+	}
+	headerMap["host"] = host
+
+	// Go 把 Content-Length 放在 req.ContentLength 而不是 Header, 需单独纳入签名
+	if req.ContentLength > 0 {
+		headerMap["content-length"] = strconv.FormatInt(req.ContentLength, 10)
+	}
+
+	for k, vv := range req.Header {
+		if _, skip := ignoredSigningHeaders[http.CanonicalHeaderKey(k)]; skip {
+			continue
+		}
+		lk := strings.ToLower(k)
+		vals := make([]string, len(vv))
+		for i, v := range vv {
+			vals[i] = normalizeHeaderValue(v)
+		}
+		headerMap[lk] = strings.Join(vals, ",")
+	}
+
+	headerKeys := make([]string, 0, len(headerMap))
+	for k := range headerMap {
+		headerKeys = append(headerKeys, k)
+	}
+	sortStrings(headerKeys)
+
+	var canonicalHeaders strings.Builder
+	for _, k := range headerKeys {
+		canonicalHeaders.WriteString(k)
+		canonicalHeaders.WriteByte(':')
+		canonicalHeaders.WriteString(headerMap[k])
+		canonicalHeaders.WriteByte('\n')
+	}
+	signedHeaders := strings.Join(headerKeys, ";")
+
+	if payloadSHA256Hex == "" {
+		payloadSHA256Hex = unsignedPayload
+	}
+
+	canonicalRequest := strings.Join([]string{
+		req.Method,
+		canonicalURI,
+		canonicalQuery,
+		canonicalHeaders.String(),
+		signedHeaders,
+		payloadSHA256Hex,
+	}, "\n")
+
+	return canonicalRequest, signedHeaders
+}
+
+// normalizeHeaderValue 按 SigV4 规范处理头值: 去掉首尾空白, 并把内部连续的
+// 空白 (空格 / 制表符) 折叠为单个空格。
+//
+// 服务端在验签前会做同样的归一化, 若客户端只做 TrimSpace, 任何含连续空格的
+// 头值 (x-amz-meta-*、Content-Disposition、x-amz-grant-*) 都会算出不同的
+// 规范请求, 表现为 SignatureDoesNotMatch。
+func normalizeHeaderValue(v string) string {
+	v = strings.TrimSpace(v)
+	if !strings.ContainsAny(v, " \t") {
+		return v
+	}
+	var b strings.Builder
+	b.Grow(len(v))
+	inSpace := false
+	for i := 0; i < len(v); i++ {
+		c := v[i]
+		if c == ' ' || c == '\t' {
+			inSpace = true
+			continue
+		}
+		if inSpace {
+			b.WriteByte(' ')
+			inSpace = false
+		}
+		b.WriteByte(c)
+	}
+	return b.String()
+}
+
+// canonicalQueryString 生成 SigV4 规范查询串.
+func canonicalQueryString(v url.Values) string {
+	if len(v) == 0 {
+		return ""
+	}
+	keys := make([]string, 0, len(v))
+	for k := range v {
+		keys = append(keys, k)
+	}
+	sortStrings(keys)
+
+	var buf strings.Builder
+	for _, k := range keys {
+		vals := append([]string(nil), v[k]...)
+		sortStrings(vals)
+		for _, val := range vals {
+			if buf.Len() > 0 {
+				buf.WriteByte('&')
+			}
+			buf.WriteString(percentEncode(k))
+			buf.WriteByte('=')
+			buf.WriteString(percentEncode(val))
+		}
+	}
+	return buf.String()
+}
+
+// deriveSigningKey 派生 SigV4 签名密钥 (service 固定为 s3).
+func deriveSigningKey(secretKey, scopeDate, region string) []byte {
+	return deriveSigningKeyService(secretKey, scopeDate, region, serviceS3)
+}
+
+// deriveSigningKeyService 是 deriveSigningKey 的通用形式。
+func deriveSigningKeyService(secretKey, scopeDate, region, service string) []byte {
+	dateKey := sumHMACSHA256([]byte("AWS4"+secretKey), []byte(scopeDate))
+	regionKey := sumHMACSHA256(dateKey, []byte(region))
+	serviceKey := sumHMACSHA256(regionKey, []byte(service))
+	return sumHMACSHA256(serviceKey, []byte("aws4_request"))
+}
+
+func hexHMAC(key []byte, data string) string {
+	return sumSHA256HexOfHMAC(key, data)
+}
+
+func sumSHA256HexOfHMAC(key []byte, data string) string {
+	mac := sumHMACSHA256(key, []byte(data))
+	const hextable = "0123456789abcdef"
+	out := make([]byte, len(mac)*2)
+	for i, b := range mac {
+		out[i*2] = hextable[b>>4]
+		out[i*2+1] = hextable[b&0x0f]
+	}
+	return string(out)
+}

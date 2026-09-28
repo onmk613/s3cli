@@ -3,6 +3,7 @@ package action
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -22,8 +23,14 @@ func TestIsCanceled(t *testing.T) {
 	if IsCanceled(context.DeadlineExceeded) {
 		t.Error("DeadlineExceeded must NOT be treated as user cancellation")
 	}
-	if !IsCanceled(errors.New("something: context canceled")) {
-		t.Error("text fallback should detect 'context canceled'")
+	// 包裹后的 context.Canceled 必须仍能被识别 (%w 保留了错误链)。
+	wrapped := fmt.Errorf("upload x: %w", fmt.Errorf("write part: %w", context.Canceled))
+	if !IsCanceled(wrapped) {
+		t.Error("wrapped context.Canceled should be detected via errors.Is")
+	}
+	// 纯文本不再兜底: 全代码库统一用 %w, 文本匹配只会掩盖包装错误。
+	if IsCanceled(errors.New("something: context canceled")) {
+		t.Error("bare text must NOT be treated as cancellation (chain is authoritative)")
 	}
 	if IsCanceled(errors.New("network error")) {
 		t.Error("unrelated error not canceled")
@@ -230,13 +237,13 @@ func TestParentDirectory(t *testing.T) {
 }
 
 func TestNormalizeMirrorPrefix(t *testing.T) {
-	if got := normalizeMirrorPrefix("dir"); got != "dir/" {
+	if got := normalizeDirPrefix("dir"); got != "dir/" {
 		t.Errorf("got %q", got)
 	}
-	if got := normalizeMirrorPrefix("dir/"); got != "dir/" {
+	if got := normalizeDirPrefix("dir/"); got != "dir/" {
 		t.Errorf("got %q", got)
 	}
-	if got := normalizeMirrorPrefix(""); got != "" {
+	if got := normalizeDirPrefix(""); got != "" {
 		t.Errorf("got %q", got)
 	}
 }

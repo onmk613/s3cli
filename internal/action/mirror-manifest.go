@@ -11,7 +11,7 @@ import (
 	"strings"
 	"sync"
 
-	"s3cli/pkg/i18n"
+	"s3cli/internal/i18n"
 )
 
 // mirrorManifest is append-only: a key is recorded only after its copy

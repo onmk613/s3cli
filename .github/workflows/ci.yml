@@ -1,0 +1,75 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  unit:
+    name: 单元测试
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.27"
+      - name: gofmt 检查
+        run: test -z "$(gofmt -l main.go cmd internal)"
+      - name: go vet
+        run: go vet ./...
+      - name: go test (race + coverage)
+        run: go test -race -coverprofile=coverage.out -covermode=atomic ./...
+      - name: 覆盖率摘要
+        if: always()
+        run: |
+          {
+            echo "## 测试覆盖率"
+            echo '```'
+            go tool cover -func=coverage.out | tail -1
+            echo ""
+            echo "覆盖率最低的函数 (定位盲区):"
+            go tool cover -func=coverage.out | grep -v '^total' | awk '{print $3, $1}' | sort -rn | tail -15
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+      - name: 上传覆盖率报告
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: coverage-report
+          path: coverage.out
+          retention-days: 14
+
+  lint:
+    name: 静态检查 (golangci-lint + govulncheck)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.27"
+      - name: golangci-lint
+        run: |
+          go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.13.1
+          golangci-lint run ./...
+      - name: govulncheck
+        run: go run golang.org/x/vuln/cmd/govulncheck@latest ./...
+
+  cross-build:
+    name: 交叉编译冒烟 (build.sh all)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.27"
+      - name: 全平台编译
+        run: bash build.sh all
+      - name: 产物完整性
+        run: |
+          ls -l bin/
+          test -x bin/s3cli-linux-amd64
+          test -x bin/s3cli-linux-arm64
+          test -x bin/s3cli-darwin-amd64
+          test -x bin/s3cli-darwin-arm64
+          test -f bin/s3cli-windows-amd64.exe

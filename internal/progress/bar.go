@@ -1,0 +1,234 @@
+package progress
+
+import (
+	"fmt"
+	"math"
+	"strings"
+	"time"
+
+	"s3cli/internal/fmtutil"
+)
+
+// buildBar 构建进度条字符串
+// buildBar 构建进度条字符串（前后留出边距，防止塞满终端）
+func (pt *Tracker) buildBar(wd int) string {
+	t := pt.total.Load()
+	d := pt.done.Load()
+	tsz := pt.totalSz.Load()
+	dsz := pt.doneSz.Load()
+	startAt := time.Since(pt.startAt)
+
+	// 1. 计算速率
+	rate := "0 B/s"
+	if dsz > 0 && startAt.Seconds() > 0.5 {
+		rate = formatBytes(int64(float64(dsz)/startAt.Seconds())) + "/s"
+	}
+
+	// 2. 计算 ETA 与耗时
+	var eta string
+	elapsedStr := formatDuration(startAt)
+	// 条件：已传输数据 > 0 且 运行超过 0.1 秒（防止除以 0）
+	if dsz > 0 && tsz > dsz && startAt.Seconds() > 0.1 {
+		// 1. 计算总平均速率 (Byte/s)
+		avgRate := float64(dsz) / startAt.Seconds()
+
+		// 2. 剩余字节数 / 平均速率 = 剩余秒数
+		if avgRate > 0 {
+			remainingBytes := float64(tsz - dsz)
+			etaSec := remainingBytes / avgRate
+
+			// 3. 转换为 Duration 并格式化
+			etaDuration := time.Duration(etaSec * float64(time.Second))
+			etaStr := formatDuration(etaDuration)
+
+			eta = fmt.Sprintf("%s | %s", elapsedStr, etaStr)
+		}
+	} else {
+		eta = elapsedStr
+	}
+
+	// 3. 计算百分比 (%3d%% 保持 3 位右对齐，避免 9% -> 10% 时整个进度条左右抖动)
+	var pct float64
+	if tsz > 0 {
+		pct = float64(dsz) * 100 / float64(tsz)
+	}
+	if pct > 100 {
+		pct = 100
+	}
+
+	// 4. 构建右侧文本
+	countStr := fmt.Sprintf("%d/%d", d, t)
+	sizeStr := fmt.Sprintf("%s/%s | %s | %3d%%", formatBytes(dsz), formatBytes(tsz), rate, int(pct))
+
+	var rightStr string
+	if t > 0 && tsz > 0 {
+		rightStr = fmt.Sprintf("%s | %s | %s", countStr, sizeStr, eta)
+	} else if t > 0 && tsz == 0 {
+		rightStr = countStr
+	} else if t == 0 && tsz > 0 {
+		rightStr = fmt.Sprintf("%s | %s", sizeStr, eta)
+	}
+
+	// 5. 定义左右边距与内部元素间距
+	// marginWidth = 左边留1格 + 右边留1格 = 2 列
+	const marginWidth = 2
+
+	st := pt.style
+	labelWidth := stringWidth(pt.label)
+	rightWidth := stringWidth(rightStr)
+	bracketWidth := stringWidth(st.LeftBracket) + stringWidth(st.RightBracket)
+
+	// 内部空格计算：label后1空格 + bar与rightStr间1空格
+	spacingWidth := 0
+	if labelWidth > 0 {
+		spacingWidth++
+	}
+	if rightWidth > 0 {
+		spacingWidth++
+	}
+
+	// 留给进度条主体 [████░░░] 的列宽 = 终端总宽 - 左右外边距 - 组件宽度 - 内部间距
+	barArea := wd - marginWidth - labelWidth - rightWidth - spacingWidth - bracketWidth
+
+	// 6. 宽度极窄时的安全降级
+	if barArea < 5 {
+		if labelWidth > 0 && wd >= labelWidth+rightWidth+marginWidth+1 {
+			return pt.colorizeIf(pt.color.Stats, fmt.Sprintf(" %s %s ", pt.label, rightStr))
+		}
+		return pt.colorizeIf(pt.color.Stats, fmt.Sprintf(" %s ", rightStr))
+	}
+
+	// 7. 生成进度条主体
+	bar := buildStyledBar(st, barArea, pct/100)
+
+	// 8. 组合输出（首尾显式拼接 " "，留出视觉呼吸感）
+	var sb strings.Builder
+	sb.WriteString(" ") // 1. 左侧留空 1 格
+
+	if labelWidth > 0 {
+		sb.WriteString(pt.label)
+		sb.WriteString(" ")
+	}
+	sb.WriteString(bar)
+	if rightWidth > 0 {
+		sb.WriteString(" ")
+		sb.WriteString(rightStr)
+	}
+
+	sb.WriteString(" ") // 2. 右侧留空 1 格
+
+	return pt.colorizeIf(pt.color.Stats, sb.String())
+}
+
+// buildStyledBar 按给定样式绘制进度条主体（含边框与着色）。
+// barArea 为进度条内部可用的显示列宽，frac 为完成比例 [0,1]。
+func buildStyledBar(st *Style, barArea int, frac float64) string {
+	if frac < 0 {
+		frac = 0
+	}
+	if frac > 1 {
+		frac = 1
+	}
+
+	// Filled/Head/Empty 单元均按 1 显示列计（▓/█/░/=/# 等）。
+	hasHead := st.Head != ""
+
+	// 以列宽为单位计算已完成列数
+	filledCols := min(int(frac*float64(barArea)+0.5), barArea)
+
+	// 预留进度头的 1 列：未满且有 Head 时，头占 1 列
+	useHead := hasHead && filledCols < barArea && filledCols >= 1
+	if useHead {
+		filledCols--
+	}
+	emptyCols := barArea - filledCols
+	if useHead {
+		emptyCols--
+	}
+	if emptyCols < 0 {
+		emptyCols = 0
+	}
+
+	var b strings.Builder
+	b.WriteString(st.LeftBracket)
+	b.WriteString(repeatToWidth(st.Filled, filledCols))
+	if useHead {
+		b.WriteString(st.Head)
+	}
+	b.WriteString(repeatToWidth(st.Empty, emptyCols))
+	b.WriteString(st.RightBracket)
+	return b.String()
+}
+
+// repeatToWidth 用占 1 显示列的 unit 字符填满 cols 个显示列
+// unit 为空时用空格填充, 每个 unit 占 1 列，因此重复 cols 次即可
+func repeatToWidth(unit string, cols int) string {
+	if cols <= 0 {
+		return ""
+	}
+	if unit == "" {
+		return strings.Repeat(" ", cols)
+	}
+	// strings.Repeat 内部会预分配容量并用 copy 填充，比手动 Builder 循环更快
+	return strings.Repeat(unit, cols)
+}
+
+// colorizeIf 按统一颜色开关决定是否给文本着色：
+// 仅当 !quiet 且全局 fmtutil.ColorEnabled() 时用 fmtutil.WrapANSI 包裹
+// ANSI 颜色码，其余情况（quiet 模式 / 全局 --no-color / 非终端）原样返回
+// 纯文本。所有进度条着色调用点（渲染帧、quiet 原始行、Stop 汇总与失败明细）
+// 均应走此方法。
+func (pt *Tracker) colorizeIf(color, s string) string {
+	if color == "" || pt.quiet.Load() || !fmtutil.ColorEnabled() {
+		return s
+	}
+	return fmtutil.WrapANSI(color, s)
+}
+
+// formatDuration 将 time.Duration 格式化为易读字符串
+// 示例：1h2m3s / 2m3s / 3s
+func formatDuration(d time.Duration) string {
+	if d < 0 {
+		d = -d
+	}
+	d = d.Round(time.Second)
+
+	hours := int(d.Hours())
+	minutes := int(d.Minutes()) % 60
+	seconds := int(d.Seconds()) % 60
+
+	if hours > 0 {
+		return fmt.Sprintf("%dh%02dm%02ds", hours, minutes, seconds)
+	}
+	if minutes > 0 {
+		return fmt.Sprintf("%dm%02ds", minutes, seconds)
+	}
+	return fmt.Sprintf("%ds", seconds)
+}
+
+// stringWidth 计算字符串在终端中的实际显示列宽。
+// 复用 fmtutil.DisplayWidth：内部先剥离 ANSI 转义序列，再按
+// Unicode East Asian Width 计算（CJK 全角/宽字符记 2 列），
+// 避免直接 len() 把 UTF-8 字节数当成列数（如中文 3 字节却只占 2 列）。
+// barArea = 终端宽 - 各组件显示列宽, 因此宽度口径必须与实际渲染一致。
+func stringWidth(s string) int {
+	return fmtutil.DisplayWidth(s)
+}
+
+func formatBytes(bytes int64) string {
+	if bytes <= 0 {
+		return "0B"
+	}
+	// 单位扩展到 PB: 封顶 GB 会让 TB 级传输显示成 "1024GB" (保持进度条紧凑的无空格风格)。
+	units := []string{"B", "KB", "MB", "GB", "TB", "PB"}
+	base := 1024.0
+	exp := int(math.Log(float64(bytes)) / math.Log(base))
+	if exp >= len(units) {
+		exp = len(units) - 1
+	}
+	value := float64(bytes) / math.Pow(base, float64(exp))
+	s := fmt.Sprintf("%.2f", value)
+	s = strings.TrimRight(s, "0")
+	s = strings.TrimRight(s, ".")
+	return fmt.Sprintf("%s%s", s, units[exp])
+}

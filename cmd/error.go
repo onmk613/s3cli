@@ -4,27 +4,22 @@ import (
 	"context"
 	"errors"
 	"s3cli/internal/action"
-	myprint "s3cli/pkg/fmtutil"
-	"s3cli/pkg/s3iface"
-	"strings"
+	"s3cli/internal/api"
+	myprint "s3cli/internal/fmtutil"
 )
 
 // errAlreadyDisplayed 是一个哨兵错误：表示错误已通过 displayError 输出给用户，
 // 上层（NewRootCmd）不应再次打印，只需据此返回非零退出码。
 var errAlreadyDisplayed = errors.New("error already displayed")
 
-// formatUserError 将内部 error 转换为对用户友好地显示信息。
-func formatUserError(err error) error {
-	if err == nil {
-		return nil
-	}
-	// 对 S3 API 错误 (api.ErrorResponse) 做友好格式化
-	return action.FormatAPIError(err)
-}
-
 // displayError 向用户输出错误（统一入口）。
+//
+// 不再做二次格式化: *api.ErrorResponse 的 Error() 已是人类可读的
+// "Code: Message", 上层包装也都用 %w 保留了上下文与类型链, 直接打印即可
+// 既得到 "list objects: NoSuchBucket: ..." 这样完整的错误串, 又能让
+// exitCodeForError 通过 errors.As 穿透到 *api.ErrorResponse。
 func displayError(err error) {
-	myprint.PrintlnBoldRed(formatUserError(err))
+	myprint.PrintlnBoldRed(err)
 }
 
 // isCanceled 判断错误是否由用户主动取消（Ctrl+C）引起。
@@ -50,13 +45,12 @@ func exitCodeForError(err error) int {
 	if action.IsCanceled(err) {
 		return exitCanceled
 	}
-	if apiErr, ok := errors.AsType[*s3iface.ErrorResponse](err); ok {
-		switch {
-		case apiErr.StatusCode == 404 || strings.Contains(apiErr.Code, "NoSuch"):
-			return exitNotFound
-		case apiErr.StatusCode == 403 || strings.Contains(apiErr.Code, "AccessDenied"):
-			return exitForbidden
-		}
+	// 判定口径统一由 api 包提供, 避免这里再写一份 404/403 嗅探。
+	switch {
+	case api.IsNotFound(err):
+		return exitNotFound
+	case api.IsAccessDenied(err):
+		return exitForbidden
 	}
 	if action.IsDifferErr(err) {
 		return exitDiffer

@@ -10,9 +10,9 @@ import (
 	"testing"
 
 	"s3cli/internal/action"
+	"s3cli/internal/api"
 	"s3cli/internal/config"
 	"s3cli/internal/s3path"
-	"s3cli/pkg/s3iface"
 
 	"github.com/spf13/cobra"
 )
@@ -28,7 +28,7 @@ func snapshotConfig(t *testing.T) func() {
 }
 
 func TestWrapDisplayed(t *testing.T) {
-	orig := &s3iface.ErrorResponse{Code: "X", StatusCode: 404}
+	orig := &api.ErrorResponse{Code: "X", StatusCode: 404}
 	wrapped := wrapDisplayed(orig)
 	if !errors.Is(wrapped, errAlreadyDisplayed) {
 		t.Error("should wrap errAlreadyDisplayed")
@@ -47,11 +47,11 @@ func TestExitCodeForError(t *testing.T) {
 		{"nil", nil, exitOK},
 		{"generic", errors.New("boom"), exitGeneric},
 		{"canceled", context.Canceled, exitCanceled},
-		{"status404", &s3iface.ErrorResponse{StatusCode: 404}, exitNotFound},
-		{"status403", &s3iface.ErrorResponse{StatusCode: 403}, exitForbidden},
-		{"codeNoSuchKey", &s3iface.ErrorResponse{Code: "NoSuchKey"}, exitNotFound},
-		{"codeAccessDenied", &s3iface.ErrorResponse{Code: "AccessDenied"}, exitForbidden},
-		{"wrappedDisplayed404", fmt.Errorf("%w: %w", errAlreadyDisplayed, &s3iface.ErrorResponse{StatusCode: 404}), exitNotFound},
+		{"status404", &api.ErrorResponse{StatusCode: 404}, exitNotFound},
+		{"status403", &api.ErrorResponse{StatusCode: 403}, exitForbidden},
+		{"codeNoSuchKey", &api.ErrorResponse{Code: "NoSuchKey"}, exitNotFound},
+		{"codeAccessDenied", &api.ErrorResponse{Code: "AccessDenied"}, exitForbidden},
+		{"wrappedDisplayed404", fmt.Errorf("%w: %w", errAlreadyDisplayed, &api.ErrorResponse{StatusCode: 404}), exitNotFound},
 		{"wrappedGeneric", fmt.Errorf("%w: %w", errAlreadyDisplayed, errors.New("boom")), exitGeneric},
 	}
 	for _, tc := range cases {

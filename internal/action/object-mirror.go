@@ -12,15 +12,17 @@ package action
 import (
 	"errors"
 	"fmt"
+	"s3cli/internal/i18n"
+	"s3cli/internal/progress"
 	"s3cli/internal/s3path"
-	"s3cli/pkg/i18n"
-	"s3cli/pkg/progress"
 	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
 
-	myprint "s3cli/pkg/fmtutil"
+	myprint "s3cli/internal/fmtutil"
+
+	"s3cli/internal/api"
 )
 
 // =============== 配置 ===============
@@ -133,6 +135,13 @@ func resolveMirrorPlan(cfg MirrorOptions) (*mirrorPlan, error) {
 	if cfg.Concurrency <= 0 {
 		cfg.Concurrency = defaultConcurrency
 	}
+	// 数值上界校验: copyAndDelete 会用 cfg.Concurrency 申请信号量 channel。
+	if err := validateConcurrency(cfg.Concurrency); err != nil {
+		return nil, err
+	}
+	if err := validatePartSizeMB(cfg.PartSizeMB); err != nil {
+		return nil, err
+	}
 
 	tgtClient := cfg.Tgt.Client
 	tgtBucket := cfg.Tgt.Bucket
@@ -143,6 +152,11 @@ func resolveMirrorPlan(cfg MirrorOptions) (*mirrorPlan, error) {
 	// 仅前缀可能因 trailing 语义而追加源目录名 —— 见规则 4)。
 	state, err := tgtClient.DestStateOf(tgtBucket, tgtPrefix)
 	if err != nil {
+		// 探测失败 (403 / 网络错误) 会改变前缀解析结果, 直接影响 --remove 的
+		// 删除范围, 因此与 cp/mv 保持一致: 明确告警, 而不是静默当成"不存在"。
+		myprint.PrintfYellow(i18n.T(
+			"mirror: cannot determine target state (treated as not-exist): %s\n",
+			"mirror：无法判定目标状态（按不存在处理）：%s\n"), err)
 		state = s3path.DestNone
 	}
 	if state == s3path.DestFile {
@@ -157,8 +171,8 @@ func resolveMirrorPlan(cfg MirrorOptions) (*mirrorPlan, error) {
 
 	// 源/目标前缀统一规范化为 "dir/" 形态, 避免裸前缀列举时的前缀碰撞
 	// (src "dir" 会误匹配 "dir2/x"; tgt "out" 会在 --remove 时误删 "out2/y")。
-	srcPrefix = normalizeMirrorPrefix(srcPrefix)
-	tgtPrefix = normalizeMirrorPrefix(tgtPrefix)
+	srcPrefix = normalizeDirPrefix(srcPrefix)
+	tgtPrefix = normalizeDirPrefix(tgtPrefix)
 
 	sameEP := sameEndpoint(cfg.Src, cfg.Tgt)
 	// 同 endpoint + 同 bucket 时, 禁止源/目标前缀互相包含:
@@ -252,7 +266,7 @@ func (p *mirrorPlan) copyAndDelete(actions <-chan diffAction, listErrCh chan err
 
 		if p.cfg.SizeLimit > 0 && a.size > p.cfg.SizeLimit {
 			skipped.Add(1)
-			myprint.Printf(i18n.T("SKIP (size > limit): %s (%s)\n", "SKIP（大小超限）：%s（%s）\n"), a.rel, FormatBytes(a.size))
+			myprint.Printf(i18n.T("SKIP (size > limit): %s (%s)\n", "SKIP（大小超限）：%s（%s）\n"), a.rel, myprint.FormatBytes(a.size))
 			continue
 		}
 
@@ -298,7 +312,7 @@ func (p *mirrorPlan) copyAndDelete(actions <-chan diffAction, listErrCh chan err
 			return fmt.Errorf(i18n.T("mirror planned to delete %d objects, exceeding --max-delete=%d", "镜像计划删除 %d 个对象，超过 --max-delete=%d"), len(toDelete), p.cfg.MaxDelete)
 		}
 		myprint.Printf(i18n.T("Deleting %d extra objects on target...\n", "正在删除目标端 %d 个多余对象...\n"), len(toDelete))
-		if err := deleteObjectsBatch(p.tgtClient, p.tgtBucket, toDelete); err != nil {
+		if err := p.tgtClient.deleteKeysInBatches(p.tgtClient.Ctx, p.tgtBucket, toDelete); err != nil {
 			deleteErr = err
 			myprint.PrintfRed(i18n.T("delete error: %v\n", "删除错误：%v\n"), err)
 		} else {
@@ -327,26 +341,27 @@ func (p *mirrorPlan) copyOne(pt *progress.Tracker, rel string, objSize int64, co
 	tgtKey := joinKey(p.tgtPrefix, rel)
 
 	// report 实时上报本对象传输的字节增量; reported 用于成功对账 / 失败回退。
-	var reported int64
+	var reported atomic.Int64
 	report := func(n int64) {
 		if n == 0 {
 			return
 		}
-		atomic.AddInt64(&reported, n)
+		reported.Add(n)
 		pt.AddTotalSizeDone(n)
 	}
 
 	var err error
 	if p.sameEP {
 		// 服务端 CopyObject 无分片进度, 不传 report, 靠成功后对账补齐。
-		err = copyObjectSameEndpoint(p.srcClient, p.srcBucket, srcKey, p.tgtBucket, tgtKey, p.cfg.StorageClass)
+		err = p.srcClient.copyObjectSameEndpoint(p.srcBucket, srcKey, p.tgtBucket, tgtKey,
+			&api.CopyObjectOptions{StorageClass: p.cfg.StorageClass})
 	} else {
 		err = copyObjectCrossEndpoint(p.srcClient, p.tgtClient, p.srcBucket, srcKey, p.tgtBucket, tgtKey, p.cfg.StorageClass, p.partSize, report)
 	}
 	msg := fmt.Sprintf("%s → %s", p.srcClient.S3Path(p.srcBucket, srcKey), p.tgtClient.S3Path(p.tgtBucket, tgtKey))
 	if err != nil {
 		// 失败: 回退已上报字节, 避免虚增进度。
-		if r := atomic.LoadInt64(&reported); r != 0 {
+		if r := reported.Load(); r != 0 {
 			pt.AddTotalSizeDone(-r)
 		}
 		// 用户主动取消 (Ctrl+C) 导致的在途错误不计为失败, 静默跳过。
@@ -358,7 +373,7 @@ func (p *mirrorPlan) copyOne(pt *progress.Tracker, rel string, objSize int64, co
 		return false
 	}
 	// 成功: 对账, 把进度精确补齐到 objSize (适配服务端 copy / 跨端分片偏差)。
-	if d := objSize - atomic.LoadInt64(&reported); d != 0 {
+	if d := objSize - reported.Load(); d != 0 {
 		pt.AddTotalSizeDone(d)
 	}
 	copied.Add(1)

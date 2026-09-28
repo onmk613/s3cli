@@ -3,8 +3,9 @@ package cmd
 import (
 	"fmt"
 	"s3cli/internal/action"
+	"s3cli/internal/config"
+	"s3cli/internal/i18n"
 	"s3cli/internal/s3path"
-	"s3cli/pkg/i18n"
 
 	"github.com/spf13/cobra"
 )
@@ -33,12 +34,12 @@ func LifecycleListCmd() *cobra.Command {
 		ValidArgsFunction: AutoCompleteBucket,
 		Args:              cobra.MinimumNArgs(1),
 		RunE: NewRunE(func(S3 action.Action, dst *s3path.Path) error {
+			opt.JSON = config.G.F.JSON
 			return S3.ListLifecycle(dst.Bucket, opt)
 		}),
 	}
 	cmd.Flags().BoolVar(&opt.Expiry, "expiry", false, i18n.T("Display only expiration fields", "只显示过期相关字段"))
 	cmd.Flags().BoolVar(&opt.Transition, "transition", false, i18n.T("Display only transition fields", "只显示转换相关字段"))
-	cmd.Flags().BoolVar(&opt.JSON, "json", false, jsonOutputDesc())
 	return cmd
 }
 

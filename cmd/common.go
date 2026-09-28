@@ -6,8 +6,8 @@ import (
 	"fmt"
 	"s3cli/internal/action"
 	"s3cli/internal/client"
+	"s3cli/internal/i18n"
 	"s3cli/internal/s3path"
-	"s3cli/pkg/i18n"
 
 	"github.com/spf13/cobra"
 )
@@ -23,9 +23,6 @@ const (
 
 // 常见 flag 的共享双语描述，集中定义以保证多个命令间的文案一致、单一维护点。
 // 以函数形式返回 T() 结果：语言在命令构建前已解析，此处求值时机安全。
-func jsonOutputDesc() string {
-	return i18n.T("Output format: text or json (supported commands emit structured results)", "输出格式：text 或 json（受支持的命令输出结构化结果）")
-}
 
 func vidAliasDesc() string {
 	return i18n.T("Alias of --version-id", "--version-id 的别名")

@@ -140,6 +140,34 @@ func TestBuildOutputMap(t *testing.T) {
 	}
 }
 
+// TestBuildOutputMapQuirks 厂商差异开关: 零值 (严格 AWS 语义) 一律裁剪,
+// 只有显式设置过才写盘, 避免配置文件被默认值污染。
+func TestBuildOutputMapQuirks(t *testing.T) {
+	base := Static{AccessKey: "a", SecretKey: "s", HostBase: "h"}
+	m := buildOutputMap(base)
+	for _, k := range []string{"lifecycle_root_element", "lambda_notification_element",
+		"disable_region_redirect", "disable_region_probe", "force_unsigned_payload", "xmlns"} {
+		if _, ok := m[k]; ok {
+			t.Errorf("零值开关 %q 应被裁剪: %v", k, m)
+		}
+	}
+
+	full := base
+	full.LifecycleRootElement = "BucketLifecycleConfiguration"
+	full.LambdaNotificationElement = "lambda"
+	full.DisableRegionRedirect = true
+	full.DisableRegionProbe = true
+	full.ForceUnsignedPayload = true
+	full.XMLNS = "http://ns.example/"
+	m = buildOutputMap(full)
+	for _, k := range []string{"lifecycle_root_element", "lambda_notification_element",
+		"disable_region_redirect", "disable_region_probe", "force_unsigned_payload", "xmlns"} {
+		if _, ok := m[k]; !ok {
+			t.Errorf("已设置的开关 %q 丢失: %v", k, m)
+		}
+	}
+}
+
 // TestSaveConfigSyncsDir rename 之后应 best-effort fsync 目录, 保证 rename 落盘。
 func TestSaveConfigSyncsDir(t *testing.T) {
 	snapshotHooks(t)

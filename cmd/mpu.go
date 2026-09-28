@@ -2,8 +2,9 @@ package cmd
 
 import (
 	"s3cli/internal/action"
+	"s3cli/internal/config"
+	"s3cli/internal/i18n"
 	"s3cli/internal/s3path"
-	"s3cli/pkg/i18n"
 
 	"github.com/spf13/cobra"
 )
@@ -27,10 +28,10 @@ func newMpuLocalListCmd() *cobra.Command {
 		Aliases: []string{"ls-local"},
 		Short:   i18n.T("List local resumable multipart states", "列出本地可恢复的分段上传状态"),
 		RunE: NewRunELocal(func(_ *cobra.Command, _ []string) error {
+			opt.OutputToJSON = config.G.F.JSON
 			return action.MpuLocalList(opt)
 		}),
 	}
-	cmd.Flags().BoolVar(&opt.OutputToJSON, "json", false, jsonOutputDesc())
 	return cmd
 }
 
@@ -42,10 +43,10 @@ func newMpuLocalClearCmd() *cobra.Command {
 		Short:   i18n.T("Remove one local resumable multipart state", "删除一个本地可恢复的分段上传状态"),
 		Args:    cobra.ExactArgs(1),
 		RunE: NewRunELocal(func(_ *cobra.Command, args []string) error {
+			opt.OutputToJSON = config.G.F.JSON
 			return action.MpuLocalClear(args[0], opt)
 		}),
 	}
-	cmd.Flags().BoolVar(&opt.OutputToJSON, "json", false, jsonOutputDesc())
 	return cmd
 }
 
@@ -58,10 +59,10 @@ func newMpuListCmd() *cobra.Command {
 		Args:              cobra.MinimumNArgs(1),
 		ValidArgsFunction: AutoCompletePath,
 		RunE: NewRunE(func(S3 action.Action, dst *s3path.Path) error {
+			opt.JSON = config.G.F.JSON
 			return S3.MpuList(opt, dst.Bucket, dst.Key)
 		}),
 	}
-	cmd.Flags().BoolVar(&opt.JSON, "json", false, jsonOutputDesc())
 	return cmd
 }
 

@@ -7,8 +7,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"s3cli/pkg/api"
-	"s3cli/pkg/s3iface"
+	"s3cli/internal/api"
 )
 
 // TestActionParityS3API 用 api.Client 后端跑 runParityScenarios.
@@ -26,5 +25,5 @@ func TestActionParityS3API(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	runParityScenarios(t, "api-builtin", s3iface.S3Operations(builtin))
+	runParityScenarios(t, "api-builtin", api.S3Operations(builtin))
 }

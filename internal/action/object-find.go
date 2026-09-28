@@ -11,13 +11,15 @@ import (
 	"fmt"
 	"path"
 	"regexp"
+	"slices"
 	"sort"
 	"strings"
 	"time"
 
-	myprint "s3cli/pkg/fmtutil"
-	"s3cli/pkg/i18n"
-	"s3cli/pkg/s3iface"
+	"s3cli/internal/action/render"
+	"s3cli/internal/api"
+	myprint "s3cli/internal/fmtutil"
+	"s3cli/internal/i18n"
 )
 
 // FindOptions find 命令参数.
@@ -139,7 +141,7 @@ func newFindPrinter(opt FindOptions) *findPrinter {
 	if opt.Versions {
 		headers = append(headers, i18n.T("Version ID", "版本ID"))
 	}
-	return &findPrinter{opt: opt, tbl: myprint.NewTable(headers...).AlignRight(1).PlainRowLimit(lsTableRowLimit)}
+	return &findPrinter{opt: opt, tbl: myprint.NewTable(headers...).AlignRight(1).PlainRowLimit(render.LsTableRowLimit)}
 }
 
 // add 追加一条匹配到表格.
@@ -148,7 +150,7 @@ func (fp *findPrinter) add(c *Action, bucket string, m findMatch) {
 		return
 	}
 	cells := []myprint.Cell{
-		{Text: m.modified.Format(lsTimeLayout), Color: myprint.Dim},
+		{Text: m.modified.Format(render.TimeLayout), Color: myprint.Dim},
 		{Text: fmt.Sprintf("%d", m.size)},
 	}
 	switch {
@@ -204,7 +206,7 @@ func (c *Action) FindObjects(opt FindOptions, bucket, prefix string) error {
 	var collected []findMatch
 	fp := newFindPrinter(opt)
 
-	err = c.forEachObject(c.Ctx, bucket, prefix, func(obj s3iface.ObjectInfo) error {
+	err = c.forEachObject(c.Ctx, bucket, prefix, func(obj api.ObjectInfo) error {
 		scanned++
 		m, ok := matchFindObject(obj, opt, p, prefix)
 		if !ok {
@@ -254,43 +256,35 @@ func (c *Action) findByVersions(opt FindOptions, bucket, prefix string, p *prepa
 	latest := map[string]findMatch{}
 	var keyOrder []string
 
-	paginator := c.S3.NewListObjectVersionsPaginator(bucket, &s3iface.ListObjectVersionsOptions{Prefix: prefix})
-	for paginator.HasMorePages() {
-		page, err := paginator.NextPage(c.Ctx)
-		if err != nil {
-			return fmt.Errorf("list versions: %s", FormatAPIError(err))
+	// 只用最新版本参与过滤; delete marker 也按最新版本计入。
+	if err := c.forEachVersion(c.Ctx, bucket, prefix, func(v VersionEntry) error {
+		if !v.IsLatest {
+			return nil
 		}
-		for _, v := range page.Versions {
-			if !v.IsLatest {
-				continue
-			}
-			if _, seen := latest[v.Key]; !seen {
-				keyOrder = append(keyOrder, v.Key)
-			}
+		if _, seen := latest[v.Key]; !seen {
+			keyOrder = append(keyOrder, v.Key)
+		}
+		if v.IsDeleteMarker {
 			latest[v.Key] = findMatch{
-				key:          v.Key,
-				size:         v.Size,
-				etag:         v.ETag,
-				storageClass: v.StorageClass,
-				dirMarker:    strings.HasSuffix(v.Key, "/") && v.Size == 0,
-				modified:     v.LastModified,
-				versionID:    v.VersionID,
-			}
-		}
-		for _, m := range page.DeleteMarkers {
-			if !m.IsLatest {
-				continue
-			}
-			if _, seen := latest[m.Key]; !seen {
-				keyOrder = append(keyOrder, m.Key)
-			}
-			latest[m.Key] = findMatch{
-				key:        m.Key,
-				modified:   m.LastModified,
-				versionID:  m.VersionID,
+				key:        v.Key,
+				modified:   v.LastModified,
+				versionID:  v.VersionID,
 				deleteMark: true,
 			}
+			return nil
 		}
+		latest[v.Key] = findMatch{
+			key:          v.Key,
+			size:         v.Size,
+			etag:         v.ETag,
+			storageClass: v.StorageClass,
+			dirMarker:    strings.HasSuffix(v.Key, "/") && v.Size == 0,
+			modified:     v.LastModified,
+			versionID:    v.VersionID,
+		}
+		return nil
+	}); err != nil {
+		return err
 	}
 
 	sort.Strings(keyOrder)
@@ -301,7 +295,7 @@ func (c *Action) findByVersions(opt FindOptions, bucket, prefix string, p *prepa
 	for _, key := range keyOrder {
 		scanned++
 		m := latest[key]
-		obj := s3iface.ObjectInfo{
+		obj := api.ObjectInfo{
 			Key:          m.key,
 			LastModified: m.modified,
 			ETag:         m.etag,
@@ -361,10 +355,10 @@ func printFindSummary(opt FindOptions, matched, scanned int, totalSize int64, p 
 		// 0 匹配时给出过滤上下文, 便于判断是"没有匹配"还是"参数/阈值设置问题".
 		var th []string
 		if !p.older.IsZero() {
-			th = append(th, fmt.Sprintf(i18n.T("modified before %s", "修改时间早于 %s"), p.older.Local().Format("2006-01-02 15:04:05")))
+			th = append(th, fmt.Sprintf(i18n.T("modified before %s", "修改时间早于 %s"), p.older.Local().Format(render.TimeLayout)))
 		}
 		if !p.newer.IsZero() {
-			th = append(th, fmt.Sprintf(i18n.T("modified after %s", "修改时间晚于 %s"), p.newer.Local().Format("2006-01-02 15:04:05")))
+			th = append(th, fmt.Sprintf(i18n.T("modified after %s", "修改时间晚于 %s"), p.newer.Local().Format(render.TimeLayout)))
 		}
 		ctx := ""
 		if len(th) > 0 {
@@ -374,15 +368,15 @@ func printFindSummary(opt FindOptions, matched, scanned int, totalSize int64, p 
 		return nil
 	}
 	if p.filtersActive {
-		myprint.PrintfBoldBlue(i18n.T("\n%d matching objects (%s) out of %d scanned\n", "\n%d 个匹配对象（%s），共扫描 %d 个\n"), matched, FormatBytes(totalSize), scanned)
+		myprint.PrintfBoldBlue(i18n.T("\n%d matching objects (%s) out of %d scanned\n", "\n%d 个匹配对象（%s），共扫描 %d 个\n"), matched, myprint.FormatBytes(totalSize), scanned)
 		return nil
 	}
-	myprint.PrintfBoldBlue(i18n.T("\n%d matching objects (%s)\n", "\n%d 个匹配对象（%s）\n"), matched, FormatBytes(totalSize))
+	myprint.PrintfBoldBlue(i18n.T("\n%d matching objects (%s)\n", "\n%d 个匹配对象（%s）\n"), matched, myprint.FormatBytes(totalSize))
 	return nil
 }
 
 // matchFindObject 对单个对象应用全部过滤条件, 返回通过与否及对象描述.
-func matchFindObject(obj s3iface.ObjectInfo, opt FindOptions, p *preparedFind, prefix string) (findMatch, bool) {
+func matchFindObject(obj api.ObjectInfo, opt FindOptions, p *preparedFind, prefix string) (findMatch, bool) {
 
 	key := obj.Key
 	size := obj.Size
@@ -461,7 +455,7 @@ func emitFindMatch(c *Action, opt FindOptions, bucket string, m findMatch, fp *f
 		case m.dirMarker:
 			typ = "dir"
 		}
-		return printJSONLine(map[string]any{
+		return render.JSONLine(map[string]any{
 			"path":           c.S3Path(bucket, m.key),
 			"size":           m.size,
 			"etag":           m.etag,
@@ -557,12 +551,7 @@ func matchDirPath(re *regexp.Regexp, key, prefix string) bool {
 	if dir == "." || dir == "/" {
 		return false
 	}
-	for _, seg := range strings.Split(dir, "/") {
-		if re.MatchString(seg) {
-			return true
-		}
-	}
-	return false
+	return slices.ContainsFunc(strings.Split(dir, "/"), re.MatchString)
 }
 
 // formatFindPrint 按 {name}/{size}/{time}/{url}/{path}/{etag}/{storage-class}/{version-id}
@@ -577,7 +566,7 @@ func formatFindPrint(format, url, key string, size int64, t time.Time, etag, sto
 	s = strings.ReplaceAll(s, "{path}", key)
 	s = strings.ReplaceAll(s, "{url}", url)
 	s = strings.ReplaceAll(s, "{size}", fmt.Sprintf("%d", size))
-	s = strings.ReplaceAll(s, "{time}", t.Format("2006-01-02 15:04:05"))
+	s = strings.ReplaceAll(s, "{time}", t.Format(render.TimeLayout))
 	s = strings.ReplaceAll(s, "{etag}", etag)
 	s = strings.ReplaceAll(s, "{storage-class}", storageClass)
 	s = strings.ReplaceAll(s, "{version-id}", versionID)

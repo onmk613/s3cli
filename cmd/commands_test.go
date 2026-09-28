@@ -63,9 +63,14 @@ func TestTransferCommandsUseArgParseAnnotations(t *testing.T) {
 	}
 }
 
-func TestPolicyGetCmdJSONFlag(t *testing.T) {
-	if got := PolicyGetCmd().Flags().Lookup("json"); got == nil {
-		t.Fatal("policy get missing --json flag")
+// TestPolicyGetCmdRawFlag --raw 与全局 --json 语义不同: 前者打印原始策略
+// JSON 而非分类结果, 因此保留为 policy get 的本地 flag。
+func TestPolicyGetCmdRawFlag(t *testing.T) {
+	if got := PolicyGetCmd().Flags().Lookup("raw"); got == nil {
+		t.Fatal("policy get missing --raw flag")
+	}
+	if got := PolicyGetCmd().Flags().Lookup("json"); got != nil {
+		t.Fatal("policy get must not declare a local --json: that name is the global structured-output flag")
 	}
 }
 

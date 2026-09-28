@@ -12,9 +12,9 @@ import (
 	"s3cli/internal/s3path"
 	"strings"
 
-	myprint "s3cli/pkg/fmtutil"
-	"s3cli/pkg/i18n"
-	"s3cli/pkg/s3iface"
+	"s3cli/internal/api"
+	myprint "s3cli/internal/fmtutil"
+	"s3cli/internal/i18n"
 )
 
 // CopyOptions cp/mv 命令参数.
@@ -24,17 +24,27 @@ type CopyOptions struct {
 	StorageClass string            // --storage-class/--sc: 目标存储级别
 	Tags         string            // --tags: 目标对象标签 'k1=v1&k2=v2'
 	Metadata     map[string]string // --metadata: 目标对象自定义元数据 (需 REPLACE)
+	Concurrency  int               // --concurrency: 目录递归时的并发文件数
+	DryRun       bool              // --dry-run: 只列出将执行的操作, 不做任何变更
+	Include      []string          // --include: 只处理相对路径匹配该 glob 的对象
+	Exclude      []string          // --exclude: 跳过相对路径匹配该 glob 的对象
 }
 
 // CopyObjects 处理同对象存储之内的复制
 func (c *Action) CopyObjects(opt CopyOptions, srcBucket, srcKey, destBucket, destKey string) error {
+	if opt.Concurrency <= 0 {
+		opt.Concurrency = defaultConcurrency
+	}
+	if err := validateConcurrency(opt.Concurrency); err != nil {
+		return err
+	}
 	srcTrailing := strings.HasSuffix(srcKey, "/")
 	destTrailing := strings.HasSuffix(destKey, "/")
 
 	// 源 key 是文件还是目录
 	srcIsFile, err := c.IsS3File(srcBucket, srcKey)
 	if err != nil {
-		return fmt.Errorf("check source: %s", FormatAPIError(err))
+		return fmt.Errorf("check source: %w", err)
 	}
 	// 为目录但是没有设置 -r
 	if !srcIsFile && !opt.Recursive {
@@ -44,6 +54,14 @@ func (c *Action) CopyObjects(opt CopyOptions, srcBucket, srcKey, destBucket, des
 	// 单文件源
 	if srcIsFile {
 		dst := s3path.ResolveFileDest(destKey, destTrailing, path.Base(strings.TrimSuffix(srcKey, "/")))
+		if opt.DryRun {
+			size, sizeErr := c.headObjectSize(srcBucket, srcKey, "")
+			if sizeErr != nil {
+				return sizeErr
+			}
+			c.dryRunReport(i18n.T("cp", "复制"), c.S3Path(srcBucket, srcKey), c.S3Path(destBucket, dst), size)
+			return nil
+		}
 		if err := c.copyObject(opt, srcBucket, srcKey, destBucket, dst); err != nil {
 			return err
 		}
@@ -54,7 +72,7 @@ func (c *Action) CopyObjects(opt CopyOptions, srcBucket, srcKey, destBucket, des
 	// 目录源
 	state, err := c.DestStateOf(destBucket, destKey)
 	if err != nil {
-		myprint.PrintfYellow("check destination (treated as not-exist): %s\n", FormatAPIError(err))
+		myprint.PrintfYellow("check destination (treated as not-exist): %s\n", err)
 		state = s3path.DestNone
 	}
 	if state == s3path.DestFile {
@@ -71,6 +89,11 @@ func (c *Action) CopyObjects(opt CopyOptions, srcBucket, srcKey, destBucket, des
 	if err := checkDirPrefixOverlap(srcBucket, srcKey, destBucket, destPrefix); err != nil {
 		return err
 	}
+	// 目录源的列举前缀必须规范化为 "dir/": 裸前缀在 ListObjectsV2 里是纯字符串
+	// 前缀匹配, 会把兄弟目录 ("logs-2023/x") 一并列出来, 而下游按字面量剥离
+	// srcKey 推导相对路径, 于是得到 "-2023/x" 这种错误目标名。
+	// mirror / rm 早已规范化, 这里对齐。
+	srcKey = normalizeDirPrefix(srcKey)
 	return c.copyDirStreaming(opt, srcBucket, srcKey, destBucket, destPrefix, appendRel)
 }
 
@@ -81,8 +104,8 @@ func checkDirPrefixOverlap(srcBucket, srcKey, destBucket, destPrefix string) err
 	if srcBucket != destBucket {
 		return nil
 	}
-	src := normalizeMirrorPrefix(strings.Trim(srcKey, "/"))
-	tgt := normalizeMirrorPrefix(strings.Trim(destPrefix, "/"))
+	src := normalizeDirPrefix(strings.Trim(srcKey, "/"))
+	tgt := normalizeDirPrefix(strings.Trim(destPrefix, "/"))
 	// 目标为桶根且源非空: 相对路径展开到根, 写入落在源前缀之外, 不会级联, 放行;
 	// 其余同桶情形 (整桶为源 / 前缀互相包含 / 完全相同) 都会在列举进行中写入源前缀内部。
 	overlap := src == tgt || (src == "" && tgt != "") ||
@@ -96,9 +119,18 @@ func checkDirPrefixOverlap(srcBucket, srcKey, destBucket, destPrefix string) err
 	return nil
 }
 
-// copyObject 单对象复制, 透传存储级别/标签/元数据参数.
+// dryRunReport 打印一条 --dry-run 计划行 (cp/mv 共用)。
+func (c *Action) dryRunReport(verb, src, dst string, size int64) {
+	myprint.PrintfYellow(i18n.T("would %s %s -> %s (%s)\n", "将%s %s -> %s（%s）\n"),
+		verb, src, dst, myprint.FormatBytes(size))
+}
+
+// copyObject 单对象复制, 透传存储级别/标签/元数据参数。
+//
+// 与 mirror 共用同一条服务端复制路径: 超过 5GiB 的源对象会自动改走
+// UploadPartCopy 分片复制, 而不是直接失败 EntityTooLarge。
 func (c *Action) copyObject(opt CopyOptions, srcBucket, srcKey, destBucket, destKey string) error {
-	copyOpts := &s3iface.CopyObjectOptions{
+	copyOpts := &api.CopyObjectOptions{
 		StorageClass: opt.StorageClass,
 	}
 	if opt.Tags != "" {
@@ -109,11 +141,7 @@ func (c *Action) copyObject(opt CopyOptions, srcBucket, srcKey, destBucket, dest
 		copyOpts.Metadata = opt.Metadata
 		copyOpts.MetadataDirective = "REPLACE"
 	}
-	_, err := c.S3.CopyObject(c.Ctx, srcBucket, srcKey, destBucket, destKey, copyOpts)
-	if err != nil {
-		return fmt.Errorf("copy: %s", FormatAPIError(err))
-	}
-	return nil
+	return c.copyObjectSameEndpoint(srcBucket, srcKey, destBucket, destKey, copyOpts)
 }
 
 // copyDirStreaming 流式列出并并发复制，带进度条。
@@ -121,7 +149,7 @@ func (c *Action) copyObject(opt CopyOptions, srcBucket, srcKey, destBucket, dest
 // 否则所有源对象都写到 destPrefix（与规则 1/3 的 trailing-none/file 语义一致）。
 func (c *Action) copyDirStreaming(opt CopyOptions, srcBucket, srcKey, destBucket, destPrefix string, appendRel bool) error {
 	return RunStream(c.Ctx, StreamConfig{
-		Concurrency: defaultConcurrency,
+		Concurrency: opt.Concurrency,
 		Label:       "cp",
 		NoProgress:  opt.NoProgress,
 		Count: func(ctx context.Context, add func(n, size int64)) error {
@@ -129,10 +157,13 @@ func (c *Action) copyDirStreaming(opt CopyOptions, srcBucket, srcKey, destBucket
 			return c.countS3Prefix(ctx, srcBucket, srcKey, true, add)
 		},
 		Scan: func(ctx context.Context, jobs chan<- StreamJob) error {
-			return c.forEachObject(ctx, srcBucket, srcKey, func(obj s3iface.ObjectInfo) error {
+			return c.forEachObject(ctx, srcBucket, srcKey, func(obj api.ObjectInfo) error {
 				// 跳过 0 字节的目录占位对象 ("dir/" 形态), 与 get 的扫描一致:
 				// 这类对象没有内容可复制, 复制过去只会留下无意义的目录标记。
 				if strings.HasSuffix(obj.Key, "/") && obj.Size == 0 {
+					return nil
+				}
+				if !matchesMirrorFilters(relKeyForDelete(obj.Key, srcKey), opt.Include, opt.Exclude) {
 					return nil
 				}
 				dst := buildDestKey(obj.Key, srcKey, destPrefix, appendRel)
@@ -146,6 +177,10 @@ func (c *Action) copyDirStreaming(opt CopyOptions, srcBucket, srcKey, destBucket
 		},
 		Work: func(ctx context.Context, job StreamJob, _ func(n int64)) error {
 			dstKey := buildDestKey(job.Src, srcKey, destPrefix, appendRel)
+			if opt.DryRun {
+				c.dryRunReport(i18n.T("cp", "复制"), c.S3Path(srcBucket, job.Src), c.S3Path(destBucket, dstKey), job.Size)
+				return nil
+			}
 			return c.copyObject(opt, srcBucket, job.Src, destBucket, dstKey)
 		},
 	})

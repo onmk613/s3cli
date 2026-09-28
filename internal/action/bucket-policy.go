@@ -20,9 +20,9 @@ import (
 	"slices"
 	"strings"
 
-	myprint "s3cli/pkg/fmtutil"
-	"s3cli/pkg/i18n"
-	"s3cli/pkg/s3iface"
+	"s3cli/internal/api"
+	myprint "s3cli/internal/fmtutil"
+	"s3cli/internal/i18n"
 )
 
 // PolicyOptions 控制 SetPolicy 的参数.
@@ -58,7 +58,7 @@ func (c *Action) setPolicyFromFile(policyFile, bucket string) error {
 		return err
 	}
 	if err := c.S3.SetBucketPolicy(c.Ctx, bucket, data); err != nil {
-		return FormatAPIError(err)
+		return err
 	}
 
 	myprint.PrintfBoldGreen(i18n.T("Policy set for %s\n", "已为 %s 设置策略\n"), c.S3Path(bucket, ""))
@@ -67,25 +67,27 @@ func (c *Action) setPolicyFromFile(policyFile, bucket string) error {
 
 // GetPolicyOptions 控制 GetPolicy 的输出方式.
 type GetPolicyOptions struct {
-	JSON bool // --json: 直接输出服务器返回的原始策略 JSON
+	// Raw 对应 --raw: 直接输出服务端返回的原始策略 JSON, 不做类型归类。
+	// (曾用 --json, 与全局的 --json 结构化输出同名却语义不同, 容易误解。)
+	Raw bool
 }
 
 // GetPolicy 读取桶策略: 默认解析策略 JSON 并输出策略类型
-// (private/download/upload/public/custom); --json 时直接输出原始策略 JSON.
+// (private/download/upload/public/custom); --raw 时直接输出原始策略 JSON.
 func (c *Action) GetPolicy(opt GetPolicyOptions, bucket string) error {
 	raw, err := c.S3.GetBucketPolicy(c.Ctx, bucket)
 	if err != nil {
 		// 无策略等价于 private, 默认输出直接展示类型; --json 无原始 JSON 可输出, 保持报错.
-		var apiErr *s3iface.ErrorResponse
-		if !opt.JSON && errors.As(err, &apiErr) && apiErr.Code == "NoSuchBucketPolicy" {
+		var apiErr *api.ErrorResponse
+		if !opt.Raw && errors.As(err, &apiErr) && apiErr.Code == "NoSuchBucketPolicy" {
 			myprint.PrintfBoldBlue(i18n.T("# %s policy:\n", "# %s 策略：\n"), c.S3Path(bucket, ""))
 			myprint.PrintlnGreen(i18n.T("type: private", "类型：private"))
 			return nil
 		}
-		return FormatAPIError(err)
+		return err
 	}
 
-	if opt.JSON {
+	if opt.Raw {
 		out := string(raw)
 		if !strings.HasSuffix(out, "\n") {
 			out += "\n"
@@ -106,7 +108,7 @@ func (c *Action) GetPolicy(opt GetPolicyOptions, bucket string) error {
 // DelPolicy 删除桶的访问策略.
 func (c *Action) DelPolicy(bucket string) error {
 	if err := c.S3.DeleteBucketPolicy(c.Ctx, bucket); err != nil {
-		return FormatAPIError(err)
+		return err
 	}
 
 	myprint.PrintfBoldGreen(i18n.T("Policy deleted for %s: success\n", "已删除 %s 的策略：成功\n"), c.S3Path(bucket, ""))
@@ -241,10 +243,9 @@ func (c *Action) applyCannedPolicy(name, bucket, prefix string) error {
 
 	if perm == "private" {
 		if err := c.S3.DeleteBucketPolicy(c.Ctx, bucket); err != nil {
-			// 无策略 (已私有) 视为成功, 保持幂等。
-			var apiErr *s3iface.ErrorResponse
-			if !errors.As(err, &apiErr) || (apiErr.Code != "NoSuchBucketPolicy" && apiErr.Code != "NoSuchBucket" && apiErr.Code != "404") {
-				return FormatAPIError(err)
+			// 无策略 (已私有) 视为成功, 保持幂等; 其余错误 (含 403) 必须上抛。
+			if !api.IsNotFound(err) {
+				return fmt.Errorf("delete policy %s: %w", c.S3Path(bucket, ""), err)
 			}
 		}
 		myprint.PrintfBoldGreen(i18n.T("Policy removed (private) for %s\n", "已移除 %s 的策略（private）\n"), c.S3Path(bucket, ""))
@@ -256,7 +257,7 @@ func (c *Action) applyCannedPolicy(name, bucket, prefix string) error {
 		return err
 	}
 	if err := c.S3.SetBucketPolicy(c.Ctx, bucket, data); err != nil {
-		return FormatAPIError(err)
+		return err
 	}
 	scope := i18n.T("whole bucket", "整个存储桶")
 	if prefix != "" {

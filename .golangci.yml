@@ -27,8 +27,6 @@ linters:
       - path: _test\.go
         linters:
           - errcheck
-      - path: scripts/
-        linters:
-          - all
     paths:
       - \.tmp-gocache
+      - \.gocache

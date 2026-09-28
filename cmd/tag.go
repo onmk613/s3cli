@@ -2,8 +2,9 @@ package cmd
 
 import (
 	"s3cli/internal/action"
+	"s3cli/internal/config"
+	"s3cli/internal/i18n"
 	"s3cli/internal/s3path"
-	"s3cli/pkg/i18n"
 
 	"github.com/spf13/cobra"
 )
@@ -50,10 +51,12 @@ func NewListTagCmd() *cobra.Command {
 		ValidArgsFunction: AutoCompletePath,
 		Annotations:       OnlyS3PathMode,
 		RunE: NewRunE(func(S3 action.Action, dst *s3path.Path) error {
+			// --json 是根命令的持久 flag, 必须在 RunE 里取一次 (action 层的
+			// GetTag 已按 opt.JSON 分支输出, 不取则 --json 被静默忽略)。
+			opt.JSON = config.G.F.JSON
 			return S3.GetTag(opt, dst.Bucket, dst.Key)
 		}),
 	}
-	cmd.Flags().BoolVar(&opt.JSON, "json", false, jsonOutputDesc())
 	return cmd
 }
 

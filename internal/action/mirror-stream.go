@@ -9,13 +9,13 @@ import (
 	"strings"
 	"time"
 
-	"s3cli/pkg/s3iface"
+	"s3cli/internal/api"
 )
 
 // =============== 对象信息 ===============
 
 // ObjectInfo 描述 mirror 列举阶段的单个对象 (相对源前缀的相对路径 + 元数据).
-// 与 s3iface.ObjectInfo 不同, 此处的 Key 已剥离源前缀, 便于源/目标按相对路径归并.
+// 与 api.ObjectInfo 不同, 此处的 Key 已剥离源前缀, 便于源/目标按相对路径归并.
 type ObjectInfo struct {
 	Key          string
 	Size         int64
@@ -32,13 +32,13 @@ type ObjectInfo struct {
 func streamObjects(c *Action, bucket, prefix string, out chan<- ObjectInfo, errCh chan<- error) {
 	defer close(out)
 
-	paginator := c.S3.NewListObjectsV2Paginator(bucket, &s3iface.ListObjectsV2Options{Prefix: prefix})
+	paginator := c.S3.NewListObjectsV2Paginator(bucket, &api.ListObjectsV2Options{Prefix: prefix})
 
 	for paginator.HasMorePages() {
 		page, err := paginator.NextPage(c.Ctx)
 		if err != nil {
 			select {
-			case errCh <- fmt.Errorf("list %s: %s", c.S3Path(bucket, prefix), FormatAPIError(err)):
+			case errCh <- fmt.Errorf("list %s: %w", c.S3Path(bucket, prefix), err):
 			default:
 			}
 			return
@@ -188,16 +188,21 @@ func needsUpdate(src, tgt ObjectInfo) bool {
 //	prefix="a/b/", key="a/b/c/d.txt" -> "c/d.txt"
 //	prefix="",     key="x/y.txt"     -> "x/y.txt"
 //
-// 调用前 prefix 已规范化为空或以 "/" 结尾 (见 normalizeMirrorPrefix),
+// 调用前 prefix 已规范化为空或以 "/" 结尾 (见 normalizeDirPrefix),
 // 因此列出结果的 key 必然以 prefix 开头, 直接 TrimPrefix 即可.
 func relKey(key, prefix string) string {
 	return strings.TrimPrefix(key, prefix)
 }
 
-// normalizeMirrorPrefix 把非空前缀规范化为以 "/" 结尾.
+// normalizeDirPrefix 把非空前缀规范化为以 "/" 结尾.
 // 裸前缀 (如 "dir") 做 ListObjectsV2 会前缀碰撞 (误匹配 "dir2/x"、"dir-old/y"),
 // 目标端同理会在 --remove 时误删前缀碰撞的对象, 因此源/目标列举前缀都必须规范化.
-func normalizeMirrorPrefix(prefix string) string {
+//
+// 凡是以"目录"语义列举前缀的调用方 (mirror / rm / cp / mv / get) 都必须先过这里。
+// 下游一律用"去掉 srcPrefix 字面量"推导相对路径 (见 buildDestKey / buildLocalFilePath),
+// 一旦列举进了兄弟前缀的对象, 相对路径就会变成 "-2023/x" 这样的垃圾:
+// cp/get 写出错误的目标名, mv 更会在复制成功后把兄弟目录的源对象删掉。
+func normalizeDirPrefix(prefix string) string {
 	if prefix != "" && !strings.HasSuffix(prefix, "/") {
 		return prefix + "/"
 	}

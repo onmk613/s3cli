@@ -11,9 +11,9 @@ import (
 	"fmt"
 	"strings"
 
-	myprint "s3cli/pkg/fmtutil"
-	"s3cli/pkg/i18n"
-	s3 "s3cli/pkg/s3iface"
+	"s3cli/internal/api"
+	myprint "s3cli/internal/fmtutil"
+	"s3cli/internal/i18n"
 )
 
 // CorsOptions 控制 SetCors 的参数.
@@ -49,10 +49,20 @@ func (c *Action) setCorsFromFile(corsFile, bucket string) error {
 		return fmt.Errorf("parse cors file %s: %w", corsFile, err)
 	}
 	if len(cfg.CORSRules) == 0 {
-		return fmt.Errorf(i18n.T("no CORS rules found in %s", "在 %s 中未找到 CORS 规则"), corsFile)
+		return fmt.Errorf(i18n.T("no CORS rules found in %s (expected CORSRules)", "在 %s 中未找到 CORS 规则（应为 CORSRules）"), corsFile)
+	}
+	// JSON 解析对未识别键宽容 (见 unmarshalAWS): 键名拼错只会让对应字段留空,
+	// 从而生成一条空壳规则。这里先拦下来并指明是第几条规则缺什么。
+	for i, rule := range cfg.CORSRules {
+		if len(rule.AllowedOrigin) == 0 {
+			return fmt.Errorf(i18n.T("CORS rule #%d has no AllowedOrigins (check the JSON field name)", "第 %d 条 CORS 规则缺少 AllowedOrigins（请检查 JSON 字段名）"), i+1)
+		}
+		if len(rule.AllowedMethod) == 0 {
+			return fmt.Errorf(i18n.T("CORS rule #%d has no AllowedMethods (check the JSON field name)", "第 %d 条 CORS 规则缺少 AllowedMethods（请检查 JSON 字段名）"), i+1)
+		}
 	}
 	if err := c.S3.SetBucketCors(c.Ctx, bucket, cfg); err != nil {
-		return fmt.Errorf("set cors %s: %s", bucket, FormatAPIError(err))
+		return fmt.Errorf("set cors %s: %w", bucket, err)
 	}
 	myprint.PrintfBoldGreen(i18n.T("CORS configuration set for %s %s\n", "已为 %s %s 设置 CORS 配置\n"), c.Alias, bucket)
 	return nil
@@ -67,7 +77,7 @@ func (c *Action) setCorsFromFlags(opt CorsOptions, bucket string) error {
 		return errors.New(i18n.T("cors set: at least one --method is required (GET/PUT/POST/DELETE/HEAD)", "设置 CORS：至少需要一个 --method（GET/PUT/POST/DELETE/HEAD）"))
 	}
 
-	rule := s3.CorsRule{
+	rule := api.CorsRule{
 		ID:            opt.ID,
 		AllowedOrigin: append([]string(nil), opt.Origins...),
 		MaxAgeSeconds: opt.MaxAgeSeconds,
@@ -78,9 +88,9 @@ func (c *Action) setCorsFromFlags(opt CorsOptions, bucket string) error {
 	rule.AllowedHeader = append(rule.AllowedHeader, opt.AllowedHeaders...)
 	rule.ExposeHeader = append(rule.ExposeHeader, opt.ExposeHeaders...)
 
-	cfg := &s3.CorsConfig{CORSRules: []s3.CorsRule{rule}}
+	cfg := &api.CorsConfig{CORSRules: []api.CorsRule{rule}}
 	if err := c.S3.SetBucketCors(c.Ctx, bucket, cfg); err != nil {
-		return fmt.Errorf("set cors %s: %s", bucket, FormatAPIError(err))
+		return fmt.Errorf("set cors %s: %w", bucket, err)
 	}
 
 	scope := strings.Join(rule.AllowedOrigin, ", ")
@@ -92,7 +102,7 @@ func (c *Action) setCorsFromFlags(opt CorsOptions, bucket string) error {
 func (c *Action) GetCors(bucket string) error {
 	cfg, err := c.S3.GetBucketCors(c.Ctx, bucket)
 	if err != nil {
-		return fmt.Errorf("get cors %s: %s", bucket, FormatAPIError(err))
+		return fmt.Errorf("get cors %s: %w", bucket, err)
 	}
 	return c.printBucketConfigJSON(bucket, "cors:", map[string]any{"CORSRules": cfg.CORSRules})
 }
@@ -104,16 +114,16 @@ func (c *Action) DelCors(bucket string) error {
 }
 
 // parseCORSConfig 解析 CORS 配置文件，支持 JSON 和 XML 格式。
-func parseCORSConfig(data []byte, format string) (*s3.CorsConfig, error) {
+func parseCORSConfig(data []byte, format string) (*api.CorsConfig, error) {
 	switch format {
 	case "json":
-		var c s3.CorsConfig
+		var c api.CorsConfig
 		if err := unmarshalAWS(data, "json", &c); err != nil {
 			return nil, err
 		}
 		return &c, nil
 	case "xml":
-		return s3.ParseBucketCorsConfig(bytes.NewReader(data))
+		return api.ParseBucketCorsConfig(bytes.NewReader(data))
 	}
 	return nil, fmt.Errorf("unknown format %q", format)
 }

@@ -1,6 +1,6 @@
 // common.go 定义 action 包的核心: Action 类型、S3 路径格式化与存在性/目录探测
 // (S3Path / IsS3File / DestStateOf), 以及对象遍历器 forEachObject.
-// 凭证/错误/MIME 等通用工具在 parse-path.go.
+// 取消判断、校验和算法解析与 MIME 注册等通用工具在 utils.go.
 
 package action
 
@@ -8,10 +8,12 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"s3cli/internal/action/render"
+	"s3cli/internal/api"
+	"s3cli/internal/i18n"
 	"s3cli/internal/s3path"
-	"s3cli/pkg/i18n"
-	"s3cli/pkg/s3iface"
 	"strings"
+	"time"
 )
 
 // defaultConcurrency 是流式传输（get/put/cp/mv）与 mirror/diff 的默认并发数。
@@ -19,28 +21,23 @@ import (
 const defaultConcurrency = 10
 
 // Action 封装 S3 操作后端, 持有 alias 和 ctx.
-// S3 字段为 s3iface.S3Operations 接口, 底层实现为自建请求的 api.Client
+// S3 字段为 api.S3Operations 接口, 底层实现为自建请求的 api.Client
 // (由 client 包统一构造).
 type Action struct {
-	S3    s3iface.S3Operations
+	S3    api.S3Operations
 	Alias string
 	Ctx   context.Context
 }
 
-// S3Path 格式化路径为 "alias:bucket/key", 和命令行格式一样
+// S3Path 格式化路径为 "alias:bucket/key", 和命令行格式一样。
+// 实现在 render 包, 与其它展示格式集中在一处。
 func (c *Action) S3Path(bucket, key string) string {
-	if key == "" {
-		return c.Alias + ":" + bucket
-	}
-	return c.Alias + ":" + bucket + "/" + key
+	return render.S3Path(c.Alias, bucket, key)
 }
 
-// S3PathStatic 静态版本, 无需 Action 实例, 用于无客户端上下文的格式化场景.
+// S3PathStatic 静态版本, 无需 Action 实例, 用于无客户端上下文的格式化场景。
 func S3PathStatic(alias, bucket, key string) string {
-	if key == "" {
-		return alias + ":" + bucket
-	}
-	return alias + ":" + bucket + "/" + key
+	return render.S3Path(alias, bucket, key)
 }
 
 // IsS3File 检查路径是文件 (true) 还是目录 / 不存在 (false)
@@ -56,8 +53,7 @@ func (c *Action) IsS3File(bucket, key string) (bool, error) {
 	}
 
 	// 按 ErrorResponse 的 Code 判断
-	var apiErr *s3iface.ErrorResponse
-	if errors.As(err, &apiErr) {
+	if apiErr, ok := errors.AsType[*api.ErrorResponse](err); ok {
 		switch apiErr.Code {
 		case "NoSuchKey", "NotFound", "404":
 			// 对象不存在：可能是目录前缀，继续探测。
@@ -78,8 +74,7 @@ func (c *Action) objectExists(ctx context.Context, bucket, key string) (bool, er
 	if err == nil {
 		return true, nil
 	}
-	var apiErr *s3iface.ErrorResponse
-	if errors.As(err, &apiErr) {
+	if apiErr, ok := errors.AsType[*api.ErrorResponse](err); ok {
 		switch apiErr.Code {
 		case "NoSuchKey", "NotFound", "404":
 			return false, nil
@@ -101,7 +96,7 @@ func (c *Action) objectExists(ctx context.Context, bucket, key string) (bool, er
 //     目录也非 key 本身), 因此整体移除, 只保留 key+"/" 探测。
 func (c *Action) checkIfDirectory(bucket, key string) (bool, error) {
 	probe := strings.TrimSuffix(key, "/")
-	listResp, err := c.S3.ListObjectsV2(c.Ctx, bucket, &s3iface.ListObjectsV2Options{
+	listResp, err := c.S3.ListObjectsV2(c.Ctx, bucket, &api.ListObjectsV2Options{
 		Prefix:    probe + "/",
 		Delimiter: "/",
 		MaxKeys:   1,
@@ -112,7 +107,11 @@ func (c *Action) checkIfDirectory(bucket, key string) (bool, error) {
 	if len(listResp.CommonPrefixes) > 0 || len(listResp.Contents) > 0 {
 		return false, nil
 	}
-	return false, fmt.Errorf(i18n.T("path '%s' does not exist in bucket '%s'", "路径 '%s' 在存储桶 '%s' 中不存在"), key, bucket)
+	// 语义上就是 404: 用 api.NewNotFound 构造, 让上层 IsNotFound / 退出码映射
+	// 能识别。否则 `get`/`cp` 一个不存在的对象会退化成退出码 1, 与 README 承诺的
+	// "4 = 对象/桶不存在" 不符 —— 路径判定是本地逻辑, 错误链上本来没有服务端响应。
+	return false, api.NewNotFound(fmt.Sprintf(
+		i18n.T("path '%s' does not exist in bucket '%s'", "路径 '%s' 在存储桶 '%s' 中不存在"), key, bucket))
 }
 
 // DestStateOf 判断目标 key 当前的状态：文件 / 目录 / 不存在。
@@ -132,8 +131,7 @@ func (c *Action) DestStateOf(bucket, key string) (s3path.DestState, error) {
 	}
 
 	// 仅对 404 继续目录探测；403 等直接返回错误
-	var apiErr *s3iface.ErrorResponse
-	if errors.As(err, &apiErr) {
+	if apiErr, ok := errors.AsType[*api.ErrorResponse](err); ok {
 		switch apiErr.Code {
 		case "NoSuchKey", "NotFound", "404":
 			// 继续探测目录
@@ -147,7 +145,7 @@ func (c *Action) DestStateOf(bucket, key string) (s3path.DestState, error) {
 	}
 
 	// 2) 目录探测：prefix = key + "/"
-	listResp, err := c.S3.ListObjectsV2(c.Ctx, bucket, &s3iface.ListObjectsV2Options{
+	listResp, err := c.S3.ListObjectsV2(c.Ctx, bucket, &api.ListObjectsV2Options{
 		Prefix:    probe + "/",
 		Delimiter: "/",
 		MaxKeys:   1,
@@ -190,14 +188,14 @@ var errStopIteration = errors.New("stop iteration")
 // forEachObject 遍历 bucket 下指定 prefix 的所有对象 (自动翻页), 对每个对象调用 fn。
 // 封装了各处重复的 ListObjectsV2 Paginator 循环样板。fn 返回错误会中断遍历;
 // fn 返回 errStopIteration 时提前正常结束 (返回 nil)。
-func (c *Action) forEachObject(ctx context.Context, bucket, prefix string, fn func(obj s3iface.ObjectInfo) error) error {
-	paginator := c.S3.NewListObjectsV2Paginator(bucket, &s3iface.ListObjectsV2Options{
+func (c *Action) forEachObject(ctx context.Context, bucket, prefix string, fn func(obj api.ObjectInfo) error) error {
+	paginator := c.S3.NewListObjectsV2Paginator(bucket, &api.ListObjectsV2Options{
 		Prefix: prefix,
 	})
 	for paginator.HasMorePages() {
 		page, err := paginator.NextPage(ctx)
 		if err != nil {
-			return fmt.Errorf("list objects: %s", FormatAPIError(err))
+			return fmt.Errorf("list objects: %w", err)
 		}
 		for _, obj := range page.Contents {
 			if err := fn(obj); err != nil {
@@ -206,6 +204,87 @@ func (c *Action) forEachObject(ctx context.Context, bucket, prefix string, fn fu
 				}
 				return err
 			}
+		}
+	}
+	return nil
+}
+
+// forEachObjectPage 与 forEachObject 相同, 但按页回调 —— 需要整页信息的调用方
+// (如按分隔符汇总 CommonPrefixes) 用它, 避免为了拿 prefix 再手写一遍分页循环。
+func (c *Action) forEachObjectPage(ctx context.Context, bucket string, opts *api.ListObjectsV2Options, fn func(page *api.ListObjectsV2Output) error) error {
+	paginator := c.S3.NewListObjectsV2Paginator(bucket, opts)
+	for paginator.HasMorePages() {
+		page, err := paginator.NextPage(ctx)
+		if err != nil {
+			return fmt.Errorf("list objects: %w", err)
+		}
+		if err := fn(page); err != nil {
+			if errors.Is(err, errStopIteration) {
+				return nil
+			}
+			return err
+		}
+	}
+	return nil
+}
+
+// VersionEntry 是 forEachVersion 回调的统一视图: 把 ListObjectVersions 响应里的
+// Version 与 DeleteMarker 两种节点归一, 调用方用 IsDeleteMarker 区分。
+// (两种节点的字段并不一致 —— 删除标记没有 Size/ETag/StorageClass。)
+type VersionEntry struct {
+	Key            string
+	VersionID      string
+	LastModified   time.Time
+	ETag           string
+	Size           int64
+	StorageClass   string
+	IsLatest       bool
+	IsDeleteMarker bool
+}
+
+// forEachVersion 遍历 bucket 下指定 prefix 的所有对象版本与删除标记 (自动翻页)。
+//
+// 版本分页曾在 7 处被手写 (rm --versions / bucket remove --force / find --versions /
+// ls --versions / stat / ...), 每处都要重复 KeyMarker/VersionIDMarker 的推进与
+// 错误包装。集中到这里后口径只有一份。
+func (c *Action) forEachVersion(ctx context.Context, bucket, prefix string, fn func(v VersionEntry) error) error {
+	return c.forEachVersionPage(ctx, bucket, prefix, func(page *api.ListObjectVersionsOutput) error {
+		for _, v := range page.Versions {
+			if err := fn(VersionEntry{
+				Key: v.Key, VersionID: v.VersionID, LastModified: v.LastModified,
+				ETag: v.ETag, Size: v.Size, StorageClass: v.StorageClass, IsLatest: v.IsLatest,
+			}); err != nil {
+				return err
+			}
+		}
+		for _, m := range page.DeleteMarkers {
+			if err := fn(VersionEntry{
+				Key: m.Key, VersionID: m.VersionID, LastModified: m.LastModified,
+				IsLatest: m.IsLatest, IsDeleteMarker: true,
+			}); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+}
+
+// forEachVersionPage 与 forEachVersion 相同, 但按页回调 (需要区分 Versions 与
+// DeleteMarkers 两组的调用方用它)。
+func (c *Action) forEachVersionPage(ctx context.Context, bucket, prefix string, fn func(page *api.ListObjectVersionsOutput) error) error {
+	paginator := c.S3.NewListObjectVersionsPaginator(bucket, &api.ListObjectVersionsOptions{
+		Prefix: prefix,
+	})
+	for paginator.HasMorePages() {
+		page, err := paginator.NextPage(ctx)
+		if err != nil {
+			return fmt.Errorf("list versions: %w", err)
+		}
+		if err := fn(page); err != nil {
+			if errors.Is(err, errStopIteration) {
+				return nil
+			}
+			return err
 		}
 	}
 	return nil

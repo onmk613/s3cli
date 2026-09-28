@@ -12,7 +12,7 @@ import (
 	"sync/atomic"
 	"testing"
 
-	"s3cli/pkg/api"
+	"s3cli/internal/api"
 )
 
 type roundTripperFunc func(*http.Request) (*http.Response, error)
@@ -48,7 +48,7 @@ func TestDownloadFileAtomicallyReplacesOnlyAfterSuccess(t *testing.T) {
 		t.Fatal(err)
 	}
 	client := &Action{S3: actionTestClient(t, server.URL, nil), Ctx: context.Background()}
-	if _, err := client.downloadFile("key", path, "bucket", nil, ""); err != nil {
+	if _, err := client.downloadFile("key", path, "bucket", nil, "", ""); err != nil {
 		t.Fatal(err)
 	}
 	data, _ := os.ReadFile(path)
@@ -62,7 +62,7 @@ func TestDownloadFileAtomicallyReplacesOnlyAfterSuccess(t *testing.T) {
 	if err := os.WriteFile(path, []byte("preserved"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := failing.downloadFile("key", path, "bucket", nil, ""); err == nil {
+	if _, err := failing.downloadFile("key", path, "bucket", nil, "", ""); err == nil {
 		t.Fatal("expected download failure")
 	}
 	data, _ = os.ReadFile(path)
@@ -81,9 +81,9 @@ func TestMirrorCopyFailureSkipsRemove(t *testing.T) {
 		_, _ = io.WriteString(w, `<Error><Code>InternalError</Code></Error>`)
 	}))
 	defer server.Close()
-	api := actionTestClient(t, server.URL, nil)
-	src := &Action{S3: api, Alias: "src", Ctx: context.Background()}
-	tgt := &Action{S3: api, Alias: "tgt", Ctx: context.Background()}
+	cli := actionTestClient(t, server.URL, nil)
+	src := &Action{S3: cli, Alias: "src", Ctx: context.Background()}
+	tgt := &Action{S3: cli, Alias: "tgt", Ctx: context.Background()}
 	plan := &mirrorPlan{cfg: MirrorOptions{Remove: true, NoProgress: true, Concurrency: 1}, srcClient: src, tgtClient: tgt, srcBucket: "source", tgtBucket: "target", sameEP: true}
 	actions := make(chan diffAction, 2)
 	actions <- diffAction{rel: "copy", size: 1}
@@ -114,8 +114,8 @@ func TestRecursiveDeleteAndCancelledMirrorDoNotDeleteUnexpectedly(t *testing.T) 
 		}
 	}))
 	defer server.Close()
-	api := actionTestClient(t, server.URL, nil)
-	client := &Action{S3: api, Alias: "test", Ctx: context.Background()}
+	cli := actionTestClient(t, server.URL, nil)
+	client := &Action{S3: cli, Alias: "test", Ctx: context.Background()}
 	if err := client.DeleteObjects("bucket", "prefix/", DelOptions{Recursive: true, Force: true}); err != nil {
 		t.Fatal(err)
 	}
@@ -125,7 +125,7 @@ func TestRecursiveDeleteAndCancelledMirrorDoNotDeleteUnexpectedly(t *testing.T) 
 
 	cancelled, cancel := context.WithCancel(context.Background())
 	cancel()
-	plan := &mirrorPlan{cfg: MirrorOptions{Remove: true, NoProgress: true, Concurrency: 1}, srcClient: &Action{S3: api, Ctx: cancelled}, tgtClient: &Action{S3: api, Ctx: cancelled}, srcBucket: "source", tgtBucket: "target"}
+	plan := &mirrorPlan{cfg: MirrorOptions{Remove: true, NoProgress: true, Concurrency: 1}, srcClient: &Action{S3: cli, Ctx: cancelled}, tgtClient: &Action{S3: cli, Ctx: cancelled}, srcBucket: "source", tgtBucket: "target"}
 	actions := make(chan diffAction, 1)
 	actions <- diffAction{rel: "extra", delete: true}
 	close(actions)
@@ -156,8 +156,8 @@ func TestDeleteObjectRemovesEmptyParentDirectoryMarkers(t *testing.T) {
 		}
 	}))
 	defer server.Close()
-	api := actionTestClient(t, server.URL, nil)
-	client := &Action{S3: api, Alias: "test", Ctx: context.Background()}
+	cli := actionTestClient(t, server.URL, nil)
+	client := &Action{S3: cli, Alias: "test", Ctx: context.Background()}
 	if err := client.DeleteObjects("bucket", "parent/child/object", DelOptions{}); err != nil {
 		t.Fatal(err)
 	}
@@ -177,7 +177,7 @@ func TestDeleteBatchReportsObjectErrors(t *testing.T) {
 	}))
 	defer server.Close()
 	client := &Action{S3: actionTestClient(t, server.URL, nil), Ctx: context.Background()}
-	err := client.deleteBatch("bucket", []api.ObjectIdentifier{{Key: "protected"}})
+	err := client.deleteObjectsInBatches(client.Ctx, "bucket", []api.ObjectIdentifier{{Key: "protected"}})
 	if err == nil || !strings.Contains(err.Error(), `"protected": AccessDenied: denied`) {
 		t.Fatalf("delete batch error = %v", err)
 	}
@@ -192,8 +192,8 @@ func TestMirrorMaxDeleteBlocksBeforeDelete(t *testing.T) {
 		w.WriteHeader(http.StatusNoContent)
 	}))
 	defer server.Close()
-	api := actionTestClient(t, server.URL, nil)
-	client := &Action{S3: api, Ctx: context.Background()}
+	cli := actionTestClient(t, server.URL, nil)
+	client := &Action{S3: cli, Ctx: context.Background()}
 	plan := &mirrorPlan{cfg: MirrorOptions{Remove: true, MaxDelete: 1, NoProgress: true, Concurrency: 1}, srcClient: client, tgtClient: client, srcBucket: "source", tgtBucket: "target"}
 	actions := make(chan diffAction, 2)
 	actions <- diffAction{rel: "a", delete: true}

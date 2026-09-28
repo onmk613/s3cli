@@ -9,8 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"s3cli/pkg/api"
-	"s3cli/pkg/s3iface"
+	"s3cli/internal/api"
 )
 
 // findTestObj 描述 mock 返回的一个对象.
@@ -59,7 +58,7 @@ func newFindTestAction(t *testing.T, objs []findTestObj) *Action {
 	if err != nil {
 		t.Fatal(err)
 	}
-	return &Action{S3: s3iface.S3Operations(cli), Alias: "test", Ctx: context.Background()}
+	return &Action{S3: api.S3Operations(cli), Alias: "test", Ctx: context.Background()}
 }
 
 func TestFindOlderThanMatchesOldObjects(t *testing.T) {
@@ -344,7 +343,7 @@ func newFindVersionsTestAction(t *testing.T, objs []findVersionObj) *Action {
 	if err != nil {
 		t.Fatal(err)
 	}
-	return &Action{S3: s3iface.S3Operations(cli), Alias: "test", Ctx: context.Background()}
+	return &Action{S3: api.S3Operations(cli), Alias: "test", Ctx: context.Background()}
 }
 
 // TestFindVersionsOlderThanLatest 开启 versioning: 按最新版本时间过滤,

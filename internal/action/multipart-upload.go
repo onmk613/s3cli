@@ -7,9 +7,10 @@ import (
 	"context"
 	"fmt"
 
-	myprint "s3cli/pkg/fmtutil"
-	"s3cli/pkg/i18n"
-	"s3cli/pkg/s3iface"
+	"s3cli/internal/action/render"
+	"s3cli/internal/api"
+	myprint "s3cli/internal/fmtutil"
+	"s3cli/internal/i18n"
 )
 
 // mpuListPageSize 是 ListMultipartUploads 的单页请求上限。
@@ -21,14 +22,14 @@ const mpuListPageSize = 1000
 // ListMultipartUploads 单次最多返回 MaxUploads (服务端上限 1000) 条,
 // 超过后通过 KeyMarker/UploadIDMarker -> NextKeyMarker/NextUploadIDMarker
 // 驱动翻页; 不做翻页会漏掉第 1000 条之后的上传 (MpuList 少列、MpuAbort/rm -I 漏清)。
-func (c *Action) listAllMultipartUploads(ctx context.Context, bucket, prefix string) ([]s3iface.UploadInfo, error) {
+func (c *Action) listAllMultipartUploads(ctx context.Context, bucket, prefix string) ([]api.UploadInfo, error) {
 	var (
-		all            []s3iface.UploadInfo
+		all            []api.UploadInfo
 		keyMarker      string
 		uploadIDMarker string
 	)
 	for {
-		out, err := c.S3.ListMultipartUploads(ctx, bucket, &s3iface.ListMultipartUploadsOptions{
+		out, err := c.S3.ListMultipartUploads(ctx, bucket, &api.ListMultipartUploadsOptions{
 			Prefix:         prefix,
 			MaxUploads:     mpuListPageSize,
 			KeyMarker:      keyMarker,
@@ -56,8 +57,8 @@ func (c *Action) listAllMultipartUploads(ctx context.Context, bucket, prefix str
 // ListParts 单页服务端上限为 1000 (AWS 对更大的 max-parts 返回 InvalidArgument),
 // 超过后通过 PartNumberMarker -> NextPartNumberMarker 驱动翻页;
 // 不翻页会在 >1000 片时拿到截断结果, 导致续传对账错位。
-func (c *Action) listAllParts(ctx context.Context, bucket, key, uploadID string) ([]s3iface.PartInfo, error) {
-	var all []s3iface.PartInfo
+func (c *Action) listAllParts(ctx context.Context, bucket, key, uploadID string) ([]api.PartInfo, error) {
+	var all []api.PartInfo
 	marker := 0
 	for {
 		out, err := c.S3.ListParts(ctx, bucket, key, uploadID, marker, mpuListPageSize)
@@ -81,18 +82,15 @@ type MpuListOptions struct {
 func (c *Action) MpuList(opt MpuListOptions, bucket, prefix string) error {
 	uploads, err := c.listAllMultipartUploads(c.Ctx, bucket, prefix)
 	if err != nil {
-		return fmt.Errorf("list multipart uploads: %s", FormatAPIError(err))
+		return fmt.Errorf("list multipart uploads: %w", err)
 	}
 	var count int
-	tbl := newLsTable(i18n.T("Upload ID", "上传ID"))
+	tbl := render.NewLsTable(i18n.T("Upload ID", "上传ID"))
 	for _, u := range uploads {
 		count++
-		initiated := ""
-		if !u.Initiated.IsZero() {
-			initiated = u.Initiated.Format(lsTimeLayout)
-		}
+		initiated := u.Initiated
 		if opt.JSON {
-			if err := printJSONLine(map[string]any{
+			if err := render.JSONLine(map[string]any{
 				"path":      c.S3Path(bucket, u.Key),
 				"bucket":    bucket,
 				"key":       u.Key,
@@ -103,13 +101,13 @@ func (c *Action) MpuList(opt MpuListOptions, bucket, prefix string) error {
 			}
 			continue
 		}
-		tbl.add(lsRow{
-			date:  initiated,
-			size:  "-",
-			typ:   "INCOMPLETE",
-			path:  c.S3Path(bucket, u.Key),
-			extra: u.UploadID,
-			color: myprint.Yellow,
+		tbl.Add(render.LsRow{
+			Time:  initiated,
+			Size:  "-",
+			Type:  "INCOMPLETE",
+			Path:  c.S3Path(bucket, u.Key),
+			Extra: u.UploadID,
+			Color: myprint.Yellow,
 		})
 	}
 	if count == 0 {
@@ -120,7 +118,7 @@ func (c *Action) MpuList(opt MpuListOptions, bucket, prefix string) error {
 		return nil
 	}
 	if !opt.JSON {
-		tbl.render()
+		tbl.Render()
 	}
 	return nil
 }
@@ -150,7 +148,7 @@ func (c *Action) MpuAbort(bucket, prefix, uploadID string) error {
 		}
 
 		if err := c.S3.AbortMultipartUpload(c.Ctx, bucket, key, uploadID); err != nil {
-			return fmt.Errorf("abort mpu: %s", FormatAPIError(err))
+			return fmt.Errorf("abort mpu: %w", err)
 		}
 
 		myprint.PrintfGreen(i18n.T("aborted: %s  uploadId=%s\n", "已中止：%s  uploadId=%s\n"), c.S3Path(bucket, key), uploadID)
@@ -161,12 +159,12 @@ func (c *Action) MpuAbort(bucket, prefix, uploadID string) error {
 	// 若边列举边 abort, 后页 marker 可能因前页被删而失效, 因此必须全部收集完再删。
 	uploads, err := c.listAllMultipartUploads(c.Ctx, bucket, prefix)
 	if err != nil {
-		return fmt.Errorf("list mpu: %s", FormatAPIError(err))
+		return fmt.Errorf("list mpu: %w", err)
 	}
 	var aborted, failed int
 	for _, u := range uploads {
 		if err := c.S3.AbortMultipartUpload(c.Ctx, bucket, u.Key, u.UploadID); err != nil {
-			myprint.PrintfRed("abort %s/%s: %s\n", bucket, u.Key, FormatAPIError(err))
+			myprint.PrintfRed("abort %s/%s: %s\n", bucket, u.Key, err)
 			failed++
 			continue
 		}
@@ -185,7 +183,7 @@ func (c *Action) MpuAbort(bucket, prefix, uploadID string) error {
 func (c *Action) findUploadKey(bucket, prefix, uploadID string) (string, error) {
 	uploads, err := c.listAllMultipartUploads(c.Ctx, bucket, prefix)
 	if err != nil {
-		return "", fmt.Errorf("list mpu: %s", FormatAPIError(err))
+		return "", fmt.Errorf("list mpu: %w", err)
 	}
 	for _, u := range uploads {
 		if u.UploadID == uploadID {

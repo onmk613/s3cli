@@ -32,6 +32,11 @@ const (
 
 	// DefaultTLSMinVersion 是别名 TLS 最低版本的默认值 (与 Go 默认一致)。
 	DefaultTLSMinVersion = "1.2"
+
+	// MaxPartSizeMB 是 multipart_chunk_size_mb 的上界 (1GiB)。
+	// 与 action.MaxPartSizeMB 同值: config 不依赖 action (保持分层), 故各自持有
+	// 常量, 由两侧的边界用例共同锁定, 避免任一侧被悄悄改宽。
+	MaxPartSizeMB = 1024
 )
 
 // G 是进程级运行时配置：别名表 + CLI 全局开关。
@@ -55,6 +60,7 @@ type Flags struct {
 	ShowSecret      bool     // --show-secret alias list 显示完整明文密钥 (默认脱敏)
 	HostBase        string   // --host-base 覆盖所有别名的 endpoint host
 	NoVerifySSL     bool     // --no-verify-ssl 全局跳过 TLS 证书校验 (与别名配置取或)
+	JSON            bool     // --json 全局结构化输出开关 (支持的命令据此切换输出格式)
 }
 
 // Static 描述单个别名（一个 S3 端点）的静态配置。
@@ -78,6 +84,23 @@ type Static struct {
 	// TLS 最低版本: 1.0 / 1.1 / 1.2 / 1.3, 缺省 1.2。
 	// 老式自建 S3 端点可能只支持 1.0/1.1, 可显式放宽 (no_verify_ssl 不降低协议版本)。
 	TLSMinVersion string `toml:"tls_min_version"`
+
+	// ---- 厂商差异开关 (见 pkg/api/quirks.go) ----
+	// 缺省 (零值) 即严格 AWS 语义; 仅在对接特定 S3 兼容实现时按需设置,
+	// 目的是让适配新厂商停留在配置层, 不必改代码。
+
+	// LifecycleRootElement 覆盖 PUT ?lifecycle 的根元素名 (缺省 LifecycleConfiguration)。
+	LifecycleRootElement string `toml:"lifecycle_root_element"`
+	// LambdaNotificationElement 选择 Lambda 通知元素命名: cloud (缺省) / lambda。
+	LambdaNotificationElement string `toml:"lambda_notification_element"`
+	// DisableRegionRedirect 关闭 301/307/400 + X-Amz-Bucket-Region 的重签重发。
+	DisableRegionRedirect bool `toml:"disable_region_redirect"`
+	// DisableRegionProbe 关闭自定义寻址模板 %(region) 的 GetBucketLocation 探测。
+	DisableRegionProbe bool `toml:"disable_region_probe"`
+	// ForceUnsignedPayload 强制 x-amz-content-sha256: UNSIGNED-PAYLOAD。
+	ForceUnsignedPayload bool `toml:"force_unsigned_payload"`
+	// XMLNS 覆盖 CORS / 生命周期 XML 的命名空间 (缺省 S3 标准命名空间)。
+	XMLNS string `toml:"xmlns"`
 }
 
 // ResolveBucketLookup 解析 bucket_lookup 配置，返回模式和模板。

@@ -2,10 +2,10 @@ package client
 
 import (
 	"errors"
+	"s3cli/internal/api"
 	"s3cli/internal/config"
+	"s3cli/internal/kvcache"
 	"s3cli/internal/s3path"
-	"s3cli/pkg/kvcache"
-	"s3cli/pkg/s3iface"
 	"testing"
 )
 
@@ -28,7 +28,7 @@ func TestNewClient(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if got != s3iface.S3Operations(base) {
+		if got != api.S3Operations(base) {
 			t.Error("expected the preloaded client back")
 		}
 	})
@@ -45,7 +45,7 @@ func TestNewClient(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if got == s3iface.S3Operations(base) {
+		if got == api.S3Operations(base) {
 			t.Error("expected a rebuilt client after static change")
 		}
 		cached, ok := S3Clients.Get("stale")

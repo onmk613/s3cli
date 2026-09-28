@@ -2,8 +2,9 @@ package cmd
 
 import (
 	"s3cli/internal/action"
+	"s3cli/internal/config"
+	"s3cli/internal/i18n"
 	"s3cli/internal/s3path"
-	"s3cli/pkg/i18n"
 
 	"github.com/spf13/cobra"
 )
@@ -26,6 +27,7 @@ func NewLsCmd() *cobra.Command {
 		ValidArgsFunction: AutoCompletePath,
 		Args:              cobra.MinimumNArgs(1),
 		RunE: NewRunEAllowAliasOnly(func(S3 action.Action, dst *s3path.Path) error {
+			opt.JSON = config.G.F.JSON
 			return S3.ListObjects(opt, dst.Bucket, dst.Key)
 		}),
 	}
@@ -36,7 +38,6 @@ func NewLsCmd() *cobra.Command {
 	f.BoolVarP(&opt.Recursive, "recursive", "r", false, i18n.T("Recursively list all objects under the path (no delimiter)", "递归列出路径下的所有对象（不使用分隔符）"))
 	f.StringSliceVar(&opt.Include, "include", nil, i18n.T("Only list keys matching this glob (can repeat; best with -r)", "只列出匹配该通配模式的 key（可重复；建议配合 -r 使用）"))
 	f.StringSliceVar(&opt.Exclude, "exclude", nil, i18n.T("Skip keys matching this glob (can repeat)", "跳过匹配该通配模式的 key（可重复）"))
-	f.BoolVar(&opt.JSON, "json", false, i18n.T("Output format: text or json (supported commands emit structured results)", "输出格式：text 或 json（受支持的命令输出结构化结果）"))
 	return cmd
 }
 
@@ -49,13 +50,13 @@ func NewDuCmd() *cobra.Command {
 		ValidArgsFunction: AutoCompletePath,
 		Args:              cobra.MinimumNArgs(1),
 		RunE: NewRunE(func(S3 action.Action, dst *s3path.Path) error {
+			opt.JSON = config.G.F.JSON
 			return S3.DuObject(opt, dst.Bucket, dst.Key)
 		}),
 	}
 	f := cmd.Flags()
 	f.BoolVarP(&opt.Recursive, "recursive", "r", false, i18n.T("Print the total for each directory prefix", "打印每个目录前缀的总计"))
 	f.IntVarP(&opt.Depth, "depth", "d", 0, i18n.T("Print totals only for prefixes N or fewer levels below the argument (with -r)", "只打印参数之下 N 层以内前缀的总计（配合 -r 使用）"))
-	f.BoolVar(&opt.JSON, "json", false, jsonOutputDesc())
 	return cmd
 }
 
@@ -68,6 +69,7 @@ func NewStatCmd() *cobra.Command {
 		ValidArgsFunction: AutoCompletePath,
 		Args:              cobra.MinimumNArgs(1),
 		RunE: NewRunE(func(S3 action.Action, dst *s3path.Path) error {
+			opt.JSON = config.G.F.JSON
 			return S3.StatObjects(opt, dst.Bucket, dst.Key)
 		}),
 	}
@@ -75,7 +77,6 @@ func NewStatCmd() *cobra.Command {
 	f.BoolVarP(&opt.Recursive, "recursive", "r", false, i18n.T("Stat all objects recursively under the prefix", "递归统计前缀下的所有对象"))
 	f.StringVar(&opt.VersionID, "version-id", "", i18n.T("Stat a specific object version", "查看对象的特定版本"))
 	f.StringVar(&opt.VersionID, "vid", "", i18n.T("Alias of --version-id", "--version-id 的别名"))
-	f.BoolVar(&opt.JSON, "json", false, jsonOutputDesc())
 	return cmd
 }
 

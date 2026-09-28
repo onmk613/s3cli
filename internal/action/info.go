@@ -4,13 +4,13 @@
 package action
 
 import (
-	"encoding/json"
 	"errors"
 	"fmt"
+	"s3cli/internal/action/render"
 
-	myprint "s3cli/pkg/fmtutil"
-	"s3cli/pkg/i18n"
-	"s3cli/pkg/s3iface"
+	"s3cli/internal/api"
+	myprint "s3cli/internal/fmtutil"
+	"s3cli/internal/i18n"
 )
 
 // InfoOptions info/stat 命令参数.
@@ -33,7 +33,7 @@ func (c *Action) Info(opt InfoOptions, bucket, prefix string) error {
 
 	ok, err := c.IsS3File(bucket, prefix)
 	if err != nil {
-		return fmt.Errorf("check s3 path: %s", FormatAPIError(err))
+		return fmt.Errorf("check s3 path: %w", err)
 	}
 	if !ok {
 		if !opt.Recursive {
@@ -48,7 +48,7 @@ func (c *Action) Info(opt InfoOptions, bucket, prefix string) error {
 // infoObjectsRecursive 逐个输出前缀下对象的元信息 (-r).
 func (c *Action) infoObjectsRecursive(bucket, prefix string) error {
 	var count int
-	err := c.forEachObject(c.Ctx, bucket, prefix, func(obj s3iface.ObjectInfo) error {
+	err := c.forEachObject(c.Ctx, bucket, prefix, func(obj api.ObjectInfo) error {
 		if err := c.infoObject(bucket, obj.Key); err != nil {
 			return err
 		}
@@ -65,7 +65,7 @@ func (c *Action) infoObjectsRecursive(bucket, prefix string) error {
 func (c *Action) infoObjectVersion(bucket, key, versionID string) error {
 	head, err := c.S3.HeadObject(c.Ctx, bucket, key, versionID)
 	if err != nil {
-		return fmt.Errorf("head object: %s", FormatAPIError(err))
+		return fmt.Errorf("head object: %w", err)
 	}
 	myprint.PrintfBoldBlue(i18n.T("# %s info(object, version %s):\n", "# %s info(object，版本 %s)：\n"), c.S3Path(bucket, key), versionID)
 	return printHeadInfo(c.S3Path(bucket, key), head, nil)
@@ -74,7 +74,7 @@ func (c *Action) infoObjectVersion(bucket, key, versionID string) error {
 func (c *Action) infoObject(bucket, key string) error {
 	head, err := c.S3.HeadObject(c.Ctx, bucket, key, "")
 	if err != nil {
-		return fmt.Errorf("head object: %s", FormatAPIError(err))
+		return fmt.Errorf("head object: %w", err)
 	}
 	myprint.PrintfBoldBlue(i18n.T("# %s info(object):\n", "# %s info(object)：\n"), c.S3Path(bucket, key))
 
@@ -85,14 +85,14 @@ func (c *Action) infoObject(bucket, key string) error {
 			tags[kv.Key] = kv.Value
 		}
 	} else {
-		myprint.PrintfBoldYellow("Cannot read tags for %s: %s\n", c.S3Path(bucket, key), FormatAPIError(err))
+		myprint.PrintfBoldYellow("Cannot read tags for %s: %s\n", c.S3Path(bucket, key), err)
 	}
 
 	return printHeadInfo(c.S3Path(bucket, key), head, tags)
 }
 
 // printHeadInfo 输出 HeadObject 结果的 JSON.
-func printHeadInfo(path string, head *s3iface.HeadObjectOutput, tags map[string]string) error {
+func printHeadInfo(path string, head *api.HeadObjectOutput, tags map[string]string) error {
 	if tags == nil {
 		tags = map[string]string{}
 	}
@@ -116,13 +116,7 @@ func printHeadInfo(path string, head *s3iface.HeadObjectOutput, tags map[string]
 		"ObjectLockRetainUntil": head.ObjectLockRetainUntilDate,
 		"Tags":                  tags,
 	}
-	b, err := json.MarshalIndent(m, "", "  ")
-	if err != nil {
-		return fmt.Errorf("marshal info: %w", err)
-	}
-
-	myprint.PrintlnGreen(string(b))
-	return nil
+	return render.PrintJSONDoc(m)
 }
 
 func (c *Action) infoBucket(bucket string) error {
@@ -132,29 +126,44 @@ func (c *Action) infoBucket(bucket string) error {
 	// 吞掉它的错误会让 "info 不存在的 bucket" 输出一份全空 JSON 且退出码为 0。
 	location, err := c.S3.GetBucketLocation(c.Ctx, bucket)
 	if err != nil {
-		return fmt.Errorf("get bucket location: %s", FormatAPIError(err))
+		return fmt.Errorf("get bucket location: %w", err)
 	}
 	info["Location"] = location
 
-	// 以下子项允许不存在 (未配置时服务端返回 404 类错误), 失败按空值输出。
+	// 以下子项允许不存在 (未配置时服务端返回 404 / NoSuch*), 此时按空值输出;
+	// 但 403、网络错误等真实失败必须上抛 —— 否则"没权限看"会被渲染成
+	// "Versioning": "" / "Policy": "", 与"确实未配置"无法区分。
+	// 注意 NoSuchBucketPolicy 这类码本身就属于 IsNotFound, 即"未配置"。
 
 	// Versioning
 	var versioning string
-	if v, err := c.S3.GetBucketVersioning(c.Ctx, bucket); err == nil {
+	if v, verr := c.S3.GetBucketVersioning(c.Ctx, bucket); verr != nil {
+		if !api.IsNotFound(verr) {
+			return fmt.Errorf("get bucket versioning %s: %w", c.S3Path(bucket, ""), verr)
+		}
+	} else {
 		versioning = string(v)
 	}
 	info["Versioning"] = versioning
 
 	// Policy
 	var policy string
-	if p, err := c.S3.GetBucketPolicy(c.Ctx, bucket); err == nil {
+	if p, perr := c.S3.GetBucketPolicy(c.Ctx, bucket); perr != nil {
+		if !api.IsNotFound(perr) {
+			return fmt.Errorf("get bucket policy %s: %w", c.S3Path(bucket, ""), perr)
+		}
+	} else {
 		policy = string(p)
 	}
 	info["Policy"] = policy
 
 	// CORS
 	var corsRules any
-	if cors, err := c.S3.GetBucketCors(c.Ctx, bucket); err == nil {
+	if cors, cerr := c.S3.GetBucketCors(c.Ctx, bucket); cerr != nil {
+		if !api.IsNotFound(cerr) {
+			return fmt.Errorf("get bucket cors %s: %w", c.S3Path(bucket, ""), cerr)
+		}
+	} else {
 		corsRules = cors.CORSRules
 	}
 	info["CORS"] = corsRules
@@ -166,12 +175,6 @@ func (c *Action) infoBucket(bucket string) error {
 	}
 	info["URL"] = url
 
-	b, err := json.MarshalIndent(info, "", "  ")
-	if err != nil {
-		return fmt.Errorf("marshal info: %w", err)
-	}
-
 	myprint.PrintfBoldBlue(i18n.T("# %s %s info(bucket):\n", "# %s %s info(bucket)：\n"), c.Alias, bucket)
-	myprint.PrintlnGreen(string(b))
-	return nil
+	return render.PrintJSONDoc(info)
 }

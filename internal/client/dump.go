@@ -3,7 +3,7 @@ package client
 import (
 	"net/http"
 	"net/http/httputil"
-	myprint "s3cli/pkg/fmtutil"
+	myprint "s3cli/internal/fmtutil"
 	"sync/atomic"
 	"time"
 )

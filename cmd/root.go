@@ -8,8 +8,8 @@ import (
 	"os/signal"
 	"s3cli/internal/action"
 	"s3cli/internal/config"
-	myprint "s3cli/pkg/fmtutil"
-	"s3cli/pkg/i18n"
+	myprint "s3cli/internal/fmtutil"
+	"s3cli/internal/i18n"
 	"strings"
 	"sync"
 	"syscall"
@@ -117,8 +117,8 @@ func resolveLangPref(args []string) string {
 		if a == "--lang" && i+1 < len(args) {
 			return args[i+1]
 		}
-		if strings.HasPrefix(a, "--lang=") {
-			return strings.TrimPrefix(a, "--lang=")
+		if after, ok := strings.CutPrefix(a, "--lang="); ok {
+			return after
 		}
 	}
 	if v := os.Getenv("CLI_LANG"); v != "" {
@@ -185,7 +185,9 @@ func NewRootCmd() {
 
 	// flags
 	fs := rootCmd.PersistentFlags()
-	fs.StringVarP(&config.G.C, "conf", "f", config.DefaultConfigPath(), i18n.T("Path to configuration file (default ~/.s3cli)", "配置文件路径（默认 ~/.s3cli）"))
+	// help 文案里不再自带 "(default ~/.s3cli)": cobra 会自动把默认值追加到
+	// flag 说明之后, 自带一份会打印成 "(default ~/.s3cli) (default \"/home/…\")"。
+	fs.StringVarP(&config.G.C, "conf", "f", config.DefaultConfigPath(), i18n.T("Path to configuration file", "配置文件路径"))
 	fs.BoolVar(&config.G.F.Debug, "debug", false, i18n.T("Print summarized S3 requests", "打印精简后的 S3 请求信息"))
 	fs.BoolVar(&config.G.F.NoColor, "no-color", false, i18n.T("Disable color output", "禁用彩色输出"))
 	fs.StringVar(&config.G.F.UserAgent, "user-agent", "", i18n.T("Override the HTTP User-Agent header", "覆盖 HTTP User-Agent 请求头"))
@@ -194,6 +196,11 @@ func NewRootCmd() {
 	fs.StringVar(&config.G.F.HostBase, "host-base", "", i18n.T("Override the endpoint host for all aliases", "覆盖所有别名使用的 endpoint 主机地址"))
 	fs.BoolVar(&config.G.F.NoVerifySSL, "no-verify-ssl", false, i18n.T("Skip TLS certificate verification", "跳过 TLS 证书校验"))
 	fs.StringVar(&langFlag, "lang", langPref, i18n.T("Help language: auto (detect from timezone/locale) | en | zh", "帮助语言：auto（按时区/环境自动检测）| en | zh"))
+	// --json 是全局参数: 支持结构化输出的命令读 config.G.F.JSON, 不支持的命令
+	// 静默忽略。这样脚本可以无条件加 --json 而不必逐命令判断。
+	// 支持的命令: ls / du / stat / find / tree / diff / bucket lifecycle list /
+	// bucket acl get / object acl get / tag list / mpu list / mpu local-list。
+	fs.BoolVar(&config.G.F.JSON, "json", false, i18n.T("Output structured JSON (supported commands only; ignored elsewhere)", "输出结构化 JSON（仅部分命令支持，其余命令忽略此参数）"))
 
 	// 从注册表添加所有子命令（带分组显示）。
 	// 同时校验顶层命令名/别名不得重叠：cobra 在命令名与别名冲突时的命中顺序

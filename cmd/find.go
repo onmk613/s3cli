@@ -2,8 +2,9 @@ package cmd
 
 import (
 	"s3cli/internal/action"
+	"s3cli/internal/config"
+	"s3cli/internal/i18n"
 	"s3cli/internal/s3path"
-	"s3cli/pkg/i18n"
 
 	"github.com/spf13/cobra"
 )
@@ -25,6 +26,9 @@ func NewFindCmd() *cobra.Command {
 		Args:              cobra.MinimumNArgs(1),
 		ValidArgsFunction: AutoCompletePath,
 		RunE: NewRunE(func(S3 action.Action, dst *s3path.Path) error {
+			// --json 是根命令的持久 flag, 必须在 RunE 里取一次。遗漏时 action
+			// 层已实现的 JSON 分支永远走不到, --json 被静默忽略 (退化成文本)。
+			findOpt.JSON = config.G.F.JSON
 			if largerStr != "" {
 				n, err := action.ParseByteSize(largerStr)
 				if err != nil {
@@ -66,7 +70,6 @@ func NewFindCmd() *cobra.Command {
 	f.StringVar(&findOpt.Print, "print", "", i18n.T("Print in custom format: {name} {size} {time} {url} {path} {etag} {storage-class} {version-id}", "按自定义格式打印：{name} {size} {time} {url} {path} {etag} {storage-class} {version-id}"))
 	f.IntVar(&findOpt.Limit, "limit", 0, i18n.T("Stop after N matching objects (0 = unlimited)", "匹配 N 个对象后停止（0 = 不限制）"))
 	f.BoolVar(&findOpt.Versions, "versions", false, i18n.T("Filter by the latest version time via ListObjectVersions (includes delete markers)", "通过 ListObjectVersions 按最新版本时间过滤（含删除标记）"))
-	f.BoolVar(&findOpt.JSON, "json", false, jsonOutputDesc())
 	return cmd
 }
 
@@ -79,6 +82,7 @@ func NewTreeCmd() *cobra.Command {
 		Args:              cobra.MinimumNArgs(1),
 		ValidArgsFunction: AutoCompletePath,
 		RunE: NewRunE(func(S3 action.Action, dst *s3path.Path) error {
+			treeOpt.JSON = config.G.F.JSON
 			return S3.TreeObjects(treeOpt, dst.Bucket, dst.Key)
 		}),
 	}
@@ -88,6 +92,5 @@ func NewTreeCmd() *cobra.Command {
 	f.BoolVarP(&treeOpt.ShowSize, "size", "s", false, i18n.T("Show object size next to file names", "在文件名旁显示对象大小"))
 	f.IntVarP(&treeOpt.MaxDepth, "max-depth", "L", 0, i18n.T("DEPRECATED: use -d/--depth", "已弃用：请使用 -d/--depth"))
 	_ = cmd.Flags().MarkDeprecated("max-depth", i18n.T("use -d/--depth instead", "请改用 -d/--depth"))
-	f.BoolVar(&treeOpt.JSON, "json", false, jsonOutputDesc())
 	return cmd
 }

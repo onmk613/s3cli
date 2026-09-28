@@ -6,15 +6,18 @@ package action
 
 import (
 	"crypto/sha256"
+	"encoding/binary"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
+	"s3cli/internal/action/render"
 	"time"
 
-	myprint "s3cli/pkg/fmtutil"
-	"s3cli/pkg/i18n"
+	myprint "s3cli/internal/fmtutil"
+	"s3cli/internal/i18n"
 )
 
 // multipartState persists only the information required to safely reconnect a
@@ -29,6 +32,12 @@ type multipartState struct {
 	PartSize      int64  `json:"part_size"`
 	TotalSize     int64  `json:"total_size"`
 	ModTimeUnixNs int64  `json:"mod_time_unix_ns"`
+	// ContentDigest 是本地文件的内容指纹 (见 fingerprintFile)。
+	// size+mtime 足以识别"文件被换掉了", 但不足以识别"内容被原地改回去了":
+	// rsync -t / tar -p / touch -r / 还原构建产物 都能造出 size 与 mtime 完全
+	// 相同而内容不同的文件。此时续传会把已上传的旧分片与新内容拼成一个
+	// 半新半旧的对象, 且全程无任何报错 —— 静默数据损坏。
+	ContentDigest string `json:"content_digest"`
 	CreatedAt     string `json:"created_at"`
 }
 
@@ -111,13 +120,7 @@ func MpuLocalList(opt MpuLocalOptions) error {
 		return err
 	}
 	if opt.OutputToJSON {
-
-		b, err := json.MarshalIndent(states, "", "  ")
-		if err != nil {
-			return fmt.Errorf("marshal multipart states: %w", err)
-		}
-		myprint.PrintlnGreen(string(b))
-		return nil
+		return render.PrintJSONDoc(states)
 	}
 	tbl := myprint.NewTable(
 		i18n.T("Created", "创建时间"),
@@ -146,12 +149,7 @@ func MpuLocalClear(path string, opt MpuLocalOptions) error {
 		return err
 	}
 	if opt.OutputToJSON {
-		b, err := json.MarshalIndent(map[string]string{"cleared": path}, "", "  ")
-		if err != nil {
-			return fmt.Errorf("marshal clear result: %w", err)
-		}
-		myprint.PrintlnGreen(string(b))
-		return nil
+		return render.PrintJSONDoc(map[string]string{"cleared": path})
 	}
 	myprint.PrintfGreen(i18n.T("removed local multipart state %s\n", "已删除本地分段上传状态 %s\n"), path)
 	return nil
@@ -170,7 +168,12 @@ func multipartStatePath(localPath, bucket, key string) (string, error) {
 	return filepath.Join(dir, hex.EncodeToString(sum[:])+".json"), nil
 }
 
-func loadMultipartState(localPath, bucket, key string, size int64, modTime time.Time) (*multipartState, string, error) {
+// loadMultipartState 读取本地状态文件。文件不存在时返回 (nil, path, nil)。
+//
+// 只要文件存在且能解析, 返回的 state 就非 nil —— "是否仍可复用"交给
+// stateMatches 判定, 这样调用方对不可复用的旧上传也能拿到 UploadID 去 Abort,
+// 而不是把它变成服务端的孤儿分片。
+func loadMultipartState(localPath, bucket, key string) (*multipartState, string, error) {
 	path, err := multipartStatePath(localPath, bucket, key)
 	if err != nil {
 		return nil, "", err
@@ -186,10 +189,60 @@ func loadMultipartState(localPath, bucket, key string, size int64, modTime time.
 	if err := json.Unmarshal(data, &state); err != nil {
 		return nil, path, fmt.Errorf("decode multipart state: %w", err)
 	}
-	if state.Version != 1 || state.UploadID == "" || state.Bucket != bucket || state.Key != key || state.TotalSize != size || state.ModTimeUnixNs != modTime.UnixNano() {
-		return nil, path, nil
-	}
 	return &state, path, nil
+}
+
+// stateMatches 判断本地状态是否仍能代表当前待传文件。
+//
+// 判据缺一不可, 其中 ContentDigest 是唯一能识别"size 与 mtime 都没变但内容
+// 变了"的依据 (旧版本状态文件没有该字段, 取空串即视为不匹配, 于是会安全地
+// 重建上传而不是冒险续传)。
+func stateMatches(state *multipartState, bucket, key string, size int64, modTime time.Time, digest string) bool {
+	return state != nil &&
+		state.Version == 1 &&
+		state.UploadID != "" &&
+		state.Bucket == bucket &&
+		state.Key == key &&
+		state.TotalSize == size &&
+		state.ModTimeUnixNs == modTime.UnixNano() &&
+		state.ContentDigest != "" &&
+		state.ContentDigest == digest
+}
+
+// fingerprintSampleSize 是内容指纹的采样窗口: 首、尾各取一份。
+// 512KiB 相对 GB 级上传的 IO 可忽略, 又能覆盖 rsync/tar 还原后必然改变的
+// 头部区域, 以及尾部追加/改写。
+const fingerprintSampleSize = 512 * 1024
+
+// fingerprintFile 计算本地文件的内容指纹 = SHA-256(size ‖ head ‖ tail)。
+//
+// 刻意不做全文件摘要: 那会让"续传"多付一次完整读盘的代价, 抵消断点续传的
+// 收益。采样指纹不是密码学意义上的完整性校验 (中段被改写且首尾不变时检测不到),
+// 但足以挡住"换成另一个文件/还原了旧版本"这类真实场景; 传输正确性最终仍由
+// 服务端 ListParts 对账与每片的 checksum 保证。
+//
+// 用 io.SectionReader 而非 Seek: 不改变文件当前偏移, 调用方无需复位。
+func fingerprintFile(f *os.File, size int64) (string, error) {
+	h := sha256.New()
+	var sizeBuf [8]byte
+	binary.BigEndian.PutUint64(sizeBuf[:], uint64(size))
+	if _, err := h.Write(sizeBuf[:]); err != nil {
+		return "", err
+	}
+
+	window := int64(fingerprintSampleSize)
+	if window > size {
+		window = size
+	}
+	for _, off := range []int64{0, size - window} {
+		if window <= 0 {
+			break
+		}
+		if _, err := io.CopyN(h, io.NewSectionReader(f, off, window), window); err != nil {
+			return "", fmt.Errorf("read %d bytes at offset %d: %w", window, off, err)
+		}
+	}
+	return hex.EncodeToString(h.Sum(nil)), nil
 }
 
 func saveMultipartState(path string, state multipartState) error {

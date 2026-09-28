@@ -7,9 +7,9 @@ import (
 	"errors"
 	"fmt"
 
-	myprint "s3cli/pkg/fmtutil"
-	"s3cli/pkg/i18n"
-	s3iface "s3cli/pkg/s3iface"
+	"s3cli/internal/api"
+	myprint "s3cli/internal/fmtutil"
+	"s3cli/internal/i18n"
 )
 
 // 创建存储桶的同时设置cors、policy、lifecycle
@@ -28,11 +28,11 @@ type MakeBucketOptions struct {
 // 桶创建成功后的各配置子步骤 (cors/policy/lifecycle/versioning/quota) 任一失败
 // 都会聚合为错误返回 (桶本身仍在), 避免脚本依据退出码误判全部成功。
 func (c *Action) MakeBuckets(opt MakeBucketOptions, bucket string) error {
-	if err := c.S3.CreateBucket(c.Ctx, bucket, &s3iface.MakeBucketOptions{
+	if err := c.S3.CreateBucket(c.Ctx, bucket, &api.MakeBucketOptions{
 		Region:        opt.Region,
 		ObjectLocking: opt.ObjectLocking,
 	}); err != nil {
-		var apiErr *s3iface.ErrorResponse
+		var apiErr *api.ErrorResponse
 		if opt.IgnoreExisting && errors.As(err, &apiErr) && (apiErr.Code == "BucketAlreadyOwnedByYou" || apiErr.Code == "BucketAlreadyExists") {
 			myprint.PrintfDim(i18n.T("Bucket %s already exists (ignored)\n", "存储桶 %s 已存在（已忽略）\n"), bucket)
 			return nil

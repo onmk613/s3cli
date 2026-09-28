@@ -7,9 +7,9 @@ import (
 	"errors"
 	"fmt"
 
-	myprint "s3cli/pkg/fmtutil"
-	"s3cli/pkg/i18n"
-	"s3cli/pkg/s3iface"
+	"s3cli/internal/api"
+	myprint "s3cli/internal/fmtutil"
+	"s3cli/internal/i18n"
 )
 
 // RestoreOptions 控制 restore 命令的参数.
@@ -27,13 +27,13 @@ func (c *Action) Restore(opt RestoreOptions, bucket, key string) error {
 	if opt.Days <= 0 {
 		opt.Days = 1
 	}
-	req := &s3iface.RestoreRequest{Days: opt.Days}
+	req := &api.RestoreRequest{Days: opt.Days}
 	if opt.Tier != "" {
-		req.GlacierJobParameters = &s3iface.GlacierJobParameters{Tier: opt.Tier}
+		req.GlacierJobParameters = &api.GlacierJobParameters{Tier: opt.Tier}
 	}
 
 	if err := c.S3.RestoreObject(c.Ctx, bucket, key, opt.VersionID, req); err != nil {
-		return fmt.Errorf("restore %s: %s", c.S3Path(bucket, key), FormatAPIError(err))
+		return fmt.Errorf("restore %s: %w", c.S3Path(bucket, key), err)
 	}
 
 	tier := opt.Tier

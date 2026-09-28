@@ -4,30 +4,25 @@
 package action
 
 import (
-	"encoding/json"
 	"fmt"
+	"s3cli/internal/action/render"
 
-	myprint "s3cli/pkg/fmtutil"
-	"s3cli/pkg/i18n"
+	myprint "s3cli/internal/fmtutil"
+	"s3cli/internal/i18n"
 )
 
 // printBucketConfigJSON 把桶级配置以 pretty JSON 打印, 统一了各 GetXxx 的输出样板。
 // header 为打印的标题 (如 "encryption" / "lifecycle"), fetchErrLabel 用于错误信息。
 func (c *Action) printBucketConfigJSON(bucket, header string, cfg any) error {
-	b, err := json.MarshalIndent(cfg, "", "  ")
-	if err != nil {
-		return fmt.Errorf("marshal %s: %w", header, err)
-	}
 	myprint.PrintfBoldBlue("# %s %s %s\n", c.Alias, bucket, header)
-	myprint.PrintlnGreen(string(b))
-	return nil
+	return render.PrintJSONDoc(cfg)
 }
 
 // deleteBucketConfig 执行桶级配置删除并打印成功信息, 统一了各 DelXxx 的样板。
 // label 用于错误信息 (如 "cors"), doneMsg 为成功提示模板 (含两个 %s: alias、bucket)。
 func (c *Action) deleteBucketConfig(bucket, label, doneMsg string, del func() error) error {
 	if err := del(); err != nil {
-		return fmt.Errorf("delete %s %s: %s", label, bucket, FormatAPIError(err))
+		return fmt.Errorf("delete %s %s: %w", label, bucket, err)
 	}
 	myprint.PrintfBoldGreen(doneMsg, c.Alias, bucket)
 	return nil

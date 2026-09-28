@@ -3,46 +3,32 @@
 package action
 
 import (
-	"fmt"
-
-	myprint "s3cli/pkg/fmtutil"
-	"s3cli/pkg/i18n"
-	"s3cli/pkg/s3iface"
+	"s3cli/internal/action/render"
+	myprint "s3cli/internal/fmtutil"
+	"s3cli/internal/i18n"
 )
 
-// ListObjectVersions 列出对象版本 + delete-marker
+// ListObjectVersions 列出对象版本 + delete-marker。
+//
+// 与 ls --versions 共用 forEachVersion 的分页逻辑与 VersionEntry 归一视图,
+// 两者的差异只剩下着色与列宽 (删除标记用红色、大小显示为 "-")。
 func (c *Action) ListObjectVersions(bucket, prefix string) error {
-	paginator := c.S3.NewListObjectVersionsPaginator(bucket,
-		&s3iface.ListObjectVersionsOptions{Prefix: prefix})
+	return c.forEachVersion(c.Ctx, bucket, prefix, func(v VersionEntry) error {
+		flag := render.VersionFlag(v.IsDeleteMarker, v.IsLatest)
+		path := c.S3Path(bucket, v.Key)
 
-	for paginator.HasMorePages() {
-		page, err := paginator.NextPage(c.Ctx)
-		if err != nil {
-			return fmt.Errorf("list versions: %s", FormatAPIError(err))
-		}
-		for _, v := range page.Versions {
-			flag := "VER "
-			if v.IsLatest {
-				flag = "VER*"
-			}
-			myprint.Printf("%s ", flag)
-			myprint.PrintfDim("[%s]  ", v.LastModified.Format("2006-01-02 15:04:05"))
-			myprint.Printf("%12d   ", v.Size)
-			myprint.PrintfGreen("%s  ", c.S3Path(bucket, v.Key))
-			myprint.PrintfCyan(i18n.T("ID=%s\n", "ID=%s\n"), v.VersionID)
-		}
-		for _, m := range page.DeleteMarkers {
-			flag := "DEL "
-			if m.IsLatest {
-				flag = "DEL*"
-			}
-
+		if v.IsDeleteMarker {
 			myprint.PrintfRed("%s ", flag)
-			myprint.PrintfDim("[%s]  ", m.LastModified.Format("2006-01-02 15:04:05"))
+			myprint.PrintfDim("[%s]  ", v.LastModified.Format(render.TimeLayout))
 			myprint.Printf("%12s   ", "-")
-			myprint.PrintfRed("%s  ", c.S3Path(bucket, m.Key))
-			myprint.PrintfCyan(i18n.T("ID=%s\n", "ID=%s\n"), m.VersionID)
+			myprint.PrintfRed("%s  ", path)
+		} else {
+			myprint.Printf("%s ", flag)
+			myprint.PrintfDim("[%s]  ", v.LastModified.Format(render.TimeLayout))
+			myprint.Printf("%12d   ", v.Size)
+			myprint.PrintfGreen("%s  ", path)
 		}
-	}
-	return nil
+		myprint.PrintfCyan(i18n.T("ID=%s\n", "ID=%s\n"), v.VersionID)
+		return nil
+	})
 }

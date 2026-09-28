@@ -13,9 +13,9 @@ import (
 	"path/filepath"
 	"strings"
 
-	myprint "s3cli/pkg/fmtutil"
-	"s3cli/pkg/i18n"
-	"s3cli/pkg/s3iface"
+	"s3cli/internal/api"
+	myprint "s3cli/internal/fmtutil"
+	"s3cli/internal/i18n"
 )
 
 // PutOptions put 命令参数
@@ -30,6 +30,21 @@ type PutOptions struct {
 	Tags            string            // 对象标签 'k1=v1&k2=v2' (--tags)
 	NoProgress      bool              // 不显示进度条（--quiet）
 	Overwrite       bool              // 目标对象已存在时是否覆盖 (默认跳过)
+	Checksum        string            // --checksum: 附加校验和算法 (CRC32/CRC32C/SHA1/SHA256)
+	DryRun          bool              // --dry-run: 只列出将上传的对象, 不做实际上传
+	Include         []string          // --include: 只上传相对路径匹配该 glob 的文件
+	Exclude         []string          // --exclude: 跳过相对路径匹配该 glob 的文件
+}
+
+// putObjectOptions 由 PutOptions 构造 API 层上传参数 (单文件与分片共用)。
+func putObjectOptions(opt PutOptions, mimeType string, alg api.ChecksumAlgorithm) *api.PutObjectOptions {
+	return &api.PutObjectOptions{
+		ContentType:       mimeType,
+		StorageClass:      opt.StorageClass,
+		Metadata:          opt.Metadata,
+		Tagging:           opt.Tags,
+		ChecksumAlgorithm: alg,
+	}
 }
 
 // PutObject 上传本地文件或目录到 S3
@@ -37,6 +52,13 @@ func (c *Action) PutObject(opt PutOptions, bucket, prefix, localPath string, isS
 	AddMime()
 	if opt.Concurrency <= 0 {
 		opt.Concurrency = defaultConcurrency
+	}
+	// 数值上界必须在任何分配之前校验: 见 limits.go。
+	if err := validateConcurrency(opt.Concurrency); err != nil {
+		return err
+	}
+	if err := validatePartSizeMB(opt.PartSizeMB); err != nil {
+		return err
 	}
 
 	// stdin 上传 (put -): 从标准输入读取并上传, 替代旧 pipe 命令.
@@ -74,11 +96,21 @@ func (c *Action) PutObject(opt PutOptions, bucket, prefix, localPath string, isS
 	} else if isS3Dir {
 		dstKey = path.Join(prefix, filepath.Base(localPath))
 	}
+	// --dry-run 必须在任何网络写操作之前短路。此前只有目录分支 (见
+	// uploadDirStreaming 的 Work) 检查了 DryRun, 单文件会照常上传, 与
+	// cmd 层的 "without transferring anything" 承诺及 README 的"安全自检"
+	// 说明矛盾 —— 用户以为在预演, 实际覆盖了线上对象。
+	// 放在存在性探测之前, 与目录分支一致: 干跑只做本地计算, 不发任何请求。
+	if opt.DryRun {
+		myprint.PrintfYellow(i18n.T("would upload %s -> %s (%s)\n", "将上传 %s -> %s（%s）\n"),
+			localPath, c.S3Path(bucket, dstKey), myprint.FormatBytes(fi.Size()))
+		return nil
+	}
 	// 默认不覆盖: 目标对象已存在则跳过, 仅 --overwrite 时强制上传。
 	if !opt.Overwrite {
 		exists, existsErr := c.objectExists(c.Ctx, bucket, dstKey)
 		if existsErr != nil {
-			return fmt.Errorf("check existing object: %s", FormatAPIError(existsErr))
+			return fmt.Errorf("check existing object: %w", existsErr)
 		}
 		if exists {
 			myprint.Printf(i18n.T("skip: %s already exists\n", "跳过：%s 已存在\n"), c.S3Path(bucket, dstKey))
@@ -118,6 +150,13 @@ func (c *Action) uploadDirStreaming(opt PutOptions, bucket, key, localPath strin
 				if relErr != nil {
 					return relErr
 				}
+				relSlash := filepath.ToSlash(relPath)
+				if len(opt.Include) > 0 || len(opt.Exclude) > 0 {
+					// 与 mirror / rm 同一套过滤语义: 相对参数路径匹配。
+					if !matchesMirrorFilters(relSlash, opt.Include, opt.Exclude) {
+						return nil
+					}
+				}
 				// S3 key 一律用正斜杠，且只存"纯 key"（不含 alias/bucket 前缀），
 				// 显示用的完整路径在日志处再由 S3Path 拼接，避免把展示路径误当 key 上传。
 				var dstKey string
@@ -131,11 +170,16 @@ func (c *Action) uploadDirStreaming(opt PutOptions, bucket, key, localPath strin
 			})
 		},
 		Work: func(ctx context.Context, job StreamJob, report func(n int64)) error {
+			if opt.DryRun {
+				myprint.PrintfYellow(i18n.T("would upload %s -> %s (%s)\n", "将上传 %s -> %s（%s）\n"),
+					job.Src, c.S3Path(bucket, job.Dst), myprint.FormatBytes(job.Size))
+				return nil
+			}
 			// 默认不覆盖: 目标对象已存在则跳过 (静默, 进度条计入已完成)。
 			if !opt.Overwrite {
 				exists, existsErr := c.objectExists(ctx, bucket, job.Dst)
 				if existsErr != nil {
-					return fmt.Errorf("check existing object: %s", FormatAPIError(existsErr))
+					return fmt.Errorf("check existing object: %w", existsErr)
 				}
 				if exists {
 					return nil
@@ -165,12 +209,11 @@ func (c *Action) uploadFile(ctx context.Context, opt PutOptions, mimeType, bucke
 		return fmt.Errorf("stat %s: %w", filePath, err)
 	}
 
-	putOpts := &s3iface.PutObjectOptions{
-		ContentType:  mimeType,
-		StorageClass: opt.StorageClass,
-		Metadata:     opt.Metadata,
-		Tagging:      opt.Tags,
+	alg, err := parseChecksumAlg(opt.Checksum)
+	if err != nil {
+		return err
 	}
+	putOpts := putObjectOptions(opt, mimeType, alg)
 
 	var uploadErr error
 	if fi.Size() >= multipartThreshold {
@@ -179,7 +222,7 @@ func (c *Action) uploadFile(ctx context.Context, opt PutOptions, mimeType, bucke
 		_, uploadErr = c.S3.PutObjectStream(ctx, bucket, fileKey, f, fi.Size(), putOpts)
 	}
 	if uploadErr != nil {
-		return fmt.Errorf("upload %s: %s", filePath, FormatAPIError(uploadErr))
+		return fmt.Errorf("upload %s: %w", filePath, uploadErr)
 	}
 	if report != nil && fi.Size() < multipartThreshold {
 		report(fi.Size())
@@ -217,14 +260,20 @@ func (c *Action) putStdin(opt PutOptions, bucket, key string) error {
 		}
 	}
 
-	putOpts := &s3iface.PutObjectOptions{
-		ContentType:  mimeType,
-		StorageClass: opt.StorageClass,
-		Metadata:     opt.Metadata,
-		Tagging:      opt.Tags,
+	alg, algErr := parseChecksumAlg(opt.Checksum)
+	if algErr != nil {
+		return algErr
 	}
+	// --dry-run: 同单文件分支, 必须在读取 stdin 与上传之前短路。
+	// 这里刻意不读 stdin —— 干跑不应消耗调用方的管道数据。
+	if opt.DryRun {
+		myprint.PrintfYellow(i18n.T("would upload stdin -> %s (size unknown)\n", "将上传 stdin -> %s（大小未知）\n"),
+			c.S3Path(bucket, key))
+		return nil
+	}
+	putOpts := putObjectOptions(opt, mimeType, alg)
 	if err := c.uploadUnknownSize(c.Ctx, bucket, key, os.Stdin, opt.PartSizeMB, putOpts); err != nil {
-		return fmt.Errorf("stdin upload %s: %s", c.S3Path(bucket, key), FormatAPIError(err))
+		return fmt.Errorf("stdin upload %s: %w", c.S3Path(bucket, key), err)
 	}
 	myprint.PrintfBoldGreen(i18n.T("put: stdin --> %s  (%s)\n", "上传：stdin --> %s  (%s)\n"), c.S3Path(bucket, key), mimeType)
 	return nil

@@ -3,8 +3,8 @@ package cmd
 import (
 	"s3cli/internal/action"
 	"s3cli/internal/config"
+	"s3cli/internal/i18n"
 	"s3cli/internal/s3path"
-	"s3cli/pkg/i18n"
 
 	"github.com/spf13/cobra"
 )
@@ -41,6 +41,10 @@ func NewGetCmd() *cobra.Command {
 	f.Int64VarP(&getOpt.Tail, "tail", "t", 0, i18n.T("Output only the last N bytes (use with 'get -')", "只输出最后 N 字节（配合 'get -' 使用）"))
 	f.IntVarP(&getOpt.Lines, "lines", "n", 0, i18n.T("Output only the first N lines (use with 'get -')", "只输出前 N 行（配合 'get -' 使用）"))
 	f.BoolVarP(&getOpt.NoProgress, "quiet", "q", false, quietDesc())
+	f.BoolVar(&getOpt.DryRun, "dry-run", false, i18n.T("Show what would be downloaded without writing any file", "只显示将下载的内容，不写入任何文件"))
+	f.StringSliceVar(&getOpt.Include, "include", nil, i18n.T("Only download keys matching this glob (relative to the source prefix; can repeat)", "只下载匹配该通配模式的 key（相对源前缀；可重复）"))
+	f.StringSliceVar(&getOpt.Exclude, "exclude", nil, i18n.T("Skip keys matching this glob (relative to the source prefix; can repeat)", "跳过匹配该通配模式的 key（相对源前缀；可重复）"))
+	f.StringVar(&getOpt.Checksum, "checksum", "", i18n.T("Verify the downloaded object against this checksum: CRC32 / CRC32C / SHA1 / SHA256", "按该校验和校验下载结果：CRC32 / CRC32C / SHA1 / SHA256"))
 	return cmd
 }
 
@@ -80,6 +84,10 @@ func NewPutCmd() *cobra.Command {
 	f.StringVar(&putOpt.Tags, "tags", "", i18n.T("Apply tags to the uploaded object: '<key1>=<value1>&<key2>=<value2>'", "给上传对象添加标签：'<key1>=<value1>&<key2>=<value2>'"))
 	f.BoolVar(&putOpt.Overwrite, "overwrite", false, i18n.T("Overwrite existing objects (default: skip if target object exists)", "覆盖已存在的对象（默认：目标对象存在时跳过）"))
 	f.BoolVarP(&putOpt.NoProgress, "quiet", "q", false, quietDesc())
+	f.BoolVar(&putOpt.DryRun, "dry-run", false, i18n.T("Show what would be uploaded without transferring anything", "只显示将上传的内容，不做任何传输"))
+	f.StringSliceVar(&putOpt.Include, "include", nil, i18n.T("Only upload files whose relative path matches this glob (can repeat)", "只上传相对路径匹配该通配模式的文件（可重复）"))
+	f.StringSliceVar(&putOpt.Exclude, "exclude", nil, i18n.T("Skip files whose relative path matches this glob (can repeat)", "跳过相对路径匹配该通配模式的文件（可重复）"))
+	f.StringVar(&putOpt.Checksum, "checksum", "", i18n.T("Attach an additional checksum computed with this algorithm: CRC32 / CRC32C / SHA1 / SHA256", "按该算法附加校验和：CRC32 / CRC32C / SHA1 / SHA256"))
 	return cmd
 }
 

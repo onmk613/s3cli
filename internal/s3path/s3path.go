@@ -60,9 +60,9 @@ func Parse(s string) (*Path, error) {
 
 	var bucket, key string
 	trailing := strings.HasSuffix(rest, "/")
-	if slash := strings.Index(rest, "/"); slash >= 0 {
-		bucket = rest[:slash]
-		key = rest[slash+1:]
+	if before, after, ok := strings.Cut(rest, "/"); ok {
+		bucket = before
+		key = after
 	} else {
 		bucket = rest
 	}

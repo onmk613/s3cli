@@ -320,28 +320,16 @@ func TestSetAliasStaticReadError(t *testing.T) {
 	}
 }
 
-func TestInteractEditGoroutineCtxExit(t *testing.T) {
-	// goroutine 发送侧的 ctx.Done 退出分支与发送分支在 select 中随机竞争,
-	// 单次运行无法保证命中。多次尝试以覆盖两条路径（正常数据行与带数据 EOF）。
-	run := func(input string) {
-		ctx, cancel := context.WithCancel(context.Background())
-		pr, pw, err := os.Pipe()
-		if err != nil {
-			t.Fatal(err)
-		}
-		old := os.Stdin
-		os.Stdin = pr
-		go func() {
-			_, _ = pw.WriteString(input)
-			_ = pw.Close()
-		}()
-		cancel()
-		_, _ = interactEdit(ctx, Static{})
-		os.Stdin = old
-		_ = pr.Close() // 触发 goroutine 的 ReadString 返回并退出
-	}
+func TestInteractEditCtxCancelAtFieldBoundary(t *testing.T) {
+	// 读取是就地阻塞的，ctx 只在字段边界被观察到：预先取消的 ctx 必须在
+	// 第一个字段就短路返回，且不消费 stdin。反复运行以覆盖「取消先于读」
+	// 与「读到数据后再取消」两种时序（不再依赖 goroutine 竞争）。
 	for i := 0; i < 60; i++ {
-		run("https://h\nak\nsk\n") // 正常路径的发送 select
-		run("https://h\nak\nsk")   // 带数据 EOF 的错误发送 select
+		ctx, cancel := context.WithCancel(context.Background())
+		cancel()
+		feedStdin(t, "https://h\nak\nsk\n")
+		if _, err := interactEdit(ctx, Static{}); !errors.Is(err, errInterrupted) {
+			t.Fatalf("iteration %d: want errInterrupted, got %v", i, err)
+		}
 	}
 }

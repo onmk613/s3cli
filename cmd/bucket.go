@@ -2,8 +2,8 @@ package cmd
 
 import (
 	"s3cli/internal/action"
+	"s3cli/internal/i18n"
 	"s3cli/internal/s3path"
-	"s3cli/pkg/i18n"
 
 	"github.com/spf13/cobra"
 )
@@ -28,6 +28,10 @@ func NewBucketCmd() *cobra.Command {
 		EventCmd(),
 		EncryptionCmd(),
 		VersioningCmd(),
+		BucketACLCmd(),
+		ObjectLockCmd(),
+		ReplicationCmd(),
+		PublicAccessBlockCmd(),
 	)
 	return cmd
 }
@@ -38,6 +42,7 @@ func CreateBucketCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:               "create [alias:bucket] ...",
 		Short:             i18n.T("Create bucket", "创建存储桶"),
+		Long:              i18n.T("Create bucket.\n\nFor buckets created with --with-lock, the default retention rule is configured with `s3cli bucket object-lock set`.", "创建存储桶。\n\n对使用 --with-lock 创建的存储桶，默认保留策略通过 `s3cli bucket object-lock set` 配置。"),
 		Args:              cobra.MinimumNArgs(1),
 		ValidArgsFunction: AutoCompleteBucket,
 		RunE: NewRunE(func(S3 action.Action, dst *s3path.Path) error {
@@ -67,5 +72,6 @@ func RemoveBucketCmd() *cobra.Command {
 		}),
 	}
 	cmd.Flags().BoolVar(&opts.Force, "force", false, i18n.T("Force remove bucket even if not empty", "即使桶不为空也强制删除"))
+	cmd.Flags().BoolVar(&opts.DryRun, "dry-run", false, i18n.T("Show what would be deleted without removing anything", "只显示将删除的内容，不做任何删除"))
 	return cmd
 }

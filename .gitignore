@@ -3,10 +3,11 @@
 .idea/
 .reasonix/
 .tmp-gocache/
-.e2e-debug/
-.e2e-tmp.*
+.gocache/
+.gotmp/
+.golangci_cache/
 vendor/
-docs/
+.docs-scratch/
 bin/
 reasonix*
 s3cli*

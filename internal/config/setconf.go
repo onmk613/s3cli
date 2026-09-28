@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net/url"
 	"os"
 	"os/signal"
 	"strconv"
@@ -13,45 +14,14 @@ import (
 	"sync"
 	"syscall"
 
-	myprint "s3cli/pkg/fmtutil"
+	myprint "s3cli/internal/fmtutil"
+	"s3cli/internal/i18n"
 
 	"golang.org/x/term"
 )
 
 // errInterrupted 表示交互式输入被用户中断（Ctrl+C）或 stdin 关闭（EOF）。
 var errInterrupted = errors.New("cancelled")
-
-// lineResult 是交互输入通道的载荷。
-type lineResult struct {
-	s   string
-	err error
-}
-
-type inputReq struct {
-	secret bool
-	resp   chan lineResult // cap 1，owner 发送不会阻塞
-}
-
-func stdinOwner(ctx context.Context, reqs <-chan inputReq) {
-	reader := bufio.NewReader(os.Stdin)
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case req, ok := <-reqs:
-			if !ok {
-				return
-			}
-			var res lineResult
-			if req.secret {
-				res.s, res.err = readSecretLine(reader)
-			} else {
-				res.s, res.err = readPlainLine(reader)
-			}
-			req.resp <- res
-		}
-	}
-}
 
 func readPlainLine(r *bufio.Reader) (string, error) {
 	s, err := r.ReadString('\n')
@@ -148,10 +118,6 @@ func skipEscape(r *bufio.Reader) {
 	}
 }
 
-func resp2req(secret bool, resp chan lineResult) inputReq {
-	return inputReq{secret: secret, resp: resp}
-}
-
 // 终端能力钩子（测试注入用），避免直接依赖运行时终端状态。
 var (
 	isTerminal   = term.IsTerminal
@@ -231,12 +197,26 @@ func EditAliasConf(ctx context.Context, section string) error {
 // interactEdit 交互式填写/修改一个别名的字段。
 // 每个字段展示当前值 (old)，空输入回车保留；必填字段最终必须非空。
 // 终端下密钥不回显；非终端（管道/重定向）回退普通行读取。
+//
+// reader 是本函数的局部变量：不跨调用持有 os.Stdin，因此不会预读走后续
+// 输入，也不存在与 os.Stdin 全局变量并发读写的竞态。
+//
+// ctx 取消只在字段边界生效 —— 阻塞中的 ReadString 无法被 ctx 打断。
+// 需要中途放弃时再按一次 Ctrl+C，由 cmd 层的第二信号监听强制退出 (130)。
 func interactEdit(ctx context.Context, old Static) (Static, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
 	conf := old
-	reqs := make(chan inputReq)
-	go stdinOwner(ctx, reqs)
+	reader := bufio.NewReader(os.Stdin)
 
 	ask := func(prompt, def string, secret bool) (string, error) {
+		// 进入阻塞读之前检查取消状态（这是唯一能观察到 ctx 的时机）。
+		if ctx.Err() != nil {
+			myprint.Println("")
+			return "", errInterrupted
+		}
+
 		def = strings.TrimSpace(def)
 		switch {
 		case secret && def != "":
@@ -247,40 +227,33 @@ func interactEdit(ctx context.Context, old Static) (Static, error) {
 			myprint.Printf("%s: ", prompt)
 		}
 
-		resp := make(chan lineResult, 1)
-		select {
-		case <-ctx.Done():
-			myprint.Println("")
-			return "", errInterrupted
-		case reqs <- resp2req(secret, resp):
+		var (
+			s   string
+			err error
+		)
+		if secret {
+			s, err = readSecretLine(reader)
+		} else {
+			s, err = readPlainLine(reader)
+			s = strings.TrimSpace(s) // 密钥只裁 CRLF，首尾空格可能是合法字符
 		}
 
-		select {
-		case <-ctx.Done():
-			myprint.Println("")
+		switch {
+		case err == nil:
+		case errors.Is(err, errInterrupted):
 			return "", errInterrupted
-		case res := <-resp:
-			s := res.s
-			if !secret {
-				s = strings.TrimSpace(s) // 密钥只裁 CRLF，首尾空格可能是合法字符
-			}
-			switch {
-			case res.err == nil:
-			case errors.Is(res.err, errInterrupted):
+		case errors.Is(err, io.EOF):
+			if s == "" { // 纯 EOF
+				myprint.Println("")
 				return "", errInterrupted
-			case errors.Is(res.err, io.EOF):
-				if s == "" { // 纯 EOF
-					myprint.Println("")
-					return "", errInterrupted
-				} // 带数据的 EOF（管道末尾无换行）→ 接受
-			default:
-				return "", fmt.Errorf("read input: %w", res.err)
-			}
-			if s == "" && def != "" {
-				return def, nil
-			}
-			return s, nil
+			} // 带数据的 EOF（管道末尾无换行）→ 接受
+		default:
+			return "", fmt.Errorf("read input: %w", err)
 		}
+		if s == "" && def != "" {
+			return def, nil
+		}
+		return s, nil
 	}
 
 	read := func(p, d string) (string, error) { return ask(p, d, false) }
@@ -292,8 +265,8 @@ func interactEdit(ctx context.Context, old Static) (Static, error) {
 		if err != nil {
 			return conf, err
 		}
-		if conf.HostBase == "" {
-			myprint.PrintlnRed("Host Base cannot be empty")
+		if _, verr := ValidateEndpoint(conf.HostBase); verr != nil {
+			myprint.PrintlnRed(verr.Error())
 			continue
 		}
 		break
@@ -371,6 +344,13 @@ func interactEdit(ctx context.Context, old Static) (Static, error) {
 			myprint.PrintlnRed("Invalid input, please enter a non-negative number")
 			continue
 		}
+		// 上界与 action.MaxPartSizeMB 一致: 每个在途分片持有一份完整内存缓冲,
+		// 超大分片会直接打爆进程。此处拦下可避免把坏值写进配置、等到下次
+		// put 时才失败 (而且失败点在传输中途)。
+		if m > MaxPartSizeMB {
+			myprint.PrintlnRed(fmt.Sprintf("Invalid input, please enter 0-%d MB", MaxPartSizeMB))
+			continue
+		}
 		conf.MultipartChunkSizeMb = m
 		break
 	}
@@ -386,6 +366,48 @@ func saveAlias(section string, conf Static) error {
 	}
 	myprint.PrintfGreen("S3 configuration saved to %s\n", G.C)
 	return nil
+}
+
+// ValidateEndpoint 校验别名 host_base 并返回规范化后的值。
+//
+// 在此之前 host_base 只被检查"是否为空", 而 api.New 在缺少 scheme 时会补
+// "http://" —— 于是 `alias add x s3.example.com AK SK` (漏写 https://) 会
+// 静默把凭证与对象数据走明文 HTTP 发出, 用户毫无感知。这类"少打几个字符"
+// 的输入是最常见的失误, 必须在写入配置前拦下。
+//
+// 规则:
+//   - 必须显式给出 http:// 或 https:// (缺少 scheme 直接拒绝, 不再隐式补全);
+//   - host 必须非空;
+//   - http:// 允许 (局域网 MinIO/Ceph 常见), 但会告警提示凭证将明文传输。
+func ValidateEndpoint(raw string) (string, error) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return "", errors.New("host base (URL) cannot be empty")
+	}
+	u, err := url.Parse(raw)
+	if err != nil {
+		return "", fmt.Errorf("invalid host base %q: %w", raw, err)
+	}
+	switch u.Scheme {
+	case "http", "https":
+	case "":
+		return "", fmt.Errorf(i18n.T(
+			"host base %q is missing a scheme; write it explicitly as https://%s (plain http would send your credentials in cleartext)",
+			"host_base %q 缺少协议前缀；请显式写成 https://%s（用 http 会让凭证以明文传输）"), raw, raw)
+	default:
+		return "", fmt.Errorf(i18n.T(
+			"host base %q uses unsupported scheme %q (expected http or https)",
+			"host_base %q 使用了不支持的协议 %q（应为 http 或 https）"), raw, u.Scheme)
+	}
+	if u.Host == "" {
+		return "", fmt.Errorf(i18n.T("host base %q has no host", "host_base %q 缺少主机名"), raw)
+	}
+	if u.Scheme == "http" {
+		myprint.PrintfYellow(i18n.T(
+			"warning: %s uses plain http — credentials and object data will be sent unencrypted\n",
+			"警告：%s 使用明文 http —— 凭证与对象数据将以未加密方式传输\n"), raw)
+	}
+	return raw, nil
 }
 
 // setAliasStatic 非交互写入单个别名的核心字段；其余字段通过值拷贝保留旧值。
@@ -407,6 +429,9 @@ func setAliasStatic(section, hostBase, accessKey, secretKey, sessionToken string
 		return errors.New("access key cannot be empty")
 	case secretKey == "":
 		return errors.New("secret key cannot be empty")
+	}
+	if _, err := ValidateEndpoint(hostBase); err != nil {
+		return err
 	}
 
 	if err := readConfig(G.C); err != nil {

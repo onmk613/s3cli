@@ -26,7 +26,7 @@ import (
 	"testing"
 	"time"
 
-	"s3cli/pkg/s3iface"
+	"s3cli/internal/api"
 )
 
 // =============== Fix 1: mirror 删除失败传播 ===============
@@ -42,8 +42,8 @@ func TestMirrorDeleteFailurePropagates(t *testing.T) {
 		w.WriteHeader(http.StatusInternalServerError)
 	}))
 	defer server.Close()
-	api := actionTestClient(t, server.URL, nil)
-	client := &Action{S3: api, Alias: "test", Ctx: context.Background()}
+	cli := actionTestClient(t, server.URL, nil)
+	client := &Action{S3: cli, Alias: "test", Ctx: context.Background()}
 	plan := &mirrorPlan{cfg: MirrorOptions{Remove: true, NoProgress: true, Concurrency: 1}, srcClient: client, tgtClient: client, srcBucket: "source", tgtBucket: "target"}
 	actions := make(chan diffAction, 1)
 	actions <- diffAction{rel: "extra", delete: true}
@@ -78,8 +78,8 @@ func TestMirrorDeleteSuccess(t *testing.T) {
 		w.WriteHeader(http.StatusInternalServerError)
 	}))
 	defer server.Close()
-	api := actionTestClient(t, server.URL, nil)
-	client := &Action{S3: api, Alias: "test", Ctx: context.Background()}
+	cli := actionTestClient(t, server.URL, nil)
+	client := &Action{S3: cli, Alias: "test", Ctx: context.Background()}
 	plan := &mirrorPlan{cfg: MirrorOptions{Remove: true, NoProgress: true, Concurrency: 1}, srcClient: client, tgtClient: client, srcBucket: "source", tgtBucket: "target"}
 	actions := make(chan diffAction, 1)
 	actions <- diffAction{rel: "extra", delete: true}
@@ -532,10 +532,21 @@ func writeResumeState(t *testing.T, localPath, uploadID string, fi os.FileInfo) 
 	if err := os.MkdirAll(filepath.Dir(statePath), 0o700); err != nil {
 		t.Fatal(err)
 	}
+	// ContentDigest 必须与真实文件一致: stateMatches 要求指纹匹配才允许续传
+	// (size+mtime 相同但内容不同的文件不得复用旧分片)。
+	f, err := os.Open(localPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = f.Close() }()
+	digest, err := fingerprintFile(f, fi.Size())
+	if err != nil {
+		t.Fatal(err)
+	}
 	st := multipartState{
 		Version: 1, UploadID: uploadID, Bucket: "mybucket", Key: "key.bin",
 		LocalPath: localPath, PartSize: minMultipartPartSize, TotalSize: fi.Size(),
-		ModTimeUnixNs: fi.ModTime().UnixNano(),
+		ModTimeUnixNs: fi.ModTime().UnixNano(), ContentDigest: digest,
 	}
 	if err := os.WriteFile(statePath, mustJSON(st), 0o600); err != nil {
 		t.Fatal(err)
@@ -555,7 +566,7 @@ func runResumeUpload(t *testing.T, s *mpuResumeServer, localPath string) error {
 	if err != nil {
 		t.Fatal(err)
 	}
-	return client.uploadMultipartFile(context.Background(), "mybucket", "key.bin", localPath, f, fi, 1, &s3iface.PutObjectOptions{}, nil)
+	return client.uploadMultipartFile(context.Background(), "mybucket", "key.bin", localPath, f, fi, 1, &api.PutObjectOptions{}, nil)
 }
 
 func smallLocalFile(t *testing.T) string {

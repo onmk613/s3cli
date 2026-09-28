@@ -52,8 +52,8 @@ func AutoCompleteBucket(cmd *cobra.Command, _ []string, toComplete string) ([]st
 	}
 
 	// 还在输入 alias 部分（没有冒号）
-	colon := strings.Index(toComplete, ":")
-	if colon < 0 {
+	before, after, ok := strings.Cut(toComplete, ":")
+	if !ok {
 		return completeAliases(toComplete)
 	}
 
@@ -63,8 +63,8 @@ func AutoCompleteBucket(cmd *cobra.Command, _ []string, toComplete string) ([]st
 	}
 
 	// 已包含冒号，手动做宽松解析
-	alias := toComplete[:colon]
-	rest := toComplete[colon+1:] // 冒号后面的部分，可能为空
+	alias := before
+	rest := after // 冒号后面的部分，可能为空
 
 	// 生成客户端
 	s3Client := getClientByAlias(cmd.Context(), alias)
@@ -95,13 +95,13 @@ func AutoCompletePath(cmd *cobra.Command, _ []string, toComplete string) ([]stri
 	}
 
 	// 还在输入 alias 部分（没有冒号）
-	colon := strings.Index(toComplete, ":")
-	if colon < 0 {
+	before, after, ok := strings.Cut(toComplete, ":")
+	if !ok {
 		return completeAliases(toComplete)
 	}
 	// 已包含冒号，手动做宽松解析
-	alias := toComplete[:colon]
-	rest := toComplete[colon+1:] // 冒号后面的部分，可能为空
+	alias := before
+	rest := after // 冒号后面的部分，可能为空
 
 	// 生成客户端
 	s3Client := getClientByAlias(cmd.Context(), alias)
@@ -115,8 +115,8 @@ func AutoCompletePath(cmd *cobra.Command, _ []string, toComplete string) ([]stri
 	s3Client.Ctx = ctx
 
 	// 没有 "/", 还在输入 bucket 部分
-	slash := strings.Index(rest, "/")
-	if slash < 0 {
+	before0, after0, ok0 := strings.Cut(rest, "/")
+	if !ok0 {
 		names, err := s3Client.CompleteBucket(rest)
 		if err != nil {
 			return nil, cobra.ShellCompDirectiveNoFileComp
@@ -125,8 +125,8 @@ func AutoCompletePath(cmd *cobra.Command, _ []string, toComplete string) ([]stri
 	}
 
 	// 有 "/" → 正在补全 key 前缀
-	bucket := rest[:slash]
-	key := rest[slash+1:]
+	bucket := before0
+	key := after0
 	if bucket == "" {
 		return nil, cobra.ShellCompDirectiveNoFileComp
 	}

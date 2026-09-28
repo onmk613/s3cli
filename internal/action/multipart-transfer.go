@@ -10,23 +10,26 @@ package action
 import (
 	"bytes"
 	"context"
-	"errors"
 	"fmt"
 	"io"
 	"os"
-	"strings"
 	"time"
 
-	"s3cli/pkg/s3iface"
+	"s3cli/internal/api"
 )
 
 const (
 	minMultipartPartSize = int64(5 * 1024 * 1024)
+	// maxMultipartPartSize 是 S3 单片大小上限 (5GiB)。没有上界时
+	// `--part-size 5120` 会直接申请一个 5GiB 的切片并把内存打爆。
+	maxMultipartPartSize = int64(5 * 1024 * 1024 * 1024)
 	defaultMultipartSize = int64(15 * 1024 * 1024)
 	multipartThreshold   = int64(64 * 1024 * 1024)
 	maxMultipartParts    = int64(10000)
 )
 
+// multipartPartSize 把调用方请求的分片大小 (MB) 钳制到 [5MiB, 5GiB],
+// 并在对象很大时自动抬高到能放进 10000 片的最小值。
 func multipartPartSize(requestedMB int, totalSize int64) int64 {
 	size := defaultMultipartSize
 	if requestedMB > 0 {
@@ -34,6 +37,9 @@ func multipartPartSize(requestedMB int, totalSize int64) int64 {
 	}
 	if size < minMultipartPartSize {
 		size = minMultipartPartSize
+	}
+	if size > maxMultipartPartSize {
+		size = maxMultipartPartSize
 	}
 	if totalSize > 0 {
 		minimumForPartLimit := (totalSize + maxMultipartParts - 1) / maxMultipartParts
@@ -44,50 +50,63 @@ func multipartPartSize(requestedMB int, totalSize int64) int64 {
 	return size
 }
 
-// uploadMultipart streams fixed-size parts, bounds memory to one part, and
-// aborts the server-side upload whenever a part or completion fails.
-func (c *Action) uploadMultipart(ctx context.Context, bucket, key string, r io.Reader, totalSize int64, partSizeMB int, opts *s3iface.PutObjectOptions, report func(int64)) (err error) {
+// uploadMultipart 以固定分片大小上传一个顺序 reader, 分片并发上传
+// (见 multipart-parts.go)。失败或取消时中止服务端 upload。
+func (c *Action) uploadMultipart(ctx context.Context, bucket, key string, r io.Reader, totalSize int64, partSizeMB int, opts *api.PutObjectOptions, report func(int64)) (err error) {
+	alg := opts.ChecksumAlgorithm
 	partSize := multipartPartSize(partSizeMB, totalSize)
 	create, err := c.S3.CreateMultipartUpload(ctx, bucket, key, opts)
 	if err != nil {
 		return fmt.Errorf("create multipart upload: %w", err)
 	}
-	defer func() {
-		if err != nil {
-			// Cleanup must not be skipped merely because the transfer context was cancelled.
-			_ = c.S3.AbortMultipartUpload(context.WithoutCancel(ctx), bucket, key, create.UploadID)
-		}
-	}()
+	uploadID := create.UploadID
+	defer c.abortOnError(&err, ctx, bucket, key, uploadID)
 
-	parts := make([]s3iface.CompletedPart, 0)
-	buf := make([]byte, partSize)
-	for partNumber := 1; ; partNumber++ {
-		if partNumber > int(maxMultipartParts) {
-			return fmt.Errorf("multipart upload exceeds %d parts", maxMultipartParts)
+	// 生产者状态: partNumber 单调递增, done 标记已读到末尾。
+	partNumber := 0
+	done := false
+	readPart := func() (int, []byte, error) {
+		if done {
+			return 0, nil, io.EOF
 		}
+		if partNumber >= int(maxMultipartParts) {
+			return 0, nil, fmt.Errorf("multipart upload exceeds %d parts", maxMultipartParts)
+		}
+		// 每片单独分配: 缓冲区一旦交给 worker 就不能复用。
+		buf := make([]byte, partSize)
 		n, readErr := io.ReadFull(r, buf)
+		if n == 0 && (readErr == io.EOF || readErr == io.ErrUnexpectedEOF) {
+			done = true
+			return 0, nil, io.EOF
+		}
 		if readErr != nil && readErr != io.ErrUnexpectedEOF && readErr != io.EOF {
-			return fmt.Errorf("read multipart part %d: %w", partNumber, readErr)
+			return 0, nil, fmt.Errorf("read multipart part %d: %w", partNumber+1, readErr)
 		}
-		if n == 0 && readErr == io.EOF {
-			break
+		partNumber++
+		if readErr != nil { // EOF / ErrUnexpectedEOF: 本篇是最后一片
+			done = true
 		}
-		uploaded, uploadErr := c.S3.UploadPart(ctx, bucket, key, create.UploadID, partNumber, buf[:n])
+		return partNumber, buf[:n], nil
+	}
+
+	uploadPart := func(ctx context.Context, number int, data []byte) (api.CompletedPart, error) {
+		uploaded, uploadErr := c.S3.UploadPartWithChecksum(ctx, bucket, key, uploadID, number, data, alg)
 		if uploadErr != nil {
-			return fmt.Errorf("upload multipart part %d: %w", partNumber, uploadErr)
+			return api.CompletedPart{}, fmt.Errorf("upload multipart part %d: %w", number, uploadErr)
 		}
-		parts = append(parts, s3iface.CompletedPart{PartNumber: partNumber, ETag: uploaded.ETag})
-		if report != nil {
-			report(int64(n))
-		}
-		if readErr == io.ErrUnexpectedEOF {
-			break
-		}
+		part := api.CompletedPart{PartNumber: number, ETag: uploaded.ETag}
+		part.SetChecksum(alg, uploaded.Checksum)
+		return part, nil
+	}
+
+	parts, err := runPartPipeline(ctx, readPart, uploadPart, report)
+	if err != nil {
+		return err
 	}
 	if len(parts) == 0 {
 		return fmt.Errorf("multipart upload has no parts")
 	}
-	if _, err = c.S3.CompleteMultipartUpload(ctx, bucket, key, create.UploadID, parts); err != nil {
+	if _, err = c.S3.CompleteMultipartUpload(ctx, bucket, key, uploadID, parts); err != nil {
 		return fmt.Errorf("complete multipart upload: %w", err)
 	}
 	return nil
@@ -95,7 +114,7 @@ func (c *Action) uploadMultipart(ctx context.Context, bucket, key string, r io.R
 
 // uploadUnknownSize avoids retaining an unbounded stdin stream. Small input
 // remains a single PUT; once the first complete part is seen it switches to MPU.
-func (c *Action) uploadUnknownSize(ctx context.Context, bucket, key string, r io.Reader, partSizeMB int, opts *s3iface.PutObjectOptions) error {
+func (c *Action) uploadUnknownSize(ctx context.Context, bucket, key string, r io.Reader, partSizeMB int, opts *api.PutObjectOptions) error {
 	partSize := multipartPartSize(partSizeMB, 0)
 	first := make([]byte, partSize)
 	n, err := io.ReadFull(r, first)
@@ -112,20 +131,42 @@ func (c *Action) uploadUnknownSize(ctx context.Context, bucket, key string, r io
 // uploadMultipartFile resumes a matching local-file upload when possible. The
 // server's ListParts response is authoritative, so a stale or edited local
 // state file can never cause unverified parts to be completed.
-func (c *Action) uploadMultipartFile(ctx context.Context, bucket, key, localPath string, file *os.File, info os.FileInfo, partSizeMB int, opts *s3iface.PutObjectOptions, report func(int64)) error {
+func (c *Action) uploadMultipartFile(ctx context.Context, bucket, key, localPath string, file *os.File, info os.FileInfo, partSizeMB int, opts *api.PutObjectOptions, report func(int64)) error {
+	alg := opts.ChecksumAlgorithm
 	partSize := multipartPartSize(partSizeMB, info.Size())
-	state, statePath, err := loadMultipartState(localPath, bucket, key, info.Size(), info.ModTime())
+
+	// 内容指纹必须在判定"能否续传"之前算好: size+mtime 相同但内容不同的文件
+	// (rsync -t / tar -p / touch -r 还原) 会让续传把旧分片与新内容拼成一个
+	// 半新半旧的对象, 且没有任何报错。
+	digest, err := fingerprintFile(file, info.Size())
+	if err != nil {
+		return fmt.Errorf("fingerprint %s: %w", localPath, err)
+	}
+
+	// 跨进程互斥: 两个进程同时上传同一 (文件, bucket, key) 会互相覆盖状态
+	// 文件并在服务端留下孤儿分片上传, 必须串行化 (见 mpu-lock.go)。
+	statePath, err := multipartStatePath(localPath, bucket, key)
+	if err != nil {
+		return fmt.Errorf("resolve multipart state path: %w", err)
+	}
+	lock, err := lockMultipartState(statePath)
+	if err != nil {
+		return fmt.Errorf("lock multipart state: %w", err)
+	}
+	defer lock.Release()
+
+	state, _, err := loadMultipartState(localPath, bucket, key)
 	if err != nil {
 		return fmt.Errorf("load multipart state: %w", err)
 	}
 
 	var uploadID string
-	parts := make([]s3iface.CompletedPart, 0)
-	if state != nil && state.PartSize == partSize {
+	parts := make([]api.CompletedPart, 0)
+	if stateMatches(state, bucket, key, info.Size(), info.ModTime(), digest) && state.PartSize == partSize {
 		uploadID = state.UploadID
 		listedParts, listErr := c.listAllParts(ctx, bucket, key, uploadID)
 		if listErr != nil {
-			if !isNoSuchUploadError(listErr) {
+			if !api.HasCode(listErr, "NoSuchUpload") {
 				// 保留本地状态文件以便稍后重试 (断点续传不因瞬时故障丢失),
 				// 同时提示用户可用 mpu local-clear 丢弃失效的本地状态。
 				return fmt.Errorf("list resumable multipart parts: %w (hint: run `s3cli mpu local-clear` to discard the local state if the upload was aborted server-side)", listErr)
@@ -145,12 +186,20 @@ func (c *Action) uploadMultipartFile(ctx context.Context, bucket, key, localPath
 					parts = nil
 					break
 				}
-				parts = append(parts, s3iface.CompletedPart{PartNumber: part.PartNumber, ETag: part.ETag})
+				// 服务端返回的分片校验和必须带回 Complete 请求: 创建上传时
+				// 声明了算法的服务端 (AWS) 会校验每个 CompletedPart 的校验和,
+				// 丢失它会导致 Complete 被拒绝或绕过整片校验。
+				resumed := api.CompletedPart{PartNumber: part.PartNumber, ETag: part.ETag}
+				resumed.SetChecksum(alg, part.ChecksumValues())
+				parts = append(parts, resumed)
 			}
 		}
 	} else if state != nil && state.UploadID != "" {
-		// 换了 --part-size: 旧分片与新切片边界不兼容, 无法续传。
-		// 同样先 Abort 再重建, 避免服务端残留孤儿分片上传。
+		// 旧状态无法复用: 换了 --part-size (分片边界不兼容), 或指纹/大小/mtime
+		// 不再匹配 (文件被改动或替换)。无论哪种, 都要先 Abort 再重建 ——
+		// 否则服务端会残留一个再也不会被引用的孤儿分片上传, 一直占存储直到
+		// 生命周期规则清理。此前 fingerprint 不匹配时 state 被置 nil, 这条
+		// Abort 分支根本不会执行, 孤儿分片必然泄漏。
 		_ = c.S3.AbortMultipartUpload(context.WithoutCancel(ctx), bucket, key, state.UploadID)
 	}
 	if uploadID == "" {
@@ -159,43 +208,63 @@ func (c *Action) uploadMultipartFile(ctx context.Context, bucket, key, localPath
 			return fmt.Errorf("create multipart upload: %w", createErr)
 		}
 		uploadID = created.UploadID
-		state = &multipartState{Version: 1, UploadID: uploadID, Bucket: bucket, Key: key, LocalPath: localPath, PartSize: partSize, TotalSize: info.Size(), ModTimeUnixNs: info.ModTime().UnixNano(), CreatedAt: time.Now().UTC().Format(time.RFC3339)}
+		state = &multipartState{Version: 1, UploadID: uploadID, Bucket: bucket, Key: key, LocalPath: localPath, PartSize: partSize, TotalSize: info.Size(), ModTimeUnixNs: info.ModTime().UnixNano(), ContentDigest: digest, CreatedAt: time.Now().UTC().Format(time.RFC3339)}
 		if saveErr := saveMultipartState(statePath, *state); saveErr != nil {
 			_ = c.S3.AbortMultipartUpload(context.WithoutCancel(ctx), bucket, key, uploadID)
 			return fmt.Errorf("save multipart state: %w", saveErr)
 		}
 	}
 
-	offset := int64(len(parts)) * partSize
-	if _, err := file.Seek(offset, io.SeekStart); err != nil {
+	// 从第 len(parts)+1 片继续, 生产者顺序读, worker 并发上传。
+	// 已存在的分片 (服务端 ListParts 对账结果) 直接并入待完成列表。
+	nextNumber := len(parts) + 1
+	nextOffset := int64(len(parts)) * partSize
+	if _, err := file.Seek(nextOffset, io.SeekStart); err != nil {
 		return fmt.Errorf("seek resumable multipart upload: %w", err)
 	}
-	buf := make([]byte, partSize)
-	for partNumber := len(parts) + 1; offset < info.Size(); partNumber++ {
-		if partNumber > int(maxMultipartParts) {
-			return fmt.Errorf("multipart upload exceeds %d parts", maxMultipartParts)
+	total := info.Size()
+	done := false
+	readPart := func() (int, []byte, error) {
+		if done || nextOffset >= total {
+			return 0, nil, io.EOF
 		}
-		remaining := info.Size() - offset
+		if nextNumber > int(maxMultipartParts) {
+			return 0, nil, fmt.Errorf("multipart upload exceeds %d parts", maxMultipartParts)
+		}
 		want := partSize
-		if remaining < want {
+		if remaining := total - nextOffset; remaining < want {
 			want = remaining
 		}
-		n, readErr := io.ReadFull(file, buf[:want])
+		buf := make([]byte, want)
+		n, readErr := io.ReadFull(file, buf)
 		if readErr != nil && readErr != io.ErrUnexpectedEOF {
-			return fmt.Errorf("read multipart part %d: %w", partNumber, readErr)
+			return 0, nil, fmt.Errorf("read multipart part %d: %w", nextNumber, readErr)
 		}
 		if int64(n) != want {
-			return fmt.Errorf("read multipart part %d: expected %d bytes, got %d", partNumber, want, n)
+			return 0, nil, fmt.Errorf("read multipart part %d: expected %d bytes, got %d", nextNumber, want, n)
 		}
-		uploaded, uploadErr := c.S3.UploadPart(ctx, bucket, key, uploadID, partNumber, buf[:n])
+		number := nextNumber
+		nextNumber++
+		nextOffset += int64(n)
+		return number, buf[:n], nil
+	}
+	uploadPart := func(ctx context.Context, number int, data []byte) (api.CompletedPart, error) {
+		uploaded, uploadErr := c.S3.UploadPartWithChecksum(ctx, bucket, key, uploadID, number, data, alg)
 		if uploadErr != nil {
-			return fmt.Errorf("upload multipart part %d: %w", partNumber, uploadErr)
+			return api.CompletedPart{}, fmt.Errorf("upload multipart part %d: %w", number, uploadErr)
 		}
-		parts = append(parts, s3iface.CompletedPart{PartNumber: partNumber, ETag: uploaded.ETag})
-		offset += int64(n)
-		if report != nil {
-			report(int64(n))
-		}
+		part := api.CompletedPart{PartNumber: number, ETag: uploaded.ETag}
+		part.SetChecksum(alg, uploaded.Checksum)
+		return part, nil
+	}
+
+	uploaded, err := runPartPipeline(ctx, readPart, uploadPart, report)
+	if err != nil {
+		return err
+	}
+	parts = append(parts, uploaded...)
+	if len(parts) == 0 {
+		return fmt.Errorf("multipart upload has no parts")
 	}
 	if _, err := c.S3.CompleteMultipartUpload(ctx, bucket, key, uploadID, parts); err != nil {
 		return fmt.Errorf("complete multipart upload: %w", err)
@@ -204,12 +273,4 @@ func (c *Action) uploadMultipartFile(ctx context.Context, bucket, key, localPath
 		return fmt.Errorf("remove completed multipart state: %w", err)
 	}
 	return nil
-}
-
-// isNoSuchUploadError 判断错误是否为 S3 的 NoSuchUpload (指定的分片上传不存在)。
-// 断点续传自愈依赖它: 服务端 upload 被 Abort/过期后, ListParts 会返回该错误,
-// 此时应放弃旧 uploadID 重新创建, 而不是让整个上传失败。
-func isNoSuchUploadError(err error) bool {
-	var apiErr *s3iface.ErrorResponse
-	return errors.As(err, &apiErr) && strings.Contains(apiErr.Code, "NoSuchUpload")
 }

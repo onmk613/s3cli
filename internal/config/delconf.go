@@ -5,7 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	myprint "s3cli/pkg/fmtutil"
+	myprint "s3cli/internal/fmtutil"
 	"strings"
 )
 

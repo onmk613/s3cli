@@ -11,7 +11,7 @@ import (
 	"os"
 	"strings"
 
-	"s3cli/pkg/i18n"
+	"s3cli/internal/i18n"
 )
 
 // loadAWSConfigFile 读取 AWS 配置文件 (CORS/Lifecycle/Policy 等)

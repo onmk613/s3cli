@@ -7,9 +7,9 @@ import (
 	"strings"
 	"time"
 
-	myprint "s3cli/pkg/fmtutil"
-	"s3cli/pkg/i18n"
-	"s3cli/pkg/s3iface"
+	"s3cli/internal/api"
+	myprint "s3cli/internal/fmtutil"
+	"s3cli/internal/i18n"
 )
 
 // ShareOptions Share 参数
@@ -39,7 +39,7 @@ func (c *Action) Share(opt ShareOptions, bucket, key string) error {
 	if method == "GET" || method == "HEAD" {
 		ok, err := c.IsS3File(bucket, key)
 		if err != nil {
-			return fmt.Errorf("check s3 path: %s", FormatAPIError(err))
+			return fmt.Errorf("check s3 path: %w", err)
 		}
 		if !ok {
 			return fmt.Errorf(i18n.T("%s: not a file", "%s：不是文件"), c.S3Path(bucket, key))
@@ -53,13 +53,13 @@ func (c *Action) Share(opt ShareOptions, bucket, key string) error {
 	if opt.SignV2 {
 		signed, err = c.S3.PresignV2(c.Ctx, bucket, key, method, int64(opt.ExpireSeconds))
 	} else {
-		signed, err = c.S3.PresignedURL(c.Ctx, bucket, key, &s3iface.PresignOptions{
+		signed, err = c.S3.PresignedURL(c.Ctx, bucket, key, &api.PresignOptions{
 			Method:  method,
 			Expires: time.Duration(opt.ExpireSeconds) * time.Second,
 		})
 	}
 	if err != nil {
-		return fmt.Errorf("presign: %s", FormatAPIError(err))
+		return fmt.Errorf("presign: %w", err)
 	}
 
 	myprint.PrintlnGreen(signed)

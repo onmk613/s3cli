@@ -8,9 +8,9 @@ import (
 	"fmt"
 	"strings"
 
-	myprint "s3cli/pkg/fmtutil"
-	"s3cli/pkg/i18n"
-	"s3cli/pkg/s3iface"
+	"s3cli/internal/api"
+	myprint "s3cli/internal/fmtutil"
+	"s3cli/internal/i18n"
 )
 
 // EncryptionOptions set encryption 命令参数
@@ -24,10 +24,10 @@ type EncryptionOptions struct {
 
 // SetEncryption 设置 bucket 默认加密
 func (c *Action) SetEncryption(opt EncryptionOptions, bucket string) error {
-	var cfg s3iface.ServerSideEncryptionConfiguration
+	var cfg api.ServerSideEncryptionConfiguration
 
 	if opt.ConfigFile != "" {
-		loaded, err := loadJSONConfig[s3iface.ServerSideEncryptionConfiguration](opt.ConfigFile, "encryption")
+		loaded, err := loadJSONConfig[api.ServerSideEncryptionConfiguration](opt.ConfigFile, "encryption")
 		if err != nil {
 			return err
 		}
@@ -37,8 +37,8 @@ func (c *Action) SetEncryption(opt EncryptionOptions, bucket string) error {
 		if algo == "" {
 			algo = "AES256"
 		}
-		rule := s3iface.ServerSideEncryptionRule{
-			ApplyServerSideEncryptionByDefault: s3iface.ServerSideEncryptionByDefault{
+		rule := api.ServerSideEncryptionRule{
+			ApplyServerSideEncryptionByDefault: api.ServerSideEncryptionByDefault{
 				SSEAlgorithm: algo,
 			},
 		}
@@ -52,7 +52,7 @@ func (c *Action) SetEncryption(opt EncryptionOptions, bucket string) error {
 				rule.BucketKeyEnabled = &bk
 			}
 		}
-		cfg.Rules = []s3iface.ServerSideEncryptionRule{rule}
+		cfg.Rules = []api.ServerSideEncryptionRule{rule}
 	}
 
 	if len(cfg.Rules) == 0 {
@@ -60,7 +60,7 @@ func (c *Action) SetEncryption(opt EncryptionOptions, bucket string) error {
 	}
 
 	if err := c.S3.SetBucketEncryption(c.Ctx, bucket, &cfg); err != nil {
-		return fmt.Errorf("set encryption %s: %s", bucket, FormatAPIError(err))
+		return fmt.Errorf("set encryption %s: %w", bucket, err)
 	}
 
 	myprint.PrintfBoldGreen(i18n.T("Encryption set for %s %s (%d rules)\n", "已为 %s %s 设置加密（%d 条规则）\n"), c.Alias, bucket, len(cfg.Rules))
@@ -71,7 +71,7 @@ func (c *Action) SetEncryption(opt EncryptionOptions, bucket string) error {
 func (c *Action) GetEncryption(bucket string) error {
 	cfg, err := c.S3.GetBucketEncryption(c.Ctx, bucket)
 	if err != nil {
-		return fmt.Errorf("get encryption %s: %s", bucket, FormatAPIError(err))
+		return fmt.Errorf("get encryption %s: %w", bucket, err)
 	}
 	return c.printBucketConfigJSON(bucket, "encryption", cfg)
 }

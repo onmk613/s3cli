@@ -2,8 +2,8 @@ package cmd
 
 import (
 	"s3cli/internal/action"
+	"s3cli/internal/i18n"
 	"s3cli/internal/s3path"
-	"s3cli/pkg/i18n"
 
 	"github.com/spf13/cobra"
 )
@@ -23,7 +23,7 @@ func NewSQLCmd() *cobra.Command {
 		}),
 	}
 	f := cmd.Flags()
-	f.StringVarP(&opt.Query, "query", "e", "select * from S3Object", i18n.T("SQL query expression", "SQL 查询表达式"))
+	f.StringVarP(&opt.Query, "query", "e", "", i18n.T("SQL query expression", "SQL 查询表达式"))
 	f.BoolVarP(&opt.Recursive, "recursive", "r", false, i18n.T("Run the query recursively on all objects under the prefix", "对前缀下的所有对象递归执行查询"))
 	f.StringVar(&opt.Compression, "compression", "", i18n.T("Input compression type: NONE / GZIP / BZIP2", "输入压缩类型：NONE / GZIP / BZIP2"))
 	f.StringVar(&opt.CSVInput, "csv-input", "", i18n.T("CSV input serialization options, e.g. 'rd=\\n,fh=USE,fd=;'", "CSV 输入序列化选项，如 'rd=\\n,fh=USE,fd=;'"))

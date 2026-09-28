@@ -1,8 +1,8 @@
-// backend_switch_mock_test.go 提供双后端一致性与切换测试的共享设施:
+// backend_switch_mock_test.go 提供一致性测试的共享设施:
 // 内存版最小 S3 兼容服务 mockS3Server, 以及 runParityScenarios 操作断言集.
 //
-// 该文件不依赖任何具体后端实现, 仅依赖中立的 s3iface 接口, 因此无 build tag,
-// 提供内存版最小 S3 兼容服务 mockS3Server.
+// 该文件不依赖任何具体后端实现, 只依赖 HTTP 线协议与 api.S3Operations 契约,
+// 因此无 build tag.
 
 package action
 
@@ -14,20 +14,23 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
 	"testing"
 
-	"s3cli/pkg/s3iface"
+	"s3cli/internal/api"
 )
 
 // mockS3Server 提供 ListBuckets / ListObjectsV2 (含分页) / Head / Get / Put / Delete /
 // DeleteObjects 的最小实现, 并支持目录前缀探测 (prefix + "/").
 type mockS3Server struct {
-	mu       sync.Mutex
-	objects  map[string]string // key -> body
-	policies map[string][]byte // bucket -> policy JSON
+	mu            sync.Mutex
+	objects       map[string]string // key -> body
+	policies      map[string][]byte // bucket -> policy JSON
+	notifications map[string][]byte // bucket -> notification XML (原样回显, 模拟服务端保存)
+	cors          map[string][]byte // bucket -> CORS XML (原样回显)
 }
 
 func newMockS3Server() *mockS3Server {
@@ -43,7 +46,7 @@ func newMockS3Server() *mockS3Server {
 	}, policies: map[string][]byte{
 		// download 预定义策略, 供 policy get 输出测试使用
 		"mybucket": []byte(`{"Version":"2012-10-17","Statement":[{"Action":["s3:GetBucketLocation"],"Effect":"Allow","Principal":{"AWS":["*"]},"Resource":["arn:aws:s3:::mybucket"]},{"Action":["s3:ListBucket"],"Effect":"Allow","Principal":{"AWS":["*"]},"Resource":["arn:aws:s3:::mybucket"]},{"Action":["s3:GetObject"],"Effect":"Allow","Principal":{"AWS":["*"]},"Resource":["arn:aws:s3:::mybucket/*"]}]}`),
-	}}
+	}, notifications: map[string][]byte{}, cors: map[string][]byte{}}
 }
 
 // httpError 写出标准 S3 XML 错误响应.
@@ -96,6 +99,68 @@ func (m *mockS3Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			w.WriteHeader(http.StatusNoContent)
 		default:
 			httpError(w, http.StatusBadRequest, "InvalidRequest", "unsupported policy method")
+		}
+		return
+
+	case q.Has("notification"):
+		// Bucket notification: 原样存储与回显, 用于验证 JSON -> XML -> JSON 往返.
+		switch r.Method {
+		case http.MethodGet:
+			m.mu.Lock()
+			body, ok := m.notifications[bucket]
+			m.mu.Unlock()
+			w.Header().Set("Content-Type", "application/xml")
+			if !ok {
+				_, _ = w.Write([]byte(`<?xml version="1.0" encoding="UTF-8"?><NotificationConfiguration/>`))
+				return
+			}
+			_, _ = w.Write(body)
+		case http.MethodPut:
+			body, err := io.ReadAll(r.Body)
+			if err != nil {
+				httpError(w, http.StatusBadRequest, "InvalidRequest", err.Error())
+				return
+			}
+			m.mu.Lock()
+			m.notifications[bucket] = body
+			m.mu.Unlock()
+			w.WriteHeader(http.StatusOK)
+		default:
+			httpError(w, http.StatusBadRequest, "InvalidRequest", "unsupported notification method")
+		}
+		return
+
+	case q.Has("cors"):
+		// Bucket CORS: 原样存储与回显, 用于验证 JSON -> XML -> JSON 往返.
+		// 必须排在通用对象方法分支之前, 否则 PUT/GET 会被对象分支截走.
+		switch r.Method {
+		case http.MethodGet:
+			m.mu.Lock()
+			body, ok := m.cors[bucket]
+			m.mu.Unlock()
+			w.Header().Set("Content-Type", "application/xml")
+			if !ok {
+				httpError(w, http.StatusNotFound, "NoSuchCORSConfiguration", "The CORS configuration does not exist")
+				return
+			}
+			_, _ = w.Write(body)
+		case http.MethodPut:
+			body, err := io.ReadAll(r.Body)
+			if err != nil {
+				httpError(w, http.StatusBadRequest, "InvalidRequest", err.Error())
+				return
+			}
+			m.mu.Lock()
+			m.cors[bucket] = body
+			m.mu.Unlock()
+			w.WriteHeader(http.StatusOK)
+		case http.MethodDelete:
+			m.mu.Lock()
+			delete(m.cors, bucket)
+			m.mu.Unlock()
+			w.WriteHeader(http.StatusNoContent)
+		default:
+			httpError(w, http.StatusBadRequest, "InvalidRequest", "unsupported cors method")
 		}
 		return
 
@@ -244,17 +309,12 @@ func (m *mockS3Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 }
 
 func containsStr(list []string, s string) bool {
-	for _, v := range list {
-		if v == s {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(list, s)
 }
 
 // runParityScenarios 用同一套操作断言跑单个后端, 验证 action 层与该后端的兼容性.
 // 由 api 后端测试文件 (backend_switch_test.go) 调用.
-func runParityScenarios(t *testing.T, name string, backend s3iface.S3Operations) {
+func runParityScenarios(t *testing.T, name string, backend api.S3Operations) {
 	t.Helper()
 	t.Run(name, func(t *testing.T) {
 		server := httptest.NewServer(newMockS3Server())
@@ -274,7 +334,7 @@ func runParityScenarios(t *testing.T, name string, backend s3iface.S3Operations)
 		}
 
 		// 2. ListObjectsV2: 目录分隔 (CommonPrefixes)
-		listResp, err := c.S3.ListObjectsV2(c.Ctx, "mybucket", &s3iface.ListObjectsV2Options{Prefix: "dir/", Delimiter: "/"})
+		listResp, err := c.S3.ListObjectsV2(c.Ctx, "mybucket", &api.ListObjectsV2Options{Prefix: "dir/", Delimiter: "/"})
 		if err != nil {
 			t.Fatalf("ListObjectsV2: %v", err)
 		}
@@ -287,7 +347,7 @@ func runParityScenarios(t *testing.T, name string, backend s3iface.S3Operations)
 
 		// 3. 分页器: paginate/ 前缀每页 2 个, 共 5 个
 		var keys []string
-		pg := c.S3.NewListObjectsV2Paginator("mybucket", &s3iface.ListObjectsV2Options{Prefix: "paginate/"})
+		pg := c.S3.NewListObjectsV2Paginator("mybucket", &api.ListObjectsV2Options{Prefix: "paginate/"})
 		for pg.HasMorePages() {
 			page, err := pg.NextPage(c.Ctx)
 			if err != nil {
@@ -314,11 +374,11 @@ func runParityScenarios(t *testing.T, name string, backend s3iface.S3Operations)
 			t.Fatal("IsS3File(missing) expected error")
 		}
 
-		// 4b. 错误映射: 后端必须产出可识别的 *s3iface.ErrorResponse.
+		// 4b. 错误映射: 后端必须产出可识别的 *api.ErrorResponse.
 		// 注意: HEAD 无响应体, 官方 SDK 只能按状态码映射为 "NotFound";
 		// 自建 api 按对象名推断为 "NoSuchKey". action 层对两者同等处理.
 		_, err = c.S3.HeadObject(c.Ctx, "mybucket", "missing.txt", "")
-		var apiErr *s3iface.ErrorResponse
+		var apiErr *api.ErrorResponse
 		if err == nil || !errors.As(err, &apiErr) {
 			t.Fatalf("HeadObject(missing) err = %v, want ErrorResponse", err)
 		}
@@ -328,17 +388,17 @@ func runParityScenarios(t *testing.T, name string, backend s3iface.S3Operations)
 		}
 
 		// 4c. GetObject (非 HEAD) 的 404 应解析出 NoSuchKey
-		_, err = c.S3.GetObject(c.Ctx, "mybucket", "missing.txt", &s3iface.GetObjectOptions{})
-		var getErr *s3iface.ErrorResponse
+		_, err = c.S3.GetObject(c.Ctx, "mybucket", "missing.txt", &api.GetObjectOptions{})
+		var getErr *api.ErrorResponse
 		if err == nil || !errors.As(err, &getErr) || getErr.Code != "NoSuchKey" {
 			t.Fatalf("GetObject(missing) err = %v, want NoSuchKey ErrorResponse", err)
 		}
 
 		// 5. Put + Get 回环
-		if _, err := c.S3.PutObject(c.Ctx, "mybucket", "upload.txt", []byte("hello"), &s3iface.PutObjectOptions{ContentType: "text/plain"}); err != nil {
+		if _, err := c.S3.PutObject(c.Ctx, "mybucket", "upload.txt", []byte("hello"), &api.PutObjectOptions{ContentType: "text/plain"}); err != nil {
 			t.Fatalf("PutObject: %v", err)
 		}
-		getResp, err := c.S3.GetObject(c.Ctx, "mybucket", "upload.txt", &s3iface.GetObjectOptions{})
+		getResp, err := c.S3.GetObject(c.Ctx, "mybucket", "upload.txt", &api.GetObjectOptions{})
 		if err != nil {
 			t.Fatalf("GetObject: %v", err)
 		}
@@ -361,7 +421,7 @@ func runParityScenarios(t *testing.T, name string, backend s3iface.S3Operations)
 		}
 
 		// 7. DeleteObjects
-		delResp, err := c.S3.DeleteObjects(c.Ctx, "mybucket", []s3iface.ObjectIdentifier{{Key: "k1"}, {Key: "k2"}}, false)
+		delResp, err := c.S3.DeleteObjects(c.Ctx, "mybucket", []api.ObjectIdentifier{{Key: "k1"}, {Key: "k2"}}, false)
 		if err != nil {
 			t.Fatalf("DeleteObjects: %v", err)
 		}

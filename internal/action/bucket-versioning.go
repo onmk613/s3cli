@@ -6,9 +6,9 @@ import (
 	"errors"
 	"fmt"
 
-	myprint "s3cli/pkg/fmtutil"
-	"s3cli/pkg/i18n"
-	"s3cli/pkg/s3iface"
+	"s3cli/internal/api"
+	myprint "s3cli/internal/fmtutil"
+	"s3cli/internal/i18n"
 )
 
 type VersioningOptions struct {
@@ -21,8 +21,8 @@ func (c *Action) SetVersioning(opt VersioningOptions, bucket string) error {
 		return errors.New(i18n.T("status cannot be empty", "状态不能为空"))
 	}
 
-	if err := c.S3.SetBucketVersioning(c.Ctx, bucket, s3iface.BucketVersioningStatus(opt.Status)); err != nil {
-		return fmt.Errorf("set versioning %s: %s", bucket, FormatAPIError(err))
+	if err := c.S3.SetBucketVersioning(c.Ctx, bucket, api.BucketVersioningStatus(opt.Status)); err != nil {
+		return fmt.Errorf("set versioning %s: %w", bucket, err)
 	}
 
 	myprint.PrintfBoldGreen(i18n.T("Versioning for %s set to %s\n", "已将 %s 的版本控制设为 %s\n"), c.S3Path(bucket, ""), opt.Status)
@@ -33,7 +33,7 @@ func (c *Action) SetVersioning(opt VersioningOptions, bucket string) error {
 func (c *Action) GetVersioning(bucket string) error {
 	status, err := c.S3.GetBucketVersioning(c.Ctx, bucket)
 	if err != nil {
-		return fmt.Errorf("get versioning %s: %s", bucket, FormatAPIError(err))
+		return fmt.Errorf("get versioning %s: %w", bucket, err)
 	}
 	s := string(status)
 	if s == "" {

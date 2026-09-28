@@ -5,17 +5,16 @@
 package action
 
 import (
-	"encoding/json"
 	"errors"
 	"fmt"
-	"os"
+	"s3cli/internal/action/render"
 	"sort"
 	"strings"
 	"time"
 
-	myprint "s3cli/pkg/fmtutil"
-	"s3cli/pkg/i18n"
-	"s3cli/pkg/s3iface"
+	"s3cli/internal/api"
+	myprint "s3cli/internal/fmtutil"
+	"s3cli/internal/i18n"
 )
 
 // StatOptions stat 命令参数.
@@ -43,7 +42,7 @@ func (c *Action) StatObjects(opt StatOptions, bucket, prefix string) error {
 
 	ok, err := c.IsS3File(bucket, prefix)
 	if err != nil {
-		return fmt.Errorf("check s3 path: %s", FormatAPIError(err))
+		return fmt.Errorf("check s3 path: %w", err)
 	}
 	if !ok {
 		return fmt.Errorf(i18n.T("%s: not a file (use -r/--recursive to stat all objects under it)", "%s：不是文件（使用 -r/--recursive 查看其下所有对象）"), c.S3Path(bucket, prefix))
@@ -54,7 +53,7 @@ func (c *Action) StatObjects(opt StatOptions, bucket, prefix string) error {
 // statRecursive 逐个输出前缀下对象的 stat (-r).
 func (c *Action) statRecursive(bucket, prefix string, opt StatOptions) error {
 	var count int
-	err := c.forEachObject(c.Ctx, bucket, prefix, func(obj s3iface.ObjectInfo) error {
+	err := c.forEachObject(c.Ctx, bucket, prefix, func(obj api.ObjectInfo) error {
 		if strings.HasSuffix(obj.Key, "/") && obj.Size == 0 {
 			return nil // 目录标记对象
 		}
@@ -80,12 +79,12 @@ func (c *Action) statRecursive(bucket, prefix string, opt StatOptions) error {
 func (c *Action) statObject(bucket, key, versionID string, opt StatOptions) error {
 	head, err := c.S3.HeadObject(c.Ctx, bucket, key, versionID)
 	if err != nil {
-		return fmt.Errorf("stat %s: %s", c.S3Path(bucket, key), FormatAPIError(err))
+		return fmt.Errorf("stat %s: %w", c.S3Path(bucket, key), err)
 	}
 
 	meta := statMetadata(head)
 	if opt.JSON {
-		return printStatJSON(map[string]any{
+		return render.JSONLine(map[string]any{
 			"status":       "success",
 			"name":         pathBase(key),
 			"lastModified": head.LastModified,
@@ -97,8 +96,8 @@ func (c *Action) statObject(bucket, key, versionID string, opt StatOptions) erro
 	}
 
 	myprint.PrintfBoldBlue("%-10s: %s\n", i18n.T("Name", "名称"), pathBase(key))
-	myprint.Printf("%-10s: %s\n", i18n.T("Date", "日期"), head.LastModified.Local().Format("2006-01-02 15:04:05 MST"))
-	myprint.Printf("%-10s: %s\n", i18n.T("Size", "大小"), FormatBytes(head.ContentLength))
+	myprint.Printf("%-10s: %s\n", i18n.T("Date", "日期"), head.LastModified.Local().Format(statTimeLayout))
+	myprint.Printf("%-10s: %s\n", i18n.T("Size", "大小"), myprint.FormatBytes(head.ContentLength))
 	myprint.Printf("%-10s: %s\n", i18n.T("ETag", "ETag"), head.ETag)
 	myprint.Printf("%-10s: %s\n", i18n.T("Type", "类型"), i18n.T("file", "文件"))
 	if len(meta) > 0 {
@@ -117,7 +116,7 @@ func (c *Action) statObject(bucket, key, versionID string, opt StatOptions) erro
 }
 
 // statMetadata 汇总 HEAD 响应中的元数据 (Metadata 段).
-func statMetadata(head *s3iface.HeadObjectOutput) map[string]string {
+func statMetadata(head *api.HeadObjectOutput) map[string]string {
 	meta := map[string]string{}
 	if head.ContentType != "" {
 		meta["Content-Type"] = head.ContentType
@@ -156,13 +155,15 @@ func statMetadata(head *s3iface.HeadObjectOutput) map[string]string {
 func (c *Action) statBucket(bucket string, opt StatOptions) error {
 	location, err := c.S3.GetBucketLocation(c.Ctx, bucket)
 	if err != nil {
-		return fmt.Errorf("get bucket location: %s", FormatAPIError(err))
+		return fmt.Errorf("get bucket location: %w", err)
 	}
 	if location == "" {
 		location = "us-east-1" // 未返回时使用默认值
 	}
 
-	// 创建时间 (来自 ListBuckets)
+	// 创建时间 (来自 ListBuckets)。ListBuckets 往往需要额外的账号级权限,
+	// 失败时降级为不可知而不是报错, 但要让用户知道是"查不到"而非"没有"。
+	createdAtKnown := true
 	var createdAt time.Time
 	if buckets, err := c.S3.ListBuckets(c.Ctx); err == nil {
 		for _, b := range buckets {
@@ -171,51 +172,68 @@ func (c *Action) statBucket(bucket string, opt StatOptions) error {
 				break
 			}
 		}
+	} else {
+		createdAtKnown = false
 	}
 
-	// 属性
+	// 属性: 只把"未配置"(404 / NoSuch*) 当作 Disabled/Un-versioned;
+	// 403、网络错误等必须上抛 —— 否则用户会把"没权限看"误读成"桶上确实没有",
+	// 例如以为没有策略而放心地把桶当私有。
+	enabledState, err := bucketConfigState(func() error {
+		_, e := c.S3.GetBucketPolicy(c.Ctx, bucket)
+		return e
+	})
+	if err != nil {
+		return fmt.Errorf("get bucket policy %s: %w", c.S3Path(bucket, ""), err)
+	}
+	anonymous := map[bool]string{true: "Enabled", false: "Disabled"}[enabledState]
+
+	ilmState, err := bucketConfigState(func() error {
+		_, e := c.S3.GetBucketLifecycle(c.Ctx, bucket)
+		return e
+	})
+	if err != nil {
+		return fmt.Errorf("get bucket lifecycle %s: %w", c.S3Path(bucket, ""), err)
+	}
+	ilm := map[bool]string{true: "Enabled", false: "Disabled"}[ilmState]
+
 	versioning := "Un-versioned"
-	if v, err := c.S3.GetBucketVersioning(c.Ctx, bucket); err == nil && v != "" {
+	if v, verr := c.S3.GetBucketVersioning(c.Ctx, bucket); verr != nil {
+		if !api.IsNotFound(verr) {
+			return fmt.Errorf("get bucket versioning %s: %w", c.S3Path(bucket, ""), verr)
+		}
+	} else {
 		switch v {
-		case s3iface.VersioningEnabled:
+		case api.VersioningEnabled:
 			versioning = "Enabled"
-		case s3iface.VersioningSuspended:
+		case api.VersioningSuspended:
 			versioning = "Suspended"
 		}
-	}
-	anonymous := "Disabled"
-	if _, err := c.S3.GetBucketPolicy(c.Ctx, bucket); err == nil {
-		anonymous = "Enabled"
-	}
-	ilm := "Disabled"
-	if _, err := c.S3.GetBucketLifecycle(c.Ctx, bucket); err == nil {
-		ilm = "Enabled"
 	}
 
 	// 用量: 对象数/总大小 (递归列举), 版本数 (版本列举)
 	var totalSize, objCount, verCount int64
 	// 列举失败 (如无 ListBucket 权限) 必须上报, 否则用量会静默显示为 0。
-	if err := c.forEachObject(c.Ctx, bucket, "", func(o s3iface.ObjectInfo) error {
+	if err := c.forEachObject(c.Ctx, bucket, "", func(o api.ObjectInfo) error {
 		totalSize += o.Size
 		objCount++
 		return nil
 	}); err != nil {
 		return err
 	}
-	verPager := c.S3.NewListObjectVersionsPaginator(bucket, &s3iface.ListObjectVersionsOptions{})
-	for verPager.HasMorePages() {
-		if page, err := verPager.NextPage(c.Ctx); err == nil {
-			verCount += int64(len(page.Versions) + len(page.DeleteMarkers))
-		} else {
-			break
-		}
+	// 版本列举失败必须上报: 此前 break 会让 versionsCount 静默截断成一个偏小的数字。
+	if err := c.forEachVersion(c.Ctx, bucket, "", func(VersionEntry) error {
+		verCount++
+		return nil
+	}); err != nil {
+		return err
 	}
 
 	if opt.JSON {
-		return printStatJSON(map[string]any{
+		return render.JSONLine(map[string]any{
 			"status":     "success",
 			"name":       bucket,
-			"createdAt":  createdAt,
+			"createdAt":  createdAtJSON(createdAt, createdAtKnown),
 			"type":       "folder",
 			"versioning": versioning,
 			"location":   location,
@@ -230,10 +248,7 @@ func (c *Action) statBucket(bucket string, opt StatOptions) error {
 	}
 
 	myprint.PrintfBoldBlue("%-10s: %s\n", i18n.T("Name", "名称"), bucket)
-	dateStr := "N/A"
-	if !createdAt.IsZero() {
-		dateStr = createdAt.Local().Format("2006-01-02 15:04:05 MST")
-	}
+	dateStr := createdAtText(createdAt, createdAtKnown)
 	myprint.Printf("%-10s: %s\n", i18n.T("Date", "日期"), dateStr)
 	myprint.Printf("%-10s: %s\n", i18n.T("Size", "大小"), "N/A")
 	myprint.Printf("%-10s: %s\n", i18n.T("Type", "类型"), i18n.T("folder", "文件夹"))
@@ -245,20 +260,44 @@ func (c *Action) statBucket(bucket string, opt StatOptions) error {
 	myprint.Printf(i18n.T("  ILM: %s\n", "  ILM：%s\n"), ilm)
 	myprint.Println("")
 	myprint.PrintfBoldBlue("%s", i18n.T("Usage:\n", "用量：\n"))
-	myprint.Printf(i18n.T("      Total size: %s\n", "      总大小：%s\n"), FormatBytes(totalSize))
+	myprint.Printf(i18n.T("      Total size: %s\n", "      总大小：%s\n"), myprint.FormatBytes(totalSize))
 	myprint.Printf(i18n.T("   Objects count: %d\n", "   对象数：%d\n"), objCount)
 	myprint.Printf(i18n.T("  Versions count: %d\n", "  版本数：%d\n"), verCount)
 	return nil
 }
 
-// printStatJSON 输出 JSON lines (--json 形态).
-func printStatJSON(v any) error {
-	b, err := json.Marshal(v)
-	if err != nil {
-		return fmt.Errorf("marshal stat: %w", err)
+// statTimeLayout 是 stat 输出的时间格式 (带时区缩写, 便于跨区域核对)。
+const statTimeLayout = "2006-01-02 15:04:05 MST"
+
+// createdAtText 渲染桶创建时间: 未知 (ListBuckets 无权限) 与"确实未返回"都显示 N/A。
+func createdAtText(t time.Time, known bool) string {
+	if !known || t.IsZero() {
+		return "N/A"
 	}
-	_, err = fmt.Fprintln(os.Stdout, string(b))
-	return err
+	return t.Local().Format(statTimeLayout)
+}
+
+// createdAtJSON 与 createdAtText 同语义, 供 --json 输出使用 (未知时为 null)。
+func createdAtJSON(t time.Time, known bool) any {
+	if !known || t.IsZero() {
+		return nil
+	}
+	return t
+}
+
+// bucketConfigState 把一个"读取桶子资源配置"的调用归类为 已配置 / 未配置。
+//
+// 未配置 (NoSuch* / 404) 与真正的失败 (403、网络错误) 必须区分: 把后者当成
+// "Disabled" 会让用户以为桶上确实没有策略或生命周期规则, 而实际只是没权限看。
+func bucketConfigState(get func() error) (enabled bool, err error) {
+	switch err := get(); {
+	case err == nil:
+		return true, nil
+	case api.IsNotFound(err):
+		return false, nil
+	default:
+		return false, err
+	}
 }
 
 // pathBase 取路径最后一段.
