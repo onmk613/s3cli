@@ -5,6 +5,9 @@
 
 ## 1. 总则
 
+**stdout 只放命令结果，错误 / 警告 / 人类可读标题一律写 stderr。** 因此
+`--json` 的输出可以直接交给 `jq`，`get` 的数据也不会被诊断信息污染。
+
 `--json` 是**根命令的持久 flag**，对所有命令可见：
 
 - 支持结构化输出的命令读取它并把结果写进各自的 Options；
@@ -50,11 +53,12 @@ s3cli ls -r --json a:b/bucket/ | while read -r line; do jq -r .path <<<"$line"; 
 | 目录项 | `kind`,`path` |
 | `--summarize` | `kind`,`path`,`count`,`totalSize` |
 | `--incomplete` | `kind`,`path`,`initiated`,`uploadId` |
-| `--versions` | `kind`,`path`,`versionId`,`isLatest`,`isDeleteMarker`,`size`,`lastModified` |
+| `--versions` | `kind`,`path`,`versionId`,`isLatest`,`isDeleteMarker`,`size`,`lastModified`（`kind` 为 `version` / `delete-marker`） |
 
 ### `du`
 
-`kind`,`path`,`fileNum`,`size`；`-r` 时每行额外带 `dir`。
+`kind`,`path`,`fileNum`,`size`；`kind` 为 `total`（非递归汇总）或 `dir`（`-r` 的目录行），
+`-r` 的目录行额外带 `dir: true`。
 
 ### `find`
 
@@ -65,6 +69,7 @@ s3cli ls -r --json a:b/bucket/ | while read -r line; do jq -r .path <<<"$line"; 
 ### `tree`
 
 汇总行：`path`,`directories`,`files`,`totalSize`；树体在 `tree` 字段中。
+`--json` 的汇总始终统计全部文件（不受 `-f` 是否显示文件影响）。
 
 ### `stat`
 
@@ -104,6 +109,12 @@ s3cli ls -r --json a:b/bucket/ | while read -r line; do jq -r .path <<<"$line"; 
 ### `mpu list`
 
 `path`,`bucket`,`key`,`uploadId`,`initiated`
+
+### `info`
+
+`info` 不受 `--json` 控制，始终输出单个 JSON 文档（人类可读标题在 stderr）。
+字段沿用历史实现的大写键（`Bucket` / `Location` / `Versioning` / `CORS` / `Policy` / `URL`；
+对象为 `Key` / `ETag` / `Size` / `Metadata` / `Tags` 等）。
 
 ### `mpu local-list`
 

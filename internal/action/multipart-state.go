@@ -13,11 +13,11 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-	"s3cli/internal/action/render"
 	"time"
 
-	myprint "s3cli/internal/fmtutil"
-	"s3cli/internal/i18n"
+	"github.com/onmk613/s3cli/internal/action/render"
+	myprint "github.com/onmk613/s3cli/internal/fmtutil"
+	"github.com/onmk613/s3cli/internal/i18n"
 )
 
 // multipartState persists only the information required to safely reconnect a
@@ -120,7 +120,7 @@ func MpuLocalList(opt MpuLocalOptions) error {
 		return err
 	}
 	if opt.OutputToJSON {
-		return render.PrintJSONDoc(states)
+		return render.JSONDoc(states)
 	}
 	tbl := myprint.NewTable(
 		i18n.T("Created", "创建时间"),
@@ -149,7 +149,7 @@ func MpuLocalClear(path string, opt MpuLocalOptions) error {
 		return err
 	}
 	if opt.OutputToJSON {
-		return render.PrintJSONDoc(map[string]string{"cleared": path})
+		return render.JSONDoc(map[string]string{"cleared": path})
 	}
 	myprint.PrintfGreen(i18n.T("removed local multipart state %s\n", "已删除本地分段上传状态 %s\n"), path)
 	return nil

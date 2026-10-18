@@ -13,8 +13,8 @@ import (
 	"strings"
 	"testing"
 
-	"s3cli/internal/api"
-	myprint "s3cli/internal/fmtutil"
+	"github.com/onmk613/s3cli/internal/api"
+	myprint "github.com/onmk613/s3cli/internal/fmtutil"
 )
 
 // captureStdout 捕获 fn 期间写入 os.Stdout 以及全局 myprint writer 的全部内容。
@@ -30,6 +30,29 @@ func captureStdout(t *testing.T, fn func()) string {
 	defer func() {
 		os.Stdout = old
 		myprint.SetWriter(old)
+	}()
+	fn()
+	_ = w.Close()
+	b, err := io.ReadAll(r)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(b)
+}
+
+// captureStderr 捕获写入 stderr printer 的输出 (诊断信息通道)。
+func captureStderr(t *testing.T, fn func()) string {
+	t.Helper()
+	old := os.Stderr
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	os.Stderr = w
+	myprint.SetErrWriter(w)
+	defer func() {
+		os.Stderr = old
+		myprint.SetErrWriter(old)
 	}()
 	fn()
 	_ = w.Close()
@@ -107,6 +130,14 @@ func TestListObjectsJSON(t *testing.T) {
 		if l["path"] == nil {
 			t.Errorf("entry missing path: %v", l)
 		}
+		if l["kind"] == "file" {
+			if l["storageClass"] != "STANDARD" {
+				t.Errorf("file entry missing storageClass: %v", l)
+			}
+			if l["etag"] == nil || l["etag"] == "" {
+				t.Errorf("file entry missing etag: %v", l)
+			}
+		}
 	}
 	if byKind["dir"] != 1 || byKind["file"] != 2 {
 		t.Errorf("kinds = %v", byKind)
@@ -140,6 +171,9 @@ func TestDuObjectJSON(t *testing.T) {
 	}
 	if lines[0]["fileNum"].(float64) != 3 || lines[0]["path"] == nil {
 		t.Errorf("du entry = %v", lines[0])
+	}
+	if lines[0]["kind"] != "total" {
+		t.Errorf("du entry kind = %v, want total", lines[0]["kind"])
 	}
 }
 
@@ -189,6 +223,27 @@ func TestTreeObjectsJSON(t *testing.T) {
 	}
 }
 
+// TestTreeObjectsJSONAlwaysCountsFiles 回归: 默认 (不带 -f) 时 JSON 的
+// tree 体仍包含文件, 汇总也必须统计它们, 不能出现 files:0 而树里有文件。
+func TestTreeObjectsJSONAlwaysCountsFiles(t *testing.T) {
+	c := newJSONTestClient(t)
+	out := captureStdout(t, func() {
+		if err := c.TreeObjects(TreeOptions{JSON: true}, "mybucket", "dir/"); err != nil {
+			t.Error(err)
+		}
+	})
+	lines := jsonLines(t, out)
+	if len(lines) != 1 {
+		t.Fatalf("tree = %d lines\n%s", len(lines), out)
+	}
+	if lines[0]["files"].(float64) != 3 {
+		t.Errorf("tree files = %v, want 3", lines[0]["files"])
+	}
+	if lines[0]["totalSize"].(float64) != 31 {
+		t.Errorf("tree totalSize = %v, want 31", lines[0]["totalSize"])
+	}
+}
+
 func TestGetTagJSON(t *testing.T) {
 	c := newJSONTestClient(t)
 	out := captureStdout(t, func() {
@@ -223,5 +278,15 @@ func TestMpuListJSON(t *testing.T) {
 	}
 	if lines[0]["uploadId"] != "upload-123" || lines[0]["key"] != "big/upload.bin" {
 		t.Errorf("mpu entry = %v", lines[0])
+	}
+}
+
+// TestGetStdoutRejectsChecksum 流式输出无法在交付前校验整个对象,
+// 必须显式拒绝而不是静默忽略 --checksum。
+func TestGetStdoutRejectsChecksum(t *testing.T) {
+	c := &Action{Ctx: context.Background()}
+	err := c.GetObject(GetOptions{Checksum: "SHA256"}, "bucket", "key", "-")
+	if err == nil || !strings.Contains(err.Error(), "--checksum") {
+		t.Fatalf("want --checksum rejection, got %v", err)
 	}
 }

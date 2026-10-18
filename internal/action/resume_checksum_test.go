@@ -17,7 +17,7 @@ import (
 	"sync"
 	"testing"
 
-	"s3cli/internal/api"
+	"github.com/onmk613/s3cli/internal/api"
 )
 
 // TestResumeCarriesPartChecksumsToComplete: ListParts 返回的分片校验和

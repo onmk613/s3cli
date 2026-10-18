@@ -24,9 +24,10 @@ import (
 	"strings"
 	"time"
 
-	"s3cli/internal/api"
-	myprint "s3cli/internal/fmtutil"
-	"s3cli/internal/i18n"
+	"github.com/onmk613/s3cli/internal/action/render"
+	"github.com/onmk613/s3cli/internal/api"
+	myprint "github.com/onmk613/s3cli/internal/fmtutil"
+	"github.com/onmk613/s3cli/internal/i18n"
 )
 
 // LifecycleOptions 控制 SetLifecycle 的参数 (兼容旧入口).
@@ -216,7 +217,8 @@ func (c *Action) ListLifecycle(bucket string, opt ListLifecycleOptions) error {
 		return err
 	}
 	if opt.JSON {
-		return c.printBucketConfigJSON(bucket, "lifecycle:", cfg)
+		// JSON 模式只输出数据本身: 任何标题/提示都会破坏 `| jq`。
+		return render.JSONDoc(cfg)
 	}
 
 	type section struct {

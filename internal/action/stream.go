@@ -8,12 +8,13 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"s3cli/internal/fmtutil"
-	"s3cli/internal/progress"
 	"sync"
 	"sync/atomic"
 
-	"s3cli/internal/api"
+	"github.com/onmk613/s3cli/internal/api"
+	"github.com/onmk613/s3cli/internal/fmtutil"
+	"github.com/onmk613/s3cli/internal/i18n"
+	"github.com/onmk613/s3cli/internal/progress"
 )
 
 // StreamJob 流式操作中的一个任务。
@@ -179,7 +180,7 @@ func RunStream(ctx context.Context, cfg StreamConfig) error {
 					if r := reported.Load(); r != 0 {
 						pt.AddTotalSizeDone(-r)
 					}
-					pt.AddFailed(1, fmt.Sprintf("Failed %s: %s", msg, err))
+					pt.AddFailed(1, fmt.Sprintf(i18n.T("Failed %s: %s", "失败 %s：%s"), msg, i18n.LocalizeErrorText(err.Error())))
 
 					failMu.Lock()
 					failCount++

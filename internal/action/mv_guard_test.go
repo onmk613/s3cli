@@ -10,7 +10,7 @@ import (
 	"sync/atomic"
 	"testing"
 
-	"s3cli/internal/s3path"
+	"github.com/onmk613/s3cli/internal/s3path"
 )
 
 // mvGuardServer 让 key "dir/f.txt" 看起来是一个已存在的对象 (HEAD 命中),

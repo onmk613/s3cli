@@ -9,12 +9,12 @@ import (
 	"errors"
 	"fmt"
 	"path"
-	"s3cli/internal/s3path"
 	"strings"
 
-	"s3cli/internal/api"
-	myprint "s3cli/internal/fmtutil"
-	"s3cli/internal/i18n"
+	"github.com/onmk613/s3cli/internal/api"
+	myprint "github.com/onmk613/s3cli/internal/fmtutil"
+	"github.com/onmk613/s3cli/internal/i18n"
+	"github.com/onmk613/s3cli/internal/s3path"
 )
 
 // CopyOptions cp/mv 命令参数.
@@ -72,7 +72,7 @@ func (c *Action) CopyObjects(opt CopyOptions, srcBucket, srcKey, destBucket, des
 	// 目录源
 	state, err := c.DestStateOf(destBucket, destKey)
 	if err != nil {
-		myprint.PrintfYellow("check destination (treated as not-exist): %s\n", err)
+		myprint.ErrPrintfYellow("check destination (treated as not-exist): %s\n", err)
 		state = s3path.DestNone
 	}
 	if state == s3path.DestFile {

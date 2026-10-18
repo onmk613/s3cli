@@ -7,14 +7,14 @@ package action
 import (
 	"errors"
 	"fmt"
-	"s3cli/internal/action/render"
 	"sort"
 	"strings"
 	"time"
 
-	"s3cli/internal/api"
-	myprint "s3cli/internal/fmtutil"
-	"s3cli/internal/i18n"
+	"github.com/onmk613/s3cli/internal/action/render"
+	"github.com/onmk613/s3cli/internal/api"
+	myprint "github.com/onmk613/s3cli/internal/fmtutil"
+	"github.com/onmk613/s3cli/internal/i18n"
 )
 
 // StatOptions stat 命令参数.

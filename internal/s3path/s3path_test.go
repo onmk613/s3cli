@@ -16,7 +16,7 @@ func TestParseS3Path(t *testing.T) {
 		{"prod:bucket/object.txt", "prod", "bucket", "object.txt", false, false, false},
 		{"prod:bucket/prefix/", "prod", "bucket", "prefix/", true, false, false},
 		{"prod", "prod", "", "", false, true, false},
-		{"prod:", "", "", "", false, false, true},
+		{"prod:", "prod", "", "", false, true, false},
 		{"bad alias:bucket", "", "", "", false, false, true},
 		// 短别名 (1~2 字符) 合法
 		{"a:bucket", "a", "bucket", "", false, false, false},

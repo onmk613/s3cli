@@ -11,8 +11,8 @@ import (
 func TestSetAliasConfArgs(t *testing.T) {
 	path := tempConfPath(t)
 
-	// 0 / 2 / 3 / 6 个参数 → 报错
-	for _, args := range [][]string{nil, {"a", "b"}, {"a", "b", "c"}, {"a", "b", "c", "d", "e", "f"}} {
+	// 0 / 2 / 6 个参数 → 报错 (3 参数是合法的"从 stdin 读 secret"模式)
+	for _, args := range [][]string{nil, {"a", "b"}, {"a", "b", "c", "d", "e", "f"}} {
 		if err := SetAliasConf(context.Background(), args); err == nil {
 			t.Errorf("SetAliasConf(%v) should error", args)
 		}
@@ -331,5 +331,27 @@ func TestInteractEditCtxCancelAtFieldBoundary(t *testing.T) {
 		if _, err := interactEdit(ctx, Static{}); !errors.Is(err, errInterrupted) {
 			t.Fatalf("iteration %d: want errInterrupted, got %v", i, err)
 		}
+	}
+}
+
+// TestSetAliasConfSecretFromStdin 3 参数模式从 stdin 读取密钥, 避免密钥
+// 出现在 argv / shell history。4 参数模式下 SECRETKEY 为 "-" 亦同。
+func TestSetAliasConfSecretFromStdin(t *testing.T) {
+	tempConfPath(t)
+	feedStdin(t, "sk-from-stdin\n")
+	if err := SetAliasConf(context.Background(), []string{"t3", "https://h", "ak"}); err != nil {
+		t.Fatal(err)
+	}
+	if got := G.S["t3"].SecretKey; got != "sk-from-stdin" {
+		t.Fatalf("secret = %q, want sk-from-stdin", got)
+	}
+
+	tempConfPath(t)
+	feedStdin(t, "sk-dash\n")
+	if err := SetAliasConf(context.Background(), []string{"t4", "https://h", "ak", "-"}); err != nil {
+		t.Fatal(err)
+	}
+	if got := G.S["t4"].SecretKey; got != "sk-dash" {
+		t.Fatalf("secret = %q, want sk-dash", got)
 	}
 }

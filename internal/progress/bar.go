@@ -6,7 +6,7 @@ import (
 	"strings"
 	"time"
 
-	"s3cli/internal/fmtutil"
+	"github.com/onmk613/s3cli/internal/fmtutil"
 )
 
 // buildBar 构建进度条字符串
@@ -174,12 +174,13 @@ func repeatToWidth(unit string, cols int) string {
 }
 
 // colorizeIf 按统一颜色开关决定是否给文本着色：
-// 仅当 !quiet 且全局 fmtutil.ColorEnabled() 时用 fmtutil.WrapANSI 包裹
+// 仅当 !quiet 且 stderr 通道启用颜色时用 fmtutil.WrapANSI 包裹
+// (进度条写 stderr, 是否着色应按 stderr 的终端属性判断)
 // ANSI 颜色码，其余情况（quiet 模式 / 全局 --no-color / 非终端）原样返回
 // 纯文本。所有进度条着色调用点（渲染帧、quiet 原始行、Stop 汇总与失败明细）
 // 均应走此方法。
 func (pt *Tracker) colorizeIf(color, s string) string {
-	if color == "" || pt.quiet.Load() || !fmtutil.ColorEnabled() {
+	if color == "" || pt.quiet.Load() || !fmtutil.ErrColorEnabled() {
 		return s
 	}
 	return fmtutil.WrapANSI(color, s)

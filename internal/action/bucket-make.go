@@ -7,9 +7,9 @@ import (
 	"errors"
 	"fmt"
 
-	"s3cli/internal/api"
-	myprint "s3cli/internal/fmtutil"
-	"s3cli/internal/i18n"
+	"github.com/onmk613/s3cli/internal/api"
+	myprint "github.com/onmk613/s3cli/internal/fmtutil"
+	"github.com/onmk613/s3cli/internal/i18n"
 )
 
 // 创建存储桶的同时设置cors、policy、lifecycle
@@ -45,7 +45,7 @@ func (c *Action) MakeBuckets(opt MakeBucketOptions, bucket string) error {
 	var errs []error
 	step := func(name string, fn func() error) {
 		if err := fn(); err != nil {
-			myprint.PrintfBoldYellow(i18n.T("set %s: %v\n", "设置 %s：%v\n"), name, err)
+			myprint.ErrPrintfBoldYellow(i18n.T("set %s: %s\n", "设置 %s：%s\n"), name, i18n.LocalizeErrorText(err.Error()))
 			errs = append(errs, fmt.Errorf("set %s: %w", name, err))
 		} else {
 			myprint.PrintfBoldGreen(i18n.T("set %s: success\n", "设置 %s：成功\n"), name)

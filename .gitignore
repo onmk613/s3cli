@@ -11,3 +11,4 @@ vendor/
 bin/
 reasonix*
 s3cli*
+coverage.out

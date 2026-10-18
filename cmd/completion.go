@@ -2,13 +2,12 @@ package cmd
 
 import (
 	"context"
-	"s3cli/internal/client"
 	"strings"
 	"time"
 
-	"s3cli/internal/action"
-	"s3cli/internal/config"
-
+	"github.com/onmk613/s3cli/internal/action"
+	"github.com/onmk613/s3cli/internal/client"
+	"github.com/onmk613/s3cli/internal/config"
 	"github.com/spf13/cobra"
 )
 
@@ -23,8 +22,9 @@ import (
 const completeMaxKeys = 50
 
 // completeTimeout 是 shell 补全时 S3 API 调用的最大等待时间。
+// Tab 补全必须"立即"响应: 10s 会让终端像卡死一样, 2s 已足够覆盖正常网络。
 // 超时后静默返回空列表，避免网络异常时 tab 补全卡住。
-const completeTimeout = 10 * time.Second
+const completeTimeout = 2 * time.Second
 
 // AutoCompleteAlias 补全 alias，用于 alias 相关命令补全
 func AutoCompleteAlias(_ *cobra.Command, _ []string, toComplete string) ([]string, cobra.ShellCompDirective) {

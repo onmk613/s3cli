@@ -16,7 +16,7 @@ import (
 	"sync"
 	"testing"
 
-	"s3cli/internal/api"
+	"github.com/onmk613/s3cli/internal/api"
 )
 
 // lifecycleServer 是一个只实现 lifecycle 子资源的有状态服务端。

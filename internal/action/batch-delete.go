@@ -11,7 +11,7 @@ import (
 	"fmt"
 	"strings"
 
-	"s3cli/internal/api"
+	"github.com/onmk613/s3cli/internal/api"
 )
 
 // s3DeleteBatchSize 是 DeleteObjects 单次请求的对象数上限 (S3 协议限制)。

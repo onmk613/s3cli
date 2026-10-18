@@ -26,7 +26,7 @@ import (
 	"testing"
 	"time"
 
-	"s3cli/internal/api"
+	"github.com/onmk613/s3cli/internal/api"
 )
 
 // =============== Fix 1: mirror 删除失败传播 ===============
@@ -50,8 +50,11 @@ func TestMirrorDeleteFailurePropagates(t *testing.T) {
 	close(actions)
 
 	var err error
+	var errOut string
 	out := captureStdout(t, func() {
-		err = plan.copyAndDelete(actions, make(chan error), nil)
+		errOut = captureStderr(t, func() {
+			err = plan.copyAndDelete(actions, make(chan error), nil)
+		})
 	})
 	if err == nil {
 		t.Fatal("delete failure must be propagated as error")
@@ -63,8 +66,8 @@ func TestMirrorDeleteFailurePropagates(t *testing.T) {
 	if !strings.Contains(out, "Mirror done in") {
 		t.Fatalf("summary line missing, output: %q", out)
 	}
-	if !strings.Contains(out, "delete error") {
-		t.Fatalf("red delete-error line missing, output: %q", out)
+	if !strings.Contains(errOut, "delete error") {
+		t.Fatalf("red delete-error line missing from stderr, got: %q", errOut)
 	}
 }
 

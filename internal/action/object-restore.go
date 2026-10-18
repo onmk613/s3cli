@@ -7,9 +7,9 @@ import (
 	"errors"
 	"fmt"
 
-	"s3cli/internal/api"
-	myprint "s3cli/internal/fmtutil"
-	"s3cli/internal/i18n"
+	"github.com/onmk613/s3cli/internal/api"
+	myprint "github.com/onmk613/s3cli/internal/fmtutil"
+	"github.com/onmk613/s3cli/internal/i18n"
 )
 
 // RestoreOptions 控制 restore 命令的参数.

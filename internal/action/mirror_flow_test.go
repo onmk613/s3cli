@@ -21,7 +21,7 @@ import (
 	"sync"
 	"testing"
 
-	"s3cli/internal/api"
+	"github.com/onmk613/s3cli/internal/api"
 )
 
 // mirrorServer 是一个双 bucket 的内存 S3 服务端, 支持 mirror 需要的
@@ -248,6 +248,7 @@ func TestMirrorRemoveDeletesExtraTargetObjects(t *testing.T) {
 	})
 	opt := mirrorOpts(t, s)
 	opt.Remove = true
+	opt.Force = true
 	if err := Mirror(opt); err != nil {
 		t.Fatal(err)
 	}
@@ -279,6 +280,7 @@ func TestMirrorRemoveIsFencedWhenCopyFails(t *testing.T) {
 	})
 	opt := mirrorOpts(t, s)
 	opt.Remove = true
+	opt.Force = true
 	opt.Overwrite = true
 	// 让 b.txt 的复制必定失败。
 	s.mu.Lock()
@@ -314,6 +316,7 @@ func TestMirrorMaxDeleteLimitsDeletions(t *testing.T) {
 	})
 	opt := mirrorOpts(t, s)
 	opt.Remove = true
+	opt.Force = true
 	opt.MaxDelete = 2 // 有 3 个待删 -> 必须整体拒绝
 
 	err := Mirror(opt)
@@ -399,5 +402,76 @@ func TestMirrorResumeWithoutManifestIsRejected(t *testing.T) {
 	copied, _, _ := s.snapshot()
 	if len(copied) != 0 {
 		t.Fatalf("nothing should be copied, got %v", copied)
+	}
+}
+
+// TestMirrorRemoveRequiresForce --remove 会删除目标端数据, 必须显式 --force。
+func TestMirrorRemoveRequiresForce(t *testing.T) {
+	c := newJSONTestClient(t)
+	err := Mirror(MirrorOptions{
+		Src:         &S3PathOptions{Client: c, Bucket: "src"},
+		Tgt:         &S3PathOptions{Client: c, Bucket: "tgt"},
+		Remove:      true,
+		NoProgress:  true,
+		Concurrency: 1,
+	})
+	if err == nil || !strings.Contains(err.Error(), "--force") {
+		t.Fatalf("want --force requirement, got %v", err)
+	}
+}
+
+// TestSameEndpointRequiresSameCredentials: 同 endpoint 但不同 AccessKey 时
+// 不能走服务端 CopyObject (它用源凭证签名, 目标桶写权限也属于该凭证)。
+func TestSameEndpointRequiresSameCredentials(t *testing.T) {
+	newClient := func(endpoint, ak string) *Action {
+		builtin, err := api.New(&api.Options{Endpoint: endpoint, AccessKey: ak, SecretKey: "s"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return &Action{S3: builtin, Alias: "a", Ctx: context.Background()}
+	}
+	a := newClient("https://s3.example.com", "AK1")
+	b := newClient("https://s3.example.com/", "AK1")
+	c := newClient("https://s3.example.com", "AK2")
+	d := newClient("https://other.example.com", "AK1")
+
+	if !sameEndpoint(&S3PathOptions{Client: a}, &S3PathOptions{Client: b}) {
+		t.Error("same endpoint + same key should use server-side copy")
+	}
+	if sameEndpoint(&S3PathOptions{Client: a}, &S3PathOptions{Client: c}) {
+		t.Error("same endpoint + different key must fall back to streaming")
+	}
+	if sameEndpoint(&S3PathOptions{Client: a}, &S3PathOptions{Client: d}) {
+		t.Error("different endpoint must not use server-side copy")
+	}
+}
+
+// TestMirrorRemoveSpoolsLargeDeletionSet 覆盖删除清单落盘 + 分批删除:
+// 1205 个多余对象会跨越两个 1000 条的 DeleteObjects 批次。若实现仍把
+// 整份清单放内存, 这里至少能验证语义正确; 落盘本身由 deleteSpool 的
+// 单元测试与代码审查保证。
+func TestMirrorRemoveSpoolsLargeDeletionSet(t *testing.T) {
+	const extras = 1205
+	objects := map[string]string{"src/keep.txt": "keep"}
+	for i := 0; i < extras; i++ {
+		objects[fmt.Sprintf("tgt/extra-%04d.txt", i)] = "x"
+	}
+	s := newMirrorServer(t, objects)
+	opt := mirrorOpts(t, s)
+	opt.Remove = true
+	opt.Force = true
+	opt.Concurrency = 4
+
+	if err := Mirror(opt); err != nil {
+		t.Fatal(err)
+	}
+	_, deleted, remaining := s.snapshot()
+	if len(deleted) != extras {
+		t.Fatalf("deleted = %d, want %d", len(deleted), extras)
+	}
+	for k := range remaining {
+		if strings.HasPrefix(k, "tgt/extra-") {
+			t.Fatalf("extra object survived: %s", k)
+		}
 	}
 }

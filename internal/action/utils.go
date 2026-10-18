@@ -11,8 +11,8 @@ import (
 	"mime"
 	"sync"
 
-	"s3cli/internal/api"
-	"s3cli/internal/i18n"
+	"github.com/onmk613/s3cli/internal/api"
+	"github.com/onmk613/s3cli/internal/i18n"
 )
 
 // IsCanceled 判断 err 是否由用户主动取消（Ctrl+C / SIGTERM）或超时引起。

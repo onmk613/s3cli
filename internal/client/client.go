@@ -9,8 +9,8 @@ import (
 	"strings"
 	"time"
 
-	"s3cli/internal/api"
-	"s3cli/internal/config"
+	"github.com/onmk613/s3cli/internal/api"
+	"github.com/onmk613/s3cli/internal/config"
 )
 
 // newBackendClient 构造自建的 api.Client.

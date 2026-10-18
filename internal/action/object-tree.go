@@ -5,13 +5,13 @@ package action
 
 import (
 	"errors"
-	"s3cli/internal/action/render"
 	"sort"
 	"strings"
 
-	"s3cli/internal/api"
-	myprint "s3cli/internal/fmtutil"
-	"s3cli/internal/i18n"
+	"github.com/onmk613/s3cli/internal/action/render"
+	"github.com/onmk613/s3cli/internal/api"
+	myprint "github.com/onmk613/s3cli/internal/fmtutil"
+	"github.com/onmk613/s3cli/internal/i18n"
 )
 
 // TreeOptions tree 命令参数.
@@ -49,7 +49,12 @@ func (c *Action) TreeObjects(opt TreeOptions, bucket, prefix string) error {
 	renOpt := render.TreeOptions{Files: opt.Files, ShowSize: opt.ShowSize, MaxDepth: opt.MaxDepth}
 
 	if opt.JSON {
-		st := render.CountTree(view, renOpt)
+		// JSON 的 tree 体始终包含文件, 汇总也必须始终统计文件:
+		// 否则默认 (未加 -f) 会出现 "files:0" 但 tree 里却有两个文件的
+		// 自相矛盾输出。-f 只控制文本渲染是否显示文件。
+		statsOpt := renOpt
+		statsOpt.Files = true
+		st := render.CountTree(view, statsOpt)
 		return render.JSONLine(map[string]any{
 			"path":        header,
 			"directories": st.Dirs,

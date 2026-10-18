@@ -22,6 +22,16 @@ const (
 // 未显式绑定 Printer 的表格（NewTable）使用。
 var std = New()
 
+// errOut 是诊断输出 Printer（os.Stderr、自动着色）。
+// 数据写 stdout、错误/警告写 stderr 是 CLI 的基本契约：
+// 否则 `s3cli get ... > file` 会把错误文本写进文件，`--json | jq` 也会被
+// 错误信息污染。所有面向人的诊断都必须走这里。
+var errOut = func() *Printer {
+	p := New()
+	p.SetWriter(os.Stderr)
+	return p
+}()
+
 // Printer 是线程安全的着色输出器：颜色开关与输出目标可运行期调整，
 // 表格（NewTable）与直接输出共用同一实例，保证颜色决策一致。
 type Printer struct {

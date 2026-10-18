@@ -2,11 +2,12 @@ package client
 
 import (
 	"errors"
-	"s3cli/internal/api"
-	"s3cli/internal/config"
-	"s3cli/internal/kvcache"
-	"s3cli/internal/s3path"
 	"testing"
+
+	"github.com/onmk613/s3cli/internal/api"
+	"github.com/onmk613/s3cli/internal/config"
+	"github.com/onmk613/s3cli/internal/kvcache"
+	"github.com/onmk613/s3cli/internal/s3path"
 )
 
 func TestNewClient(t *testing.T) {

@@ -3,11 +3,10 @@ package cmd
 import (
 	"fmt"
 
-	"s3cli/internal/action"
-	"s3cli/internal/config"
-	"s3cli/internal/i18n"
-	"s3cli/internal/s3path"
-
+	"github.com/onmk613/s3cli/internal/action"
+	"github.com/onmk613/s3cli/internal/config"
+	"github.com/onmk613/s3cli/internal/i18n"
+	"github.com/onmk613/s3cli/internal/s3path"
 	"github.com/spf13/cobra"
 )
 
@@ -119,9 +118,6 @@ func NewMirrorCmd() *cobra.Command {
 			if srcPath.Bucket == "" || tgtPath.Bucket == "" {
 				return fmt.Errorf("both src and dst must include a bucket")
 			}
-			if srcPath.Alias == tgtPath.Alias {
-				return fmt.Errorf("mirror requires different aliases (use `cp` for same-alias copy)")
-			}
 
 			// alias 配置的 chunk size 仅在 --part-size 未显式设置时生效;
 			// 跨端 MPU 在目标端创建, 故取目标 alias 的配置。
@@ -146,7 +142,8 @@ func NewMirrorCmd() *cobra.Command {
 	}
 
 	f := cmd.Flags()
-	f.BoolVar(&opt.Remove, "remove", false, i18n.T("Delete extra objects on target that don't exist on source", "删除目标端多出的、源端不存在的对象"))
+	f.BoolVar(&opt.Remove, "remove", false, i18n.T("Delete extra objects on target that don't exist on source (requires --force)", "删除目标端多出的、源端不存在的对象（需配合 --force）"))
+	f.BoolVar(&opt.Force, "force", false, i18n.T("Confirm destructive --remove", "确认执行破坏性的 --remove"))
 	f.BoolVar(&opt.Overwrite, "overwrite", false, i18n.T("Overwrite target objects whose ETag/size/mtime differ from source", "覆盖目标端 ETag/大小/mtime 与源不一致的对象"))
 	f.BoolVar(&opt.DryRun, "dry-run", false, i18n.T("Show what would be done without making any changes", "只显示将执行的操作，不做任何实际变更"))
 	f.IntVar(&opt.Concurrency, "concurrency", config.DefaultConcurrency, i18n.T("Number of concurrent transfers", "并发传输数"))

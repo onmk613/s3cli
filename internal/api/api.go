@@ -15,7 +15,7 @@ import (
 	"strings"
 	"time"
 
-	"s3cli/internal/kvcache"
+	"github.com/onmk613/s3cli/internal/kvcache"
 )
 
 // Client 是一个 S3 兼容客户端, 封装了凭证、寻址方式与 HTTP 传输, 可复用于多次请求.

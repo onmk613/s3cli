@@ -3,16 +3,15 @@ package cmd
 import (
 	"fmt"
 
-	"s3cli/internal/config"
-	"s3cli/internal/i18n"
-
+	"github.com/onmk613/s3cli/internal/config"
+	"github.com/onmk613/s3cli/internal/i18n"
 	"github.com/spf13/cobra"
 )
 
 //
 // Alias 别名管理：
-//	 s3cli alias set myS3Server               // 交互式配置 myS3Server 的 endpoint、access_key、secret_key 等信息
-//	 s3cli alias set myS3Server URL AK SK     // 非交互写入/覆盖
+//	 s3cli alias add myS3Server               // 交互式配置 myS3Server 的 endpoint、access_key、secret_key 等信息
+//	 s3cli alias add myS3Server URL AK        // 从终端读取 secret 后写入/覆盖
 //   s3cli alias edit myS3Server              // 交互式修改已有 alias 的配置
 //   s3cli alias list (可指定 alias 名称，列出指定 alias 的配置)
 //	 s3cli alias del myS3Server
@@ -37,9 +36,17 @@ func NewAliasCmd() *cobra.Command {
 
 func setAliasCmd() *cobra.Command {
 	return &cobra.Command{
-		Use:               "add [ALIAS] [URL] [ACCESSKEY] [SECRETKEY] [SESSIONTOKEN]",
-		Aliases:           []string{"set", "s", "create"},
-		Short:             i18n.T("Add an alias: interactive with 1 arg, or ALIAS URL ACCESSKEY SECRETKEY [SESSIONTOKEN]", "添加别名：带 1 个参数进入交互式配置，或直接指定 ALIAS URL ACCESSKEY SECRETKEY [SESSIONTOKEN]"),
+		Use:     "add [ALIAS] [URL] [ACCESSKEY] [SECRETKEY] [SESSIONTOKEN]",
+		Aliases: []string{"set", "s", "create"},
+		Short:   i18n.T("Add an alias: 1 arg = interactive; ALIAS URL ACCESSKEY = prompt secret; or ALIAS URL ACCESSKEY SECRETKEY [SESSIONTOKEN]", "添加别名：1 个参数交互式；ALIAS URL ACCESSKEY 从终端读取密钥；或 ALIAS URL ACCESSKEY SECRETKEY [SESSIONTOKEN]"),
+		Long: i18n.T(
+			"Add or overwrite an alias.\n\n"+
+				"With 3 args the secret key is read from stdin (no echo on a terminal),\n"+
+				"so it never appears in shell history or `ps`. With 4/5 args pass `-`\n"+
+				"as SECRETKEY to read it from stdin instead.",
+			"添加或覆盖别名。\n\n"+
+				"3 个参数时从标准输入读取密钥（终端下不回显），不会留在 shell history 或 `ps` 中；\n"+
+				"4/5 个参数时把 SECRETKEY 写成 `-` 也可从 stdin 读取。"),
 		ValidArgsFunction: AutoCompleteAlias,
 		Args:              cobra.RangeArgs(1, 5),
 		RunE: func(cmd *cobra.Command, args []string) error {

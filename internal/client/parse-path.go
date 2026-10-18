@@ -4,10 +4,11 @@ import (
 	"errors"
 	"fmt"
 	"reflect"
-	"s3cli/internal/api"
-	"s3cli/internal/config"
-	"s3cli/internal/kvcache"
-	"s3cli/internal/s3path"
+
+	"github.com/onmk613/s3cli/internal/api"
+	"github.com/onmk613/s3cli/internal/config"
+	"github.com/onmk613/s3cli/internal/kvcache"
+	"github.com/onmk613/s3cli/internal/s3path"
 )
 
 // cachedBackend 缓存项: 已构造的后端客户端 + 构造它时使用的静态配置。

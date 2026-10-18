@@ -12,17 +12,16 @@ package action
 import (
 	"errors"
 	"fmt"
-	"s3cli/internal/i18n"
-	"s3cli/internal/progress"
-	"s3cli/internal/s3path"
 	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
 
-	myprint "s3cli/internal/fmtutil"
-
-	"s3cli/internal/api"
+	"github.com/onmk613/s3cli/internal/api"
+	myprint "github.com/onmk613/s3cli/internal/fmtutil"
+	"github.com/onmk613/s3cli/internal/i18n"
+	"github.com/onmk613/s3cli/internal/progress"
+	"github.com/onmk613/s3cli/internal/s3path"
 )
 
 // =============== 配置 ===============
@@ -44,6 +43,7 @@ type MirrorOptions struct {
 	Tgt *S3PathOptions
 
 	Remove       bool     // 是否删除目标端多余的对象
+	Force        bool     // --remove 的显式确认 (防止空源/错别名清空目标)
 	Overwrite    bool     // 已存在时是否依据 ETag/Size 覆盖
 	DryRun       bool     // 仅打印将要做的事, 不实际执行
 	Concurrency  int      // 并发数 (默认 defaultConcurrency)
@@ -142,6 +142,13 @@ func resolveMirrorPlan(cfg MirrorOptions) (*mirrorPlan, error) {
 	if err := validatePartSizeMB(cfg.PartSizeMB); err != nil {
 		return nil, err
 	}
+	// --remove 是破坏性操作: 空源(写错别名/前缀)会把目标端整个前缀清空。
+	// 与 rm -r 的 --force 语义对齐, 必须显式确认才允许删除。
+	if cfg.Remove && !cfg.Force && !cfg.DryRun {
+		return nil, errors.New(i18n.T(
+			"mirror --remove deletes extra objects on the target and requires --force",
+			"mirror --remove 会删除目标端多余对象，必须同时指定 --force"))
+	}
 
 	tgtClient := cfg.Tgt.Client
 	tgtBucket := cfg.Tgt.Bucket
@@ -154,7 +161,7 @@ func resolveMirrorPlan(cfg MirrorOptions) (*mirrorPlan, error) {
 	if err != nil {
 		// 探测失败 (403 / 网络错误) 会改变前缀解析结果, 直接影响 --remove 的
 		// 删除范围, 因此与 cp/mv 保持一致: 明确告警, 而不是静默当成"不存在"。
-		myprint.PrintfYellow(i18n.T(
+		myprint.ErrPrintfYellow(i18n.T(
 			"mirror: cannot determine target state (treated as not-exist): %s\n",
 			"mirror：无法判定目标状态（按不存在处理）：%s\n"), err)
 		state = s3path.DestNone
@@ -248,14 +255,26 @@ func (p *mirrorPlan) copyAndDelete(actions <-chan diffAction, listErrCh chan err
 		// (否则同一对象同时出现在 copied 和 failed 里, 且会错误地阻断删除阶段)。
 		manifestFailed atomic.Int64
 		startAt        = time.Now()
-
-		toDelete []string // 仅 --remove 时累积; O(删除数) 而非 O(全集)
 	)
+
+	// 待删除 key 落盘而不是驻留内存: 删除阶段必须等所有复制成功后才开始,
+	// 但 --remove 面对百万级多余对象时, []string 会占用数百 MB。
+	var pending *deleteSpool
+	if p.cfg.Remove {
+		var err error
+		pending, err = newDeleteSpool()
+		if err != nil {
+			return err
+		}
+		defer pending.close()
+	}
 
 	for a := range actions {
 		if a.delete {
-			if p.cfg.Remove {
-				toDelete = append(toDelete, joinKey(p.tgtPrefix, a.rel))
+			if pending != nil {
+				if err := pending.add(joinKey(p.tgtPrefix, a.rel)); err != nil {
+					return err
+				}
 			}
 			continue
 		}
@@ -281,7 +300,7 @@ func (p *mirrorPlan) copyAndDelete(actions <-chan diffAction, listErrCh chan err
 			if p.copyOne(pt, rel, objSize, &copied, &failed) && manifest != nil {
 				if err := manifest.mark(rel); err != nil {
 					manifestFailed.Add(1)
-					pt.AddFailed(1, fmt.Sprintf(i18n.T("✗ persist mirror manifest for %s: %v", "✗ 为 %s 持久化 mirror manifest 失败：%v"), rel, err))
+					pt.AddFailed(1, fmt.Sprintf(i18n.T("✗ persist mirror manifest for %s: %s", "✗ 为 %s 持久化 mirror manifest 失败：%s"), rel, i18n.LocalizeErrorText(err.Error())))
 				}
 			}
 		}(a.rel, a.size)
@@ -305,18 +324,22 @@ func (p *mirrorPlan) copyAndDelete(actions <-chan diffAction, listErrCh chan err
 	}
 
 	// 删除目标多余对象
-	var deleted int
-	var deleteErr error // 删除失败时记录, 汇总行打印后仍返回错误 (不再静默吞掉)
-	if p.cfg.Remove && len(toDelete) > 0 {
-		if p.cfg.MaxDelete > 0 && len(toDelete) > p.cfg.MaxDelete {
-			return fmt.Errorf(i18n.T("mirror planned to delete %d objects, exceeding --max-delete=%d", "镜像计划删除 %d 个对象，超过 --max-delete=%d"), len(toDelete), p.cfg.MaxDelete)
+	var (
+		deleted   int64
+		extra     int64
+		deleteErr error // 删除失败时记录, 汇总行打印后仍返回错误 (不再静默吞掉)
+	)
+	if pending != nil {
+		extra = pending.count
+	}
+	if extra > 0 {
+		if p.cfg.MaxDelete > 0 && extra > int64(p.cfg.MaxDelete) {
+			return fmt.Errorf(i18n.T("mirror planned to delete %d objects, exceeding --max-delete=%d", "镜像计划删除 %d 个对象，超过 --max-delete=%d"), extra, p.cfg.MaxDelete)
 		}
-		myprint.Printf(i18n.T("Deleting %d extra objects on target...\n", "正在删除目标端 %d 个多余对象...\n"), len(toDelete))
-		if err := p.tgtClient.deleteKeysInBatches(p.tgtClient.Ctx, p.tgtBucket, toDelete); err != nil {
-			deleteErr = err
-			myprint.PrintfRed(i18n.T("delete error: %v\n", "删除错误：%v\n"), err)
-		} else {
-			deleted = len(toDelete)
+		myprint.Printf(i18n.T("Deleting %d extra objects on target...\n", "正在删除目标端 %d 个多余对象...\n"), extra)
+		deleted, deleteErr = p.deleteSpooled(pending, extra)
+		if deleteErr != nil {
+			myprint.ErrPrintfRed(i18n.T("delete error: %s\n", "删除错误：%s\n"), i18n.LocalizeErrorText(deleteErr.Error()))
 		}
 	}
 
@@ -329,9 +352,26 @@ func (p *mirrorPlan) copyAndDelete(actions <-chan diffAction, listErrCh chan err
 	}
 	// 删除失败必须上报: 目标端仍有 --remove 应清理的多余对象, 不能以成功退出。
 	if deleteErr != nil {
-		return fmt.Errorf("mirror: failed to delete %d extra object(s) on target: %w", len(toDelete), deleteErr)
+		return fmt.Errorf(i18n.T("mirror: failed to delete %d extra object(s) on target: %w", "镜像：删除目标端 %d 个多余对象失败：%w"), extra, deleteErr)
 	}
 	return nil
+}
+
+// deleteSpooled 按 S3 批量删除上限逐批消费落盘清单。
+// 返回已成功删除的数量 (部分批次成功、后续失败时用于汇总)。
+func (p *mirrorPlan) deleteSpooled(pending *deleteSpool, total int64) (int64, error) {
+	var deleted int64
+	err := pending.forEachBatch(p.tgtClient.Ctx, s3DeleteBatchSize, func(batch []string) error {
+		if err := p.tgtClient.deleteKeysInBatches(p.tgtClient.Ctx, p.tgtBucket, batch); err != nil {
+			return err
+		}
+		deleted += int64(len(batch))
+		return nil
+	})
+	if err != nil {
+		return deleted, err
+	}
+	return total, nil
 }
 
 // copyOne 复制单个对象并维护进度 / 计数 (在 worker goroutine 中调用).
@@ -369,7 +409,7 @@ func (p *mirrorPlan) copyOne(pt *progress.Tracker, rel string, objSize int64, co
 			return false
 		}
 		failed.Add(1)
-		pt.AddFailed(1, fmt.Sprintf("%s: %s", msg, err))
+		pt.AddFailed(1, fmt.Sprintf("%s: %s", msg, i18n.LocalizeErrorText(err.Error())))
 		return false
 	}
 	// 成功: 对账, 把进度精确补齐到 objSize (适配服务端 copy / 跨端分片偏差)。

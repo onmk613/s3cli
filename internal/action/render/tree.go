@@ -3,7 +3,7 @@ package render
 import (
 	"sort"
 
-	"s3cli/internal/fmtutil"
+	"github.com/onmk613/s3cli/internal/fmtutil"
 )
 
 // TreeNode 是树形渲染所需的最小节点视图。调用方负责把业务对象

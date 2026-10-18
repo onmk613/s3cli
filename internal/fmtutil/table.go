@@ -321,8 +321,9 @@ var ansiRe = regexp.MustCompile(`\x1b\[[0-9;?]*[ -/]*[@-~]`)
 var widthCond = runewidth.Condition{EastAsianWidth: false}
 
 // displayWidth 计算字符串的终端显示宽度：CJK 宽字符按 2 计，组合符号
-// 按 0 计，ZWJ emoji/国旗等多 rune 序列按 grapheme 聚合为单格并封顶
-// 2 列（go-runewidth 语义）；混入的 ANSI 颜色码不占宽度。
+// 按 0 计，ZWJ emoji/国旗/肤色修饰等多 rune 序列按 grapheme 聚合，字形
+// 部分封顶 2 列（go-runewidth 0.0.31 语义）；非法 UTF-8 按 U+FFFD 计宽，
+// 双向控制符等不可打印字符按 0 计。混入的 ANSI 颜色码不占宽度。
 func displayWidth(s string) int {
 	if strings.IndexByte(s, 0x1b) >= 0 {
 		s = ansiRe.ReplaceAllString(s, "")

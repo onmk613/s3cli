@@ -8,12 +8,12 @@ import (
 	"errors"
 	"fmt"
 	"path"
-	"s3cli/internal/s3path"
 	"strings"
 
-	"s3cli/internal/api"
-	myprint "s3cli/internal/fmtutil"
-	"s3cli/internal/i18n"
+	"github.com/onmk613/s3cli/internal/api"
+	myprint "github.com/onmk613/s3cli/internal/fmtutil"
+	"github.com/onmk613/s3cli/internal/i18n"
+	"github.com/onmk613/s3cli/internal/s3path"
 )
 
 // Mv 移动对象 = copy + delete
@@ -65,7 +65,7 @@ func (c *Action) Mv(opt CopyOptions, srcBucket, srcKey, destBucket, destKey stri
 	// 目录源：规则 1/2/3/4
 	state, err := c.DestStateOf(destBucket, destKey)
 	if err != nil {
-		myprint.PrintfYellow("check destination (treated as not-exist): %s\n", err)
+		myprint.ErrPrintfYellow("check destination (treated as not-exist): %s\n", err)
 		state = s3path.DestNone
 	}
 	if state == s3path.DestFile {

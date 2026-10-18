@@ -16,7 +16,7 @@
 - 查找（find）、树形展示（tree）、磁盘占用（du）、S3 Select（sql）、归档恢复（restore）、预签名 URL（share）
 - 桶/对象子资源：CORS、生命周期、策略、加密、版本控制、事件通知、标签、**ACL**、
   **Object Lock（桶默认保留策略 + 对象 retention / legal hold）**、**复制**、**公共访问阻断**
-- 完整性：`put --checksum`（CRC32/CRC32C/SHA1/SHA256 附加校验和）、`get --checksum`（下载后校验）
+- 完整性：`put --checksum`（CRC32/CRC32C/SHA1/SHA256 附加校验和）、`get --checksum`（下载到文件后校验）
 - 安全自检：`put`/`get`/`cp`/`mv`/`rm`/`mirror`/`bucket remove` 支持 `--dry-run`
 - 单对象分片并行上传（每文件 4 并发分片）
 - 结构化 JSON 输出（全局 `--json`）、中英双语帮助、Bash / Zsh / Fish / PowerShell 自动补全
@@ -25,24 +25,23 @@
 
 ```bash
 # Go Version 1.27+
-git clone https://github.com/onmk613/s3cli.git
-cd s3cli && bash build.sh
-mv ./bin/s3cli /usr/local/bin/
+go install github.com/onmk613/s3cli@latest   # v1.3.0+；或 git clone + bash build.sh
 s3cli help
 ```
 
 ## 快速开始
 
 ```bash
-# 1. 配置端点（别名）
-s3cli alias add my-s3 https://s3.example.com AKIA... SECRET
+# 1. 配置端点（别名）: 3 个参数时从终端读取 secret（不回显、不进 shell history）
+s3cli alias add my-s3 https://s3.example.com AKIA...
+# 脚本 / CI 可从 stdin 读取: printf '%s' "$SECRET" | s3cli alias add my-s3 URL AK -
 
 # 2. 常用操作
 s3cli ls my-s3:                             # 列出所有桶
 s3cli ls my-s3:my-bucket/                   # 列出桶内对象
-s3cli put ./data my-s3:my-bucket/backup/    # 上传目录（递归）
-s3cli get my-s3:my-bucket/backup ./out/     # 下载目录
-s3cli mirror my-s3:prod my-s3:backup        # 同步（同端点服务端复制）
+s3cli put ./data my-s3:my-bucket/backup/ -r # 上传目录（递归）
+s3cli get my-s3:my-bucket/backup ./out/ -r  # 下载目录
+s3cli mirror my-s3:prod my-s3:backup        # 同一 endpoint 的服务端复制
 cat access.log | s3cli put - my-s3:logs/access.log   # stdin 管道上传
 s3cli sql my-s3:my-bucket/data.csv -e "select * from S3Object limit 10"
 s3cli share download my-s3:my-bucket/file --expire 24h
@@ -103,7 +102,7 @@ Flags:
   -h, --help                       help for s3cli
       --host-base string           覆盖所有别名使用的 endpoint 主机地址
       --json                       输出结构化 JSON（仅部分命令支持，其余命令忽略此参数）
-      --lang string                帮助语言：auto（按时区/环境自动检测）| en | zh (default "zh")
+      --lang string                帮助语言：auto（按时区/环境自动检测）| en | zh (default "auto")
       --no-color                   禁用彩色输出
       --no-verify-ssl              跳过 TLS 证书校验
       --user-agent string          覆盖 HTTP User-Agent 请求头
@@ -142,7 +141,10 @@ Use "s3cli [command] --help" for more information about a command.
 `mpu list`、`mpu local-list`。其余命令继续输出文本（`--json` 被忽略）。
 
 > `info` 不在上表内：它本来就**始终**输出 JSON（兼容旧用法），不读取也不
-> 需要 `--json`，加不加该参数行为一致。
+> 需要 `--json`，加不加该参数行为一致；人类可读的标题只写到 stderr。
+>
+> **stdout 只放命令结果，错误/警告/标题统一走 stderr**。因此
+> `s3cli ... --json | jq`、`s3cli get ... > file` 不会再被诊断信息污染。
 >
 > 各命令的字段 schema 见 [docs/OUTPUT_SCHEMA.md](docs/OUTPUT_SCHEMA.md)。
 
@@ -206,6 +208,11 @@ tls_min_version = "1.2"     # 1.0 / 1.1 / 1.2 / 1.3，缺省 1.2；老式端点�
 ./build.sh all   # 全平台交叉编译
 go test ./...    # 测试（自包含，无需真实 S3 服务）
 go vet ./...     # 静态检查
+
+# 真实 S3 端到端（可选；CI 用 LocalStack 自动跑）
+S3CLI_E2E_ENDPOINT=http://127.0.0.1:4566 \
+  S3CLI_E2E_ACCESS_KEY=test S3CLI_E2E_SECRET_KEY=test \
+  bash scripts/e2e-s3.sh
 ```
 
 ## 测试命名约定

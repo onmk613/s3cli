@@ -14,10 +14,10 @@ import (
 	"strings"
 	"time"
 
-	"s3cli/internal/action/render"
-	"s3cli/internal/api"
-	myprint "s3cli/internal/fmtutil"
-	"s3cli/internal/i18n"
+	"github.com/onmk613/s3cli/internal/action/render"
+	"github.com/onmk613/s3cli/internal/api"
+	myprint "github.com/onmk613/s3cli/internal/fmtutil"
+	"github.com/onmk613/s3cli/internal/i18n"
 )
 
 // ObjectLockConfigOptions 控制 `bucket object-lock set` 的参数.
@@ -172,8 +172,8 @@ func requireObjectKey(op, bucket, key string) error {
 // printObjectConfigJSON 打印对象级子资源 (retention / legal-hold) 的 JSON 文档,
 // 与 printBucketConfigJSON 同风格, 标题改用对象路径。
 func (c *Action) printObjectConfigJSON(bucket, key, header string, cfg any) error {
-	myprint.PrintfBoldBlue("# %s %s\n", c.S3Path(bucket, key), header)
-	return render.PrintJSONDoc(cfg)
+	myprint.ErrPrintfBoldBlue("# %s %s\n", c.S3Path(bucket, key), header)
+	return render.JSONDoc(cfg)
 }
 
 // objectLockErr 为 Object Lock 操作补充最常见的失败原因提示:

@@ -16,7 +16,7 @@ import (
 	"sort"
 	"sync"
 
-	"s3cli/internal/api"
+	"github.com/onmk613/s3cli/internal/api"
 )
 
 // multipartConcurrency 是单个对象内部并发上传的分片数。

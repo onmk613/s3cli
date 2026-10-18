@@ -8,10 +8,10 @@ import (
 	"fmt"
 	"strings"
 
-	"s3cli/internal/action/render"
-	"s3cli/internal/api"
-	myprint "s3cli/internal/fmtutil"
-	"s3cli/internal/i18n"
+	"github.com/onmk613/s3cli/internal/action/render"
+	"github.com/onmk613/s3cli/internal/api"
+	myprint "github.com/onmk613/s3cli/internal/fmtutil"
+	"github.com/onmk613/s3cli/internal/i18n"
 )
 
 // ListOptions ls 命令参数.
@@ -127,6 +127,8 @@ func (c *Action) listObjectsV2(bucket, prefix string, opt ListOptions) error {
 					"path":         c.S3Path(bucket, item.Key),
 					"size":         item.Size,
 					"lastModified": item.LastModified,
+					"storageClass": item.StorageClass,
+					"etag":         item.ETag,
 				}); err != nil {
 					return err
 				}
@@ -194,16 +196,16 @@ func (c *Action) listObjectVersionsAsLs(bucket, prefix string, opt ListOptions) 
 		if opt.JSON {
 			kind := "version"
 			rec := map[string]any{
-				"kind":         kind,
-				"path":         c.S3Path(bucket, v.Key),
-				"lastModified": v.LastModified,
-				"versionId":    v.VersionID,
-				"isLatest":     v.IsLatest,
+				"kind":           kind,
+				"path":           c.S3Path(bucket, v.Key),
+				"lastModified":   v.LastModified,
+				"versionId":      v.VersionID,
+				"isLatest":       v.IsLatest,
+				"isDeleteMarker": v.IsDeleteMarker,
+				"size":           v.Size,
 			}
 			if v.IsDeleteMarker {
 				rec["kind"] = "delete-marker"
-			} else {
-				rec["size"] = v.Size
 			}
 			return render.JSONLine(rec)
 		}

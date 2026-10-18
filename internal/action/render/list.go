@@ -3,8 +3,8 @@ package render
 import (
 	"time"
 
-	"s3cli/internal/fmtutil"
-	"s3cli/internal/i18n"
+	"github.com/onmk613/s3cli/internal/fmtutil"
+	"github.com/onmk613/s3cli/internal/i18n"
 )
 
 // LsTableRowLimit 是表格输出的行数上限: 超过后放弃对齐表格, 改为逐行流式

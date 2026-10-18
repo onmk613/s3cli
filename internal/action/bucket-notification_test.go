@@ -14,7 +14,7 @@ import (
 	"strings"
 	"testing"
 
-	"s3cli/internal/api"
+	"github.com/onmk613/s3cli/internal/api"
 )
 
 // testNotificationAction 构造一个指向内存 mock 服务端的 Action, 并返回 mock 以便

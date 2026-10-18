@@ -16,8 +16,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-
-	"s3cli/internal/fmtutil"
 )
 
 // TimeLayout 是列举类输出统一的秒级时间格式。
@@ -67,14 +65,4 @@ func JSONDocTo(w io.Writer, v any) error {
 	}
 	_, err = fmt.Fprintln(w, string(b))
 	return err
-}
-
-// PrintJSONDoc 以高亮色输出缩进 JSON 文档 (info / bucket xxx get 的风格)。
-func PrintJSONDoc(v any) error {
-	b, err := json.MarshalIndent(v, "", "  ")
-	if err != nil {
-		return fmt.Errorf("marshal json: %w", err)
-	}
-	fmtutil.PrintlnGreen(string(b))
-	return nil
 }

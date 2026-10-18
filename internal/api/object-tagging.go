@@ -86,6 +86,11 @@ func (c *Client) GetObjectTagging(ctx context.Context, bucket, key, versionID st
 
 	resp, err := c.Do(ctx, http.MethodGet, reqMeta)
 	if err != nil {
+		// 多数实现返回 200 + 空 TagSet; 少数在无标签时回 404 NoSuchTagSet,
+		// 与桶标签保持一致, 统一归一为空集合。
+		if HasCode(err, "NoSuchTagSet") {
+			return nil, nil
+		}
 		return nil, err
 	}
 	defer func(Body io.ReadCloser) {

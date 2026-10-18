@@ -6,14 +6,16 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
-	"s3cli/internal/action"
-	"s3cli/internal/config"
-	myprint "s3cli/internal/fmtutil"
-	"s3cli/internal/i18n"
+	"runtime"
+	"runtime/debug"
 	"strings"
 	"sync"
 	"syscall"
 
+	"github.com/onmk613/s3cli/internal/action"
+	"github.com/onmk613/s3cli/internal/config"
+	myprint "github.com/onmk613/s3cli/internal/fmtutil"
+	"github.com/onmk613/s3cli/internal/i18n"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 )
@@ -27,8 +29,33 @@ var (
 )
 
 // version 返回版本信息字符串，包含 s3cli 版本、Go 版本、Git 提交哈希和构建日期。
+//
+// release 构建由 build.sh 通过 -ldflags 注入; 普通 `go build` / `go install`
+// 没有这些注入, 此时回退到 Go 构建信息 (module version / vcs.revision),
+// 避免所有本地二进制都显示 "dev / unknown / none"。
 func version() string {
-	return fmt.Sprintf("%s \ngolang %s \ncommit %s\nbuilt %s", Version, GoVersion, Commit, BuildDate)
+	v, commit, built, goVer := Version, Commit, BuildDate, GoVersion
+	if bi, ok := debug.ReadBuildInfo(); ok {
+		if v == "dev" && bi.Main.Version != "" && bi.Main.Version != "(devel)" {
+			v = bi.Main.Version
+		}
+		if goVer == "unknown" {
+			goVer = runtime.Version()
+		}
+		for _, s := range bi.Settings {
+			switch s.Key {
+			case "vcs.revision":
+				if commit == "none" && len(s.Value) >= 7 {
+					commit = s.Value[:7]
+				}
+			case "vcs.time":
+				if built == "unknown" {
+					built = s.Value
+				}
+			}
+		}
+	}
+	return fmt.Sprintf("%s\ngolang %s\ncommit %s\nbuilt %s", v, goVer, commit, built)
 }
 
 // cmd group 用于注册顶层命令组及其子命令
@@ -176,7 +203,13 @@ func NewRootCmd() {
 			if config.G.F.NoColor {
 				myprint.SetColor(false)
 			}
-			return config.LoadConf()
+			// 配置文件不存在不是全局错误: diff 等命令可以纯本地运行,
+			// 需要别名的命令会在 parseClient 处给出"alias not found + 如何创建"
+			// 的明确提示。只有配置文件存在但损坏时才在这里失败。
+			if err := config.LoadConf(); err != nil && !errors.Is(err, config.ErrConfigNotFoundOrEmpty) {
+				return err
+			}
+			return nil
 		},
 	}
 
@@ -236,7 +269,7 @@ func NewRootCmd() {
 		}
 		// errAlreadyDisplayed 表示错误已在 RunE 内部输出给用户，不再重复打印。
 		if !errors.Is(err, errAlreadyDisplayed) {
-			myprint.PrintlnBoldRed(err.Error())
+			myprint.ErrPrintlnBoldRed(i18n.LocalizeErrorText(err.Error()))
 		}
 		os.Exit(exitCodeForError(err))
 	}

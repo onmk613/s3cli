@@ -4,7 +4,7 @@ import (
 	"crypto/tls"
 	"testing"
 
-	"s3cli/internal/config"
+	"github.com/onmk613/s3cli/internal/config"
 )
 
 func TestNewS3Client(t *testing.T) {

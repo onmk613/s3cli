@@ -16,8 +16,8 @@ import (
 	"strings"
 	"sync"
 
-	"s3cli/internal/api"
-	myprint "s3cli/internal/fmtutil"
+	"github.com/onmk613/s3cli/internal/api"
+	myprint "github.com/onmk613/s3cli/internal/fmtutil"
 )
 
 // sameEndpoint 判断源/目标是否同一 endpoint, 是的话可用服务端 CopyObject.
@@ -29,7 +29,11 @@ func sameEndpoint(src, tgt *S3PathOptions) bool {
 	}
 	// 规范化: 去掉尾部斜杠, 避免 "http://s3.example.com" 与 "http://s3.example.com/" 被判为不同
 	normalize := func(e string) string { return strings.TrimRight(e, "/") }
-	return strings.EqualFold(normalize(sc.BaseEndpoint), normalize(tc.BaseEndpoint))
+	// 仅 endpoint 相同还不够: 服务端 CopyObject 用源客户端凭证签名, 目标桶的
+	// 写权限也属于该凭证。两个别名指向同一 endpoint 但使用不同 AccessKey
+	// (多租户/多账号) 时, 走服务端复制会 AccessDenied, 必须回退到跨端流式。
+	return strings.EqualFold(normalize(sc.BaseEndpoint), normalize(tc.BaseEndpoint)) &&
+		sc.AccessKeyID != "" && sc.AccessKeyID == tc.AccessKeyID
 }
 
 // maxCopyObjectSize 是单次 CopyObject 的 AWS 协议上限 (5GiB);

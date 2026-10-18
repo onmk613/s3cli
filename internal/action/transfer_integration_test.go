@@ -12,7 +12,7 @@ import (
 	"sync/atomic"
 	"testing"
 
-	"s3cli/internal/api"
+	"github.com/onmk613/s3cli/internal/api"
 )
 
 type roundTripperFunc func(*http.Request) (*http.Response, error)

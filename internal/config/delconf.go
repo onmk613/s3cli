@@ -5,8 +5,10 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	myprint "s3cli/internal/fmtutil"
 	"strings"
+
+	myprint "github.com/onmk613/s3cli/internal/fmtutil"
+	"github.com/onmk613/s3cli/internal/i18n"
 )
 
 // DelConf 从配置文件中删除指定别名 section (alias del)。
@@ -19,11 +21,11 @@ func DelConf(sections []string) error {
 	var errs []error
 	for _, section := range sections {
 		if interactive && !confirmDelete(reader, section, G.C) {
-			myprint.PrintfYellow("skip [%s]: not confirmed\n", section)
+			myprint.ErrPrintfYellow("skip [%s]: not confirmed\n", section)
 			continue
 		}
 		if err := delConf(section, G.C); err != nil {
-			myprint.PrintfRed("%s\n", err)
+			myprint.ErrPrintfRed("%s\n", i18n.LocalizeErrorText(err.Error()))
 			errs = append(errs, err)
 		}
 	}
@@ -32,7 +34,7 @@ func DelConf(sections []string) error {
 
 // confirmDelete 终端交互确认删除, 仅 y/Y 视为确认。
 func confirmDelete(reader *bufio.Reader, section, confPath string) bool {
-	myprint.Printf("Delete alias [%s] from %s? (y/N): ", section, confPath)
+	myprint.ErrPrintf("Delete alias [%s] from %s? (y/N): ", section, confPath)
 	ans, err := reader.ReadString('\n')
 	if err != nil {
 		return false
@@ -56,6 +58,6 @@ func delConf(section, confPath string) error {
 		return err
 	}
 
-	myprint.PrintfGreen("Alias [%s] deleted from %s\n", section, confPath)
+	myprint.ErrPrintfGreen("Alias [%s] deleted from %s\n", section, confPath)
 	return nil
 }

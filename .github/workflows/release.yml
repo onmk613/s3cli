@@ -1,22 +1,19 @@
 name: release
 
-# 打 tag (v*) 时: 跑完整校验 -> 全平台交叉编译 -> 附带产物创建 GitHub Release。
-# 可复现构建: 注入 SOURCE_DATE_EPOCH (tag 指向的 commit 时间), 同 tag 重建产物一致。
-
 on:
   push:
     tags: ["v*"]
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   verify:
     name: 校验 (test + vet)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0
         with:
           go-version: "1.27"
       - run: go vet ./...
@@ -26,9 +23,12 @@ jobs:
     name: 构建并发布
     needs: verify
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      id-token: write
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0
         with:
           go-version: "1.27"
       - name: 计算可复现时间戳
@@ -38,16 +38,31 @@ jobs:
         run: bash build.sh all
         env:
           SOURCE_DATE_EPOCH: ${{ steps.meta.outputs.epoch }}
+      - name: 生成 SBOM (CycloneDX)
+        run: |
+          go install github.com/CycloneDX/cyclonedx-gomod/cmd/cyclonedx-gomod@v1.9.0
+          "$(go env GOPATH)/bin/cyclonedx-gomod" app -json -noserial -output bin/sbom.cdx.json .
       - name: 打包产物
         run: |
           cd bin
           for f in s3cli-*; do tar -czf "$f.tar.gz" "$f" && rm "$f"; done
-          shasum -a 256 *.tar.gz > SHA256SUMS
+          shasum -a 256 *.tar.gz sbom.cdx.json > SHA256SUMS
           ls -l
+      - name: 安装 cosign
+        uses: sigstore/cosign-installer@d58896d6a1865668819e1d91763c7751a165e159 # v3.9.2
+      - name: 签名 SHA256SUMS (keyless)
+        run: |
+          cosign sign-blob --yes \
+            --output-signature bin/SHA256SUMS.sig \
+            --output-certificate bin/SHA256SUMS.pem \
+            bin/SHA256SUMS
       - name: 创建 GitHub Release 并上传产物
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2.6.2
         with:
           files: |
             bin/*.tar.gz
             bin/SHA256SUMS
+            bin/SHA256SUMS.sig
+            bin/SHA256SUMS.pem
+            bin/sbom.cdx.json
           generate_release_notes: true

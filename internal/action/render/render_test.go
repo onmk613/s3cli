@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"s3cli/internal/fmtutil"
+	"github.com/onmk613/s3cli/internal/fmtutil"
 )
 
 func TestS3Path(t *testing.T) {

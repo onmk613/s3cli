@@ -16,9 +16,9 @@ import (
 	"strconv"
 	"strings"
 
-	"s3cli/internal/api"
-	myprint "s3cli/internal/fmtutil"
-	"s3cli/internal/i18n"
+	"github.com/onmk613/s3cli/internal/api"
+	myprint "github.com/onmk613/s3cli/internal/fmtutil"
+	"github.com/onmk613/s3cli/internal/i18n"
 )
 
 // GetOptions get 命令参数
@@ -87,6 +87,13 @@ func (c *Action) GetObject(opt GetOptions, bucket, prefix, localPath string) err
 func (c *Action) catToStdout(opt GetOptions, bucket, key string) error {
 	if key == "" {
 		return errors.New(i18n.T("stdout output requires a single object key", "stdout 输出需要指定单个对象 key"))
+	}
+	// 流式输出无法在"交付给下游"之前完成整对象校验: 数据一旦写出就不能撤回。
+	// 静默忽略 --checksum 会让用户误以为已校验, 必须显式拒绝而不是假装成功。
+	if opt.Checksum != "" {
+		return errors.New(i18n.T(
+			"--checksum cannot be used when writing to stdout; download to a file to verify the checksum",
+			"写入 stdout 时不能使用 --checksum；请下载到文件后再校验"))
 	}
 	gopts := &api.GetObjectOptions{VersionID: opt.VersionID}
 	if rng := buildRangeFromGet(opt); rng != "" {
@@ -177,7 +184,7 @@ func (c *Action) downloadDirectory(opt GetOptions, bucket, key, localPath string
 				if pathErr != nil {
 					// 单个异常 key (如含 ".." 的路径穿越) 警告并跳过,
 					// 不中断整个目录下载。
-					myprint.PrintfYellow(i18n.T("skip %s: %v\n", "跳过 %s：%v\n"), objKey, pathErr)
+					myprint.ErrPrintfYellow(i18n.T("skip %s: %v\n", "跳过 %s：%v\n"), objKey, pathErr)
 					return nil
 				}
 				jobs <- StreamJob{

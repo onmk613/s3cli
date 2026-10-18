@@ -5,17 +5,20 @@ package action
 
 import (
 	"fmt"
-	"s3cli/internal/action/render"
 
-	myprint "s3cli/internal/fmtutil"
-	"s3cli/internal/i18n"
+	"github.com/onmk613/s3cli/internal/action/render"
+	myprint "github.com/onmk613/s3cli/internal/fmtutil"
+	"github.com/onmk613/s3cli/internal/i18n"
 )
 
 // printBucketConfigJSON 把桶级配置以 pretty JSON 打印, 统一了各 GetXxx 的输出样板。
 // header 为打印的标题 (如 "encryption" / "lifecycle"), fetchErrLabel 用于错误信息。
+//
+// 标题走 stderr: 配置本身是 stdout 上的数据, 脚本常直接 `| jq` 消费;
+// 标题混进 stdout 会让输出不再是合法 JSON。
 func (c *Action) printBucketConfigJSON(bucket, header string, cfg any) error {
-	myprint.PrintfBoldBlue("# %s %s %s\n", c.Alias, bucket, header)
-	return render.PrintJSONDoc(cfg)
+	myprint.ErrPrintfBoldBlue("# %s %s %s\n", c.Alias, bucket, header)
+	return render.JSONDoc(cfg)
 }
 
 // deleteBucketConfig 执行桶级配置删除并打印成功信息, 统一了各 DelXxx 的样板。

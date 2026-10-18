@@ -85,7 +85,7 @@ type Static struct {
 	// 老式自建 S3 端点可能只支持 1.0/1.1, 可显式放宽 (no_verify_ssl 不降低协议版本)。
 	TLSMinVersion string `toml:"tls_min_version"`
 
-	// ---- 厂商差异开关 (见 pkg/api/quirks.go) ----
+	// ---- 厂商差异开关 (见 internal/api/quirks.go) ----
 	// 缺省 (零值) 即严格 AWS 语义; 仅在对接特定 S3 兼容实现时按需设置,
 	// 目的是让适配新厂商停留在配置层, 不必改代码。
 

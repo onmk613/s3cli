@@ -15,7 +15,7 @@ import (
 	"sync"
 	"testing"
 
-	"s3cli/internal/api"
+	"github.com/onmk613/s3cli/internal/api"
 )
 
 // largeCopyServer 模拟: CopyObject 一律 EntityTooLarge, 分片复制路径可用。

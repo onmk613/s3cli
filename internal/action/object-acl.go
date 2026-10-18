@@ -9,8 +9,8 @@ import (
 	"errors"
 	"fmt"
 
-	myprint "s3cli/internal/fmtutil"
-	"s3cli/internal/i18n"
+	myprint "github.com/onmk613/s3cli/internal/fmtutil"
+	"github.com/onmk613/s3cli/internal/i18n"
 )
 
 // GetObjectACL 读取并打印对象 ACL (可指定 versionID)。

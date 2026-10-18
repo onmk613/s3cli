@@ -4,14 +4,14 @@
 package action
 
 import (
-	"s3cli/internal/action/render"
 	"sort"
 	"strconv"
 	"strings"
 
-	"s3cli/internal/api"
-	myprint "s3cli/internal/fmtutil"
-	"s3cli/internal/i18n"
+	"github.com/onmk613/s3cli/internal/action/render"
+	"github.com/onmk613/s3cli/internal/api"
+	myprint "github.com/onmk613/s3cli/internal/fmtutil"
+	"github.com/onmk613/s3cli/internal/i18n"
 )
 
 // DuOptions du 命令参数.
@@ -39,6 +39,7 @@ func (c *Action) DuObject(opt DuOptions, bucket, prefix string) error {
 
 	if opt.JSON {
 		return render.JSONLine(map[string]any{
+			"kind":    "total",
 			"path":    c.S3Path(bucket, prefix),
 			"fileNum": count,
 			"size":    totalSize,
@@ -120,6 +121,7 @@ func (c *Action) duRecursive(opt DuOptions, bucket, prefix string) error {
 		}
 		if opt.JSON {
 			if err := render.JSONLine(map[string]any{
+				"kind":    "dir",
 				"path":    c.S3Path(bucket, display),
 				"fileNum": dirCount[dir],
 				"size":    dirTotal[dir],
@@ -151,6 +153,7 @@ func (c *Action) duRecursive(opt DuOptions, bucket, prefix string) error {
 	}
 	if opt.JSON {
 		return render.JSONLine(map[string]any{
+			"kind":    "dir",
 			"path":    c.S3Path(bucket, prefix),
 			"fileNum": rootCount,
 			"size":    rootTotal,

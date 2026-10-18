@@ -6,11 +6,11 @@ package action
 import (
 	"errors"
 	"fmt"
-	"s3cli/internal/action/render"
 
-	"s3cli/internal/api"
-	myprint "s3cli/internal/fmtutil"
-	"s3cli/internal/i18n"
+	"github.com/onmk613/s3cli/internal/action/render"
+	"github.com/onmk613/s3cli/internal/api"
+	myprint "github.com/onmk613/s3cli/internal/fmtutil"
+	"github.com/onmk613/s3cli/internal/i18n"
 )
 
 // InfoOptions info/stat 命令参数.
@@ -67,7 +67,7 @@ func (c *Action) infoObjectVersion(bucket, key, versionID string) error {
 	if err != nil {
 		return fmt.Errorf("head object: %w", err)
 	}
-	myprint.PrintfBoldBlue(i18n.T("# %s info(object, version %s):\n", "# %s info(object，版本 %s)：\n"), c.S3Path(bucket, key), versionID)
+	myprint.ErrPrintfBoldBlue(i18n.T("# %s info(object, version %s):\n", "# %s info(object，版本 %s)：\n"), c.S3Path(bucket, key), versionID)
 	return printHeadInfo(c.S3Path(bucket, key), head, nil)
 }
 
@@ -76,7 +76,7 @@ func (c *Action) infoObject(bucket, key string) error {
 	if err != nil {
 		return fmt.Errorf("head object: %w", err)
 	}
-	myprint.PrintfBoldBlue(i18n.T("# %s info(object):\n", "# %s info(object)：\n"), c.S3Path(bucket, key))
+	myprint.ErrPrintfBoldBlue(i18n.T("# %s info(object):\n", "# %s info(object)：\n"), c.S3Path(bucket, key))
 
 	// Tagging
 	tags := map[string]string{}
@@ -85,7 +85,7 @@ func (c *Action) infoObject(bucket, key string) error {
 			tags[kv.Key] = kv.Value
 		}
 	} else {
-		myprint.PrintfBoldYellow("Cannot read tags for %s: %s\n", c.S3Path(bucket, key), err)
+		myprint.ErrPrintfBoldYellow("Cannot read tags for %s: %s\n", c.S3Path(bucket, key), err)
 	}
 
 	return printHeadInfo(c.S3Path(bucket, key), head, tags)
@@ -116,7 +116,7 @@ func printHeadInfo(path string, head *api.HeadObjectOutput, tags map[string]stri
 		"ObjectLockRetainUntil": head.ObjectLockRetainUntilDate,
 		"Tags":                  tags,
 	}
-	return render.PrintJSONDoc(m)
+	return render.JSONDoc(m)
 }
 
 func (c *Action) infoBucket(bucket string) error {
@@ -175,6 +175,6 @@ func (c *Action) infoBucket(bucket string) error {
 	}
 	info["URL"] = url
 
-	myprint.PrintfBoldBlue(i18n.T("# %s %s info(bucket):\n", "# %s %s info(bucket)：\n"), c.Alias, bucket)
-	return render.PrintJSONDoc(info)
+	myprint.ErrPrintfBoldBlue(i18n.T("# %s %s info(bucket):\n", "# %s %s info(bucket)：\n"), c.Alias, bucket)
+	return render.JSONDoc(info)
 }

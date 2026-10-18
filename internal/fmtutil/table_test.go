@@ -304,3 +304,40 @@ func TestDisplayWidth(t *testing.T) {
 		}
 	}
 }
+
+// TestDisplayWidthUnicodeSemantics 锁定 go-runewidth 0.0.31 的宽度语义:
+// 组合符号不占宽、emoji/国旗按 grapheme 聚合封顶 2 列、双向控制符为 0、
+// 非法 UTF-8 按 U+FFFD 计 1 列、EastAsianWidth=false 下重音拉丁字母为 1 列。
+func TestDisplayWidthUnicodeSemantics(t *testing.T) {
+	cases := []struct {
+		name string
+		s    string
+		want int
+	}{
+		{"combining e", "e\u0301", 1},
+		{"precomposed é", "é", 1},
+		{"emoji skin tone", "👍🏽", 2},
+		{"family ZWJ", "👨‍👩‍👧‍👦", 2},
+		{"flag", "🇨🇳", 2},
+		{"bidi override", "\u202e", 0},
+		{"zero width space", "a\u200Bb", 2},
+		{"invalid utf8", "\xff", 1},
+		{"CJK", "中文", 4},
+	}
+	for _, tc := range cases {
+		if got := DisplayWidth(tc.s); got != tc.want {
+			t.Errorf("DisplayWidth(%s=%q) = %d, want %d", tc.name, tc.s, got, tc.want)
+		}
+	}
+}
+
+// TestTruncateDisplayKeepsGrapheme 升级到 0.0.31 后仍不得从组合符号或
+// 多 rune emoji 中间截断。
+func TestTruncateDisplayKeepsGrapheme(t *testing.T) {
+	if got := TruncateDisplay("x👍🏽y", 2); got != "x…" {
+		t.Errorf("TruncateDisplay skin-tone emoji = %q, want %q", got, "x…")
+	}
+	if got := TruncateDisplay("e\u0301e\u0301e\u0301", 2); got != "e\u0301…" {
+		t.Errorf("TruncateDisplay combining = %q, want %q", got, "e\u0301…")
+	}
+}

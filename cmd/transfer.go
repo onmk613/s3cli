@@ -1,10 +1,10 @@
 package cmd
 
 import (
-	"s3cli/internal/action"
-	"s3cli/internal/config"
-	"s3cli/internal/i18n"
-	"s3cli/internal/s3path"
+	"github.com/onmk613/s3cli/internal/action"
+	"github.com/onmk613/s3cli/internal/config"
+	"github.com/onmk613/s3cli/internal/i18n"
+	"github.com/onmk613/s3cli/internal/s3path"
 
 	"github.com/spf13/cobra"
 )
@@ -44,7 +44,7 @@ func NewGetCmd() *cobra.Command {
 	f.BoolVar(&getOpt.DryRun, "dry-run", false, i18n.T("Show what would be downloaded without writing any file", "只显示将下载的内容，不写入任何文件"))
 	f.StringSliceVar(&getOpt.Include, "include", nil, i18n.T("Only download keys matching this glob (relative to the source prefix; can repeat)", "只下载匹配该通配模式的 key（相对源前缀；可重复）"))
 	f.StringSliceVar(&getOpt.Exclude, "exclude", nil, i18n.T("Skip keys matching this glob (relative to the source prefix; can repeat)", "跳过匹配该通配模式的 key（相对源前缀；可重复）"))
-	f.StringVar(&getOpt.Checksum, "checksum", "", i18n.T("Verify the downloaded object against this checksum: CRC32 / CRC32C / SHA1 / SHA256", "按该校验和校验下载结果：CRC32 / CRC32C / SHA1 / SHA256"))
+	f.StringVar(&getOpt.Checksum, "checksum", "", i18n.T("Verify the downloaded object against this checksum (file output only): CRC32 / CRC32C / SHA1 / SHA256", "按该校验和校验下载结果（仅文件输出）：CRC32 / CRC32C / SHA1 / SHA256"))
 	return cmd
 }
 

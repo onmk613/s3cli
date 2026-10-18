@@ -13,10 +13,10 @@ import (
 	"io"
 	"strings"
 
-	"s3cli/internal/action/render"
-	"s3cli/internal/api"
-	myprint "s3cli/internal/fmtutil"
-	"s3cli/internal/i18n"
+	"github.com/onmk613/s3cli/internal/action/render"
+	"github.com/onmk613/s3cli/internal/api"
+	myprint "github.com/onmk613/s3cli/internal/fmtutil"
+	"github.com/onmk613/s3cli/internal/i18n"
 )
 
 // ACLGetOptions 控制 `bucket acl get` / `object acl get` 的参数.

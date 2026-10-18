@@ -9,7 +9,7 @@ import (
 	"strings"
 	"time"
 
-	"s3cli/internal/api"
+	"github.com/onmk613/s3cli/internal/api"
 )
 
 // =============== 对象信息 ===============

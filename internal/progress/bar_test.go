@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"s3cli/internal/fmtutil"
+	"github.com/onmk613/s3cli/internal/fmtutil"
 )
 
 func TestBuildStyledBarBoundsAndStyle(t *testing.T) {

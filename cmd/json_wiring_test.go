@@ -11,8 +11,8 @@ import (
 	"strings"
 	"testing"
 
-	"s3cli/internal/config"
-	myprint "s3cli/internal/fmtutil"
+	"github.com/onmk613/s3cli/internal/config"
+	myprint "github.com/onmk613/s3cli/internal/fmtutil"
 )
 
 // jsonWiringServer 是 --json 接线测试用的最小 S3 服务端:

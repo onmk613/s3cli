@@ -17,7 +17,7 @@ English · [中文](README.md)
   **ACL**, **Object Lock (bucket default retention + object retention / legal hold)**, **replication**,
   **public access block**
 - Integrity: `put --checksum` (CRC32/CRC32C/SHA1/SHA256 additional checksums), `get --checksum`
-  (verify after download)
+  (verify after download to a file)
 - Safety preview: `--dry-run` on `put` / `get` / `cp` / `mv` / `rm` / `mirror` / `bucket remove`
 - Parallel per-object multipart upload (4 concurrent parts per file)
 - Structured JSON output (global `--json`), bilingual (Chinese/English) help, Bash / Zsh / Fish / PowerShell autocompletion
@@ -26,24 +26,24 @@ English · [中文](README.md)
 
 ```bash
 # Go Version 1.27+
-git clone https://github.com/onmk613/s3cli.git
-cd s3cli && bash build.sh
-mv ./bin/s3cli /usr/local/bin/
+go install github.com/onmk613/s3cli@latest   # v1.3.0+; or git clone + bash build.sh
 s3cli help
 ```
 
 ## Quick Start
 
 ```bash
-# 1. Configure an endpoint (alias)
-s3cli alias add my-s3 https://s3.example.com AKIA... SECRET
+# 1. Configure an endpoint (alias). With 3 args the secret is read from the
+#    terminal (no echo, never in shell history).
+s3cli alias add my-s3 https://s3.example.com AKIA...
+# Scripts/CI can pipe it instead: printf '%s' "$SECRET" | s3cli alias add my-s3 URL AK -
 
 # 2. Common operations
 s3cli ls my-s3:                             # List all buckets
 s3cli ls my-s3:my-bucket/                   # List objects in a bucket
-s3cli put ./data my-s3:my-bucket/backup/    # Upload a directory (recursive)
-s3cli get my-s3:my-bucket/backup ./out/     # Download a directory
-s3cli mirror my-s3:prod my-s3:backup        # Sync (server-side copy within the same endpoint)
+s3cli put ./data my-s3:my-bucket/backup/ -r # Upload a directory (recursive)
+s3cli get my-s3:my-bucket/backup ./out/ -r  # Download a directory
+s3cli mirror my-s3:prod my-s3:backup        # Server-side copy within one endpoint
 cat access.log | s3cli put - my-s3:logs/access.log   # Upload via stdin pipe
 s3cli sql my-s3:my-bucket/data.csv -e "select * from S3Object limit 10"
 s3cli share download my-s3:my-bucket/file --expire 24h
@@ -104,7 +104,7 @@ Flags:
   -h, --help                       help for s3cli
       --host-base string           Override the endpoint host for all aliases
       --json                       Output structured JSON (supported commands only; ignored elsewhere)
-      --lang string                Help language: auto (detect from timezone/locale) | en | zh (default "en")
+      --lang string                Help language: auto (detect from timezone/locale) | en | zh (default "auto")
       --no-color                   Disable color output
       --no-verify-ssl              Skip TLS certificate verification
       --user-agent string          Override the HTTP User-Agent header
@@ -146,7 +146,10 @@ document) for supported commands: `ls`, `du`, `stat`, `find`, `tree`,
 silently ignore `--json`.
 
 > `info` is not in the list above: it **always** prints JSON (legacy behaviour),
-> so it neither reads nor needs `--json`.
+> so it neither reads nor needs `--json`. Human-readable headers go to stderr.
+>
+> **stdout carries command results only; errors, warnings and headers go to
+> stderr**, so `s3cli ... --json | jq` and `s3cli get ... > file` stay clean.
 >
 > Per-command field schemas live in [docs/OUTPUT_SCHEMA.md](docs/OUTPUT_SCHEMA.md).
 
@@ -216,6 +219,11 @@ change the requests you send.
 ./build.sh all   # Cross-compile for all platforms
 go test ./...    # Tests (self-contained, no real S3 endpoint needed)
 go vet ./...     # Static checks
+
+# Real S3 e2e (optional; CI runs it against LocalStack)
+S3CLI_E2E_ENDPOINT=http://127.0.0.1:4566 \
+  S3CLI_E2E_ACCESS_KEY=test S3CLI_E2E_SECRET_KEY=test \
+  bash scripts/e2e-s3.sh
 ```
 
 ## Test naming convention

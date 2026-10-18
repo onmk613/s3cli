@@ -5,10 +5,9 @@ import (
 	"strconv"
 	"strings"
 
-	"s3cli/internal/action"
-	"s3cli/internal/i18n"
-	"s3cli/internal/s3path"
-
+	"github.com/onmk613/s3cli/internal/action"
+	"github.com/onmk613/s3cli/internal/i18n"
+	"github.com/onmk613/s3cli/internal/s3path"
 	"github.com/spf13/cobra"
 )
 

@@ -4,11 +4,11 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"s3cli/internal/action"
-	"s3cli/internal/client"
-	"s3cli/internal/i18n"
-	"s3cli/internal/s3path"
 
+	"github.com/onmk613/s3cli/internal/action"
+	"github.com/onmk613/s3cli/internal/client"
+	"github.com/onmk613/s3cli/internal/i18n"
+	"github.com/onmk613/s3cli/internal/s3path"
 	"github.com/spf13/cobra"
 )
 
@@ -116,6 +116,14 @@ func newRunEWithMode(allowAliasOnly bool, fn ActionFuncWithMode) func(*cobra.Com
 
 			S3, sp, err := parseClient(ctx, arg)
 			if err != nil && (!allowAliasOnly || !errors.Is(err, s3path.ErrAliasOnly)) {
+				// 仅别名对 ls 合法, 但对其余命令是"缺少 bucket"。这里补一条
+				// 面向用户的明确提示, 而不是把内部的 "alias only" 哨兵文案
+				// 直接抛给用户。
+				if errors.Is(err, s3path.ErrAliasOnly) && sp != nil {
+					err = fmt.Errorf(i18n.T(
+						"invalid s3 path %q: bucket is required after %q",
+						"无效的 S3 路径 %q：别名 %q 后必须指定存储桶"), arg, sp.Alias)
+				}
 				displayError(err)
 				errs = append(errs, err)
 				continue

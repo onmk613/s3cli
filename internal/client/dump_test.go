@@ -120,3 +120,33 @@ func TestRedactedResponse(t *testing.T) {
 		t.Error("original mutated")
 	}
 }
+
+// TestRedactedRequestCustomCredentialHeaders 自定义凭据头也必须脱敏。
+// 回归背景: --debug 过去只脱敏固定名单, `-H "X-Api-Key: ..."` 会明文
+// 出现在终端 / CI 日志里。
+func TestRedactedRequestCustomCredentialHeaders(t *testing.T) {
+	req, err := http.NewRequest(http.MethodGet, "https://example.test/x", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header.Set("X-Api-Key", "super-secret")
+	req.Header.Set("X-Auth-Token", "token-value")
+	req.Header.Set("X-Amz-Meta-Key", "ordinary-metadata")
+	req.Header.Set("Content-Type", "text/plain")
+
+	clone := redactedRequest(req)
+	for _, h := range []string{"X-Api-Key", "X-Auth-Token"} {
+		if got := clone.Header.Get(h); got != "REDACTED" {
+			t.Errorf("%s = %q, want REDACTED", h, got)
+		}
+	}
+	if got := clone.Header.Get("X-Amz-Meta-Key"); got != "ordinary-metadata" {
+		t.Errorf("ordinary metadata should be untouched, got %q", got)
+	}
+	if got := clone.Header.Get("Content-Type"); got != "text/plain" {
+		t.Errorf("Content-Type should be untouched, got %q", got)
+	}
+	if got := req.Header.Get("X-Api-Key"); got != "super-secret" {
+		t.Error("original request mutated")
+	}
+}

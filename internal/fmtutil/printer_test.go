@@ -153,3 +153,41 @@ func TestNoColorEnvConvention(t *testing.T) {
 		t.Error("SetColor(true) 应覆盖 NO_COLOR")
 	}
 }
+
+// TestStderrPrinterIsSeparateAndColorable 诊断输出必须与 stdout 分离,
+// 且 --no-color / SetColor 对两个通道同时生效。
+func TestStderrPrinterIsSeparateAndColorable(t *testing.T) {
+	var buf bytes.Buffer
+	SetErrWriter(&buf)
+	defer SetErrWriter(os.Stderr)
+	defer SetColorAuto()
+
+	SetColor(false)
+	ErrPrintln("plain")
+	ErrPrintfBoldRed("bad")
+	ErrPrintfYellow("warn")
+	ErrPrintfGreen("ok")
+	ErrPrintfBlue("debug")
+	ErrPrintfBlue("debug")
+	ErrPrintlnBlue("line")
+	ErrPrintfBoldYellow("bold-warn")
+	ErrPrintfBoldBlue("bold-debug")
+
+	got := buf.String()
+	for _, want := range []string{"plain", "bad", "warn", "ok", "debug", "line", "bold-warn", "bold-debug"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("stderr output missing %q: %q", want, got)
+		}
+	}
+	if strings.Contains(got, "\033[") {
+		t.Errorf("SetColor(false) should disable stderr colors: %q", got)
+	}
+	if ErrColorEnabled() {
+		t.Error("ErrColorEnabled should be false after SetColor(false)")
+	}
+
+	SetColor(true)
+	if !ErrColorEnabled() {
+		t.Error("ErrColorEnabled should be true after SetColor(true)")
+	}
+}

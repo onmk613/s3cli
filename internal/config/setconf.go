@@ -14,9 +14,8 @@ import (
 	"sync"
 	"syscall"
 
-	myprint "s3cli/internal/fmtutil"
-	"s3cli/internal/i18n"
-
+	myprint "github.com/onmk613/s3cli/internal/fmtutil"
+	"github.com/onmk613/s3cli/internal/i18n"
 	"golang.org/x/term"
 )
 
@@ -50,11 +49,19 @@ func readSecretLine(r *bufio.Reader) (string, error) {
 	sig := make(chan os.Signal, 1)
 	signal.Notify(sig, syscall.SIGTERM, syscall.SIGHUP)
 	defer signal.Stop(sig)
+	// done 让监听协程在本函数正常返回后退出; signal.Stop 不会关闭 channel,
+	// 仅靠 Stop 会让该协程永久阻塞在 <-sig 上 (每次输入密钥泄漏一个)。
+	done := make(chan struct{})
+	defer close(done)
 	go func() {
-		if _, ok := <-sig; ok {
+		select {
+		case <-sig:
+			// 终端处于 raw 模式时进程被 SIGTERM/SIGHUP 终止会残留无回显状态,
+			// 先恢复终端再退出。此处是进程级的最后一道保险, 因此直接 os.Exit。
 			restore()
-			myprint.Print("\r\n")
+			myprint.ErrPrint("\r\n")
 			os.Exit(143)
+		case <-done:
 		}
 	}()
 
@@ -62,7 +69,7 @@ func readSecretLine(r *bufio.Reader) (string, error) {
 	for {
 		c, _, err := r.ReadRune()
 		if err != nil {
-			myprint.Print("\r\n")
+			myprint.ErrPrint("\r\n")
 			if errors.Is(err, io.EOF) && len(buf) > 0 {
 				return string(buf), nil
 			}
@@ -77,15 +84,15 @@ func readSecretLine(r *bufio.Reader) (string, error) {
 					_, _ = r.Discard(1)
 				}
 			}
-			myprint.Print("\r\n") // raw 模式必须 \r\n，否则光标不回行首→阶梯错位
+			myprint.ErrPrint("\r\n") // raw 模式必须 \r\n，否则光标不回行首→阶梯错位
 			return string(buf), nil
 
 		case c == 3: // Ctrl+C
-			myprint.Print("\r\n")
+			myprint.ErrPrint("\r\n")
 			return "", errInterrupted
 		case c == 4: // Ctrl+D
 			if len(buf) == 0 {
-				myprint.Print("\r\n")
+				myprint.ErrPrint("\r\n")
 				return "", io.EOF
 			}
 		case c == 127 || c == 8: // Backspace
@@ -124,13 +131,18 @@ var (
 	readPassword = term.ReadPassword
 )
 
-// SetAliasConf 写入/覆盖一个别名 (alias set)。
+// SetAliasConf 写入/覆盖一个别名 (alias add)。
 //   - 1 个参数 (ALIAS): 交互式填写, alias 不存在时从零开始, 已存在时显示旧值并可覆盖
-//   - 4 个参数 (ALIAS URL ACCESSKEY SECRETKEY) 或 5 个 (含 SESSIONTOKEN): 非交互直接写入
+//   - 3 个参数 (ALIAS URL ACCESSKEY): 密钥从 stdin 读取 (终端下不回显),
+//     避免把 secret 写进 argv / shell history
+//   - 4 个参数 (ALIAS URL ACCESSKEY SECRETKEY) 或 5 个 (含 SESSIONTOKEN):
+//     非交互直接写入; SECRETKEY 为 "-" 时同样从 stdin 读取
 func SetAliasConf(ctx context.Context, args []string) error {
 	switch len(args) {
 	case 1:
 		return setAliasInteractive(ctx, strings.TrimSpace(args[0]))
+	case 3:
+		return setAliasStatic(strings.TrimSpace(args[0]), args[1], args[2], "-", "")
 	case 4, 5:
 		sessionToken := ""
 		if len(args) == 5 {
@@ -138,11 +150,11 @@ func SetAliasConf(ctx context.Context, args []string) error {
 		}
 		return setAliasStatic(strings.TrimSpace(args[0]), args[1], args[2], args[3], sessionToken)
 	default:
-		return fmt.Errorf("alias set accepts 1 arg (interactive) or 4/5 args (ALIAS URL ACCESSKEY SECRETKEY [SESSIONTOKEN]), got %d args", len(args))
+		return fmt.Errorf("alias add accepts 1 arg (interactive), 3 args (ALIAS URL ACCESSKEY, secret from stdin), or 4/5 args (… SECRETKEY [SESSIONTOKEN]); got %d args", len(args))
 	}
 }
 
-// setAliasInteractive 交互式创建/覆盖一个别名 (alias set <name>)。
+// setAliasInteractive 交互式创建/覆盖一个别名 (alias add <name>)。
 // 配置文件不存在时自动新建；alias 已存在时从磁盘读入旧值供回车保留。
 func setAliasInteractive(ctx context.Context, section string) error {
 	if ctx == nil {
@@ -180,11 +192,11 @@ func EditAliasConf(ctx context.Context, section string) error {
 		if !errors.Is(err, ErrConfigNotFoundOrEmpty) {
 			return err
 		}
-		return fmt.Errorf("alias [%s] not found: config file %s does not exist, create it with `s3cli alias set %s URL ACCESSKEY SECRETKEY`", section, G.C, section)
+		return fmt.Errorf("alias [%s] not found: config file %s does not exist, create it with `s3cli alias add %s URL ACCESSKEY`", section, G.C, section)
 	}
 	old, ok := G.S[section]
 	if !ok {
-		return fmt.Errorf("alias [%s] not found in %s, create it with `s3cli alias set %s URL ACCESSKEY SECRETKEY`", section, G.C, section)
+		return fmt.Errorf("alias [%s] not found in %s, create it with `s3cli alias add %s URL ACCESSKEY`", section, G.C, section)
 	}
 
 	conf, err := interactEdit(ctx, old)
@@ -213,18 +225,18 @@ func interactEdit(ctx context.Context, old Static) (Static, error) {
 	ask := func(prompt, def string, secret bool) (string, error) {
 		// 进入阻塞读之前检查取消状态（这是唯一能观察到 ctx 的时机）。
 		if ctx.Err() != nil {
-			myprint.Println("")
+			myprint.ErrPrintln("")
 			return "", errInterrupted
 		}
 
 		def = strings.TrimSpace(def)
 		switch {
 		case secret && def != "":
-			myprint.Printf("%s [keep current]: ", prompt) // 绝不回显旧密钥
+			myprint.ErrPrintf("%s [keep current]: ", prompt) // 绝不回显旧密钥
 		case def != "":
-			myprint.Printf("%s [%s]: ", prompt, def)
+			myprint.ErrPrintf("%s [%s]: ", prompt, def)
 		default:
-			myprint.Printf("%s: ", prompt)
+			myprint.ErrPrintf("%s: ", prompt)
 		}
 
 		var (
@@ -244,7 +256,7 @@ func interactEdit(ctx context.Context, old Static) (Static, error) {
 			return "", errInterrupted
 		case errors.Is(err, io.EOF):
 			if s == "" { // 纯 EOF
-				myprint.Println("")
+				myprint.ErrPrintln("")
 				return "", errInterrupted
 			} // 带数据的 EOF（管道末尾无换行）→ 接受
 		default:
@@ -266,7 +278,7 @@ func interactEdit(ctx context.Context, old Static) (Static, error) {
 			return conf, err
 		}
 		if _, verr := ValidateEndpoint(conf.HostBase); verr != nil {
-			myprint.PrintlnRed(verr.Error())
+			myprint.ErrPrintlnRed(verr.Error())
 			continue
 		}
 		break
@@ -278,7 +290,7 @@ func interactEdit(ctx context.Context, old Static) (Static, error) {
 			return conf, err
 		}
 		if conf.AccessKey == "" {
-			myprint.PrintlnRed("Access Key cannot be empty")
+			myprint.ErrPrintlnRed("Access Key cannot be empty")
 			continue
 		}
 		break
@@ -290,7 +302,7 @@ func interactEdit(ctx context.Context, old Static) (Static, error) {
 			return conf, err
 		}
 		if conf.SecretKey == "" {
-			myprint.PrintlnRed("Secret Key cannot be empty")
+			myprint.ErrPrintlnRed("Secret Key cannot be empty")
 			continue
 		}
 		break
@@ -317,7 +329,7 @@ func interactEdit(ctx context.Context, old Static) (Static, error) {
 		if _, _, verr := conf.ResolveBucketLookup(); verr == nil {
 			break
 		}
-		myprint.PrintlnRed("Invalid style, expected path / dns / custom template containing %(bucket)")
+		myprint.ErrPrintlnRed("Invalid style, expected path / dns / custom template containing %(bucket)")
 	}
 
 	for {
@@ -330,7 +342,7 @@ func interactEdit(ctx context.Context, old Static) (Static, error) {
 			conf.NoVerifySSL = b
 			break
 		}
-		myprint.PrintlnRed("Invalid input, please enter true or false")
+		myprint.ErrPrintlnRed("Invalid input, please enter true or false")
 	}
 
 	for {
@@ -341,14 +353,14 @@ func interactEdit(ctx context.Context, old Static) (Static, error) {
 		}
 		m, aerr := strconv.Atoi(input)
 		if aerr != nil || m < 0 {
-			myprint.PrintlnRed("Invalid input, please enter a non-negative number")
+			myprint.ErrPrintlnRed("Invalid input, please enter a non-negative number")
 			continue
 		}
 		// 上界与 action.MaxPartSizeMB 一致: 每个在途分片持有一份完整内存缓冲,
 		// 超大分片会直接打爆进程。此处拦下可避免把坏值写进配置、等到下次
 		// put 时才失败 (而且失败点在传输中途)。
 		if m > MaxPartSizeMB {
-			myprint.PrintlnRed(fmt.Sprintf("Invalid input, please enter 0-%d MB", MaxPartSizeMB))
+			myprint.ErrPrintlnRed(fmt.Sprintf("Invalid input, please enter 0-%d MB", MaxPartSizeMB))
 			continue
 		}
 		conf.MultipartChunkSizeMb = m
@@ -364,7 +376,7 @@ func saveAlias(section string, conf Static) error {
 	if err := saveConfig(G.C); err != nil {
 		return fmt.Errorf("save config: %w", err)
 	}
-	myprint.PrintfGreen("S3 configuration saved to %s\n", G.C)
+	myprint.ErrPrintfGreen("S3 configuration saved to %s\n", G.C)
 	return nil
 }
 
@@ -403,7 +415,7 @@ func ValidateEndpoint(raw string) (string, error) {
 		return "", fmt.Errorf(i18n.T("host base %q has no host", "host_base %q 缺少主机名"), raw)
 	}
 	if u.Scheme == "http" {
-		myprint.PrintfYellow(i18n.T(
+		myprint.ErrPrintfYellow(i18n.T(
 			"warning: %s uses plain http — credentials and object data will be sent unencrypted\n",
 			"警告：%s 使用明文 http —— 凭证与对象数据将以未加密方式传输\n"), raw)
 	}
@@ -414,6 +426,31 @@ func ValidateEndpoint(raw string) (string, error) {
 // 字段值统一 TrimSpace, 并对必填字段做非空校验 —— 此前空凭证会落盘,
 // 到使用时才由 api.New 报出误导性错误。
 func setAliasStatic(section, hostBase, accessKey, secretKey, sessionToken string) error {
+	// "-" 表示从 stdin 读取, 避免把密钥写进 argv (shell history / ps)。
+	// 两者都用 "-" 时按 访问密钥、密钥 的顺序各读一行。
+	if accessKey == "-" || secretKey == "-" {
+		reader := bufio.NewReader(os.Stdin)
+		var err error
+		if accessKey == "-" {
+			if isTerminal(int(os.Stdin.Fd())) {
+				myprint.ErrPrint(i18n.T("Access Key: ", "访问密钥："))
+			}
+			accessKey, err = readPlainLine(reader)
+			if err != nil && !errors.Is(err, io.EOF) {
+				return fmt.Errorf("read access key from stdin: %w", err)
+			}
+		}
+		if secretKey == "-" {
+			if isTerminal(int(os.Stdin.Fd())) {
+				myprint.ErrPrint(i18n.T("Secret Key: ", "密钥："))
+			}
+			secretKey, err = readSecretLine(reader)
+			if err != nil && !errors.Is(err, io.EOF) {
+				return fmt.Errorf("read secret key from stdin: %w", err)
+			}
+		}
+	}
+
 	section = strings.TrimSpace(section)
 	hostBase = strings.TrimSpace(hostBase)
 	accessKey = strings.TrimSpace(accessKey)

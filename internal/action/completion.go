@@ -6,7 +6,7 @@ package action
 import (
 	"strings"
 
-	"s3cli/internal/api"
+	"github.com/onmk613/s3cli/internal/api"
 )
 
 // CompleteBucket 返回当前 alias 下所有 bucket 名（已按 prefix 过滤，最多 max 个）。

@@ -20,7 +20,7 @@ import (
 	"sync"
 	"testing"
 
-	"s3cli/internal/api"
+	"github.com/onmk613/s3cli/internal/api"
 )
 
 // mockS3Server 提供 ListBuckets / ListObjectsV2 (含分页) / Head / Get / Put / Delete /
@@ -221,7 +221,7 @@ func (m *mockS3Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			fmt.Fprintf(&b, "<Delimiter>%s</Delimiter>", delimiter)
 		}
 		for _, k := range contents {
-			fmt.Fprintf(&b, "<Contents><Key>%s</Key><Size>%d</Size><ETag>&quot;etag-%s&quot;</ETag></Contents>", k, len(k), k)
+			fmt.Fprintf(&b, "<Contents><Key>%s</Key><Size>%d</Size><ETag>&quot;etag-%s&quot;</ETag><StorageClass>STANDARD</StorageClass></Contents>", k, len(k), k)
 		}
 		for _, p := range prefixes {
 			fmt.Fprintf(&b, "<CommonPrefixes><Prefix>%s</Prefix></CommonPrefixes>", p)

@@ -35,10 +35,10 @@ GOVERSION=$(go version | awk '{print $3}')
 # 版本变量位于 cmd/root.go（包路径 s3cli/cmd）。
 # 此前误写为 internal/cmd，链接器对不存在的符号静默忽略，导致版本信息从未注入。
 LDFLAGS="-s -w \
-  -X 's3cli/cmd.Version=${VERSION}' \
-  -X 's3cli/cmd.Commit=${COMMIT}' \
-  -X 's3cli/cmd.BuildDate=${DATE}' \
-  -X 's3cli/cmd.GoVersion=${GOVERSION}'"
+  -X 'github.com/onmk613/s3cli/cmd.Version=${VERSION}' \
+  -X 'github.com/onmk613/s3cli/cmd.Commit=${COMMIT}' \
+  -X 'github.com/onmk613/s3cli/cmd.BuildDate=${DATE}' \
+  -X 'github.com/onmk613/s3cli/cmd.GoVersion=${GOVERSION}'"
 
 ENTRY=.
 

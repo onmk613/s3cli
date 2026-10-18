@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	myprint "s3cli/internal/fmtutil"
+	myprint "github.com/onmk613/s3cli/internal/fmtutil"
 )
 
 // captureOutput 重定向 myprint 输出并返回可读缓冲区。

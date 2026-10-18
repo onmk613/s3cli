@@ -17,7 +17,7 @@ package action
 import (
 	"fmt"
 
-	"s3cli/internal/i18n"
+	"github.com/onmk613/s3cli/internal/i18n"
 )
 
 const (

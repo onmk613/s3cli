@@ -55,7 +55,9 @@ func Parse(s string) (*Path, error) {
 	}
 
 	if rest == "" {
-		return nil, fmt.Errorf("invalid s3 path %q: bucket is required after %q", s, alias)
+		// "alias:" 与 "alias" 同义: 只指定别名, 由调用方决定是否允许
+		// (ls 用它列出所有桶)。是否允许是命令层语义, 解析层只给出信号。
+		return &Path{Alias: alias}, ErrAliasOnly
 	}
 
 	var bucket, key string

@@ -14,7 +14,7 @@ import (
 	"sync"
 	"testing"
 
-	"s3cli/internal/config"
+	"github.com/onmk613/s3cli/internal/config"
 )
 
 type recordedRequest struct {

@@ -5,9 +5,9 @@ package action
 import (
 	"fmt"
 
-	"s3cli/internal/api"
-	myprint "s3cli/internal/fmtutil"
-	"s3cli/internal/i18n"
+	"github.com/onmk613/s3cli/internal/api"
+	myprint "github.com/onmk613/s3cli/internal/fmtutil"
+	"github.com/onmk613/s3cli/internal/i18n"
 )
 
 type RemoveBucketOptions struct {
@@ -37,7 +37,7 @@ func (c *Action) RemoveBuckets(opt RemoveBucketOptions, bucket string) error {
 	}
 
 	if opt.Force {
-		myprint.PrintfBoldYellow(i18n.T("WARNING: --force will permanently delete all objects/versions in %s\n", "警告：--force 将永久删除 %s 中的所有对象/版本\n"), c.S3Path(bucket, ""))
+		myprint.ErrPrintfBoldYellow(i18n.T("WARNING: --force will permanently delete all objects/versions in %s\n", "警告：--force 将永久删除 %s 中的所有对象/版本\n"), c.S3Path(bucket, ""))
 		if err := c.deleteAllObjects(bucket); err != nil {
 			return fmt.Errorf("force-delete objects in %s: %w", bucket, err)
 		}

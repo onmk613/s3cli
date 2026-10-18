@@ -13,16 +13,16 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-	"s3cli/internal/action/render"
-	"s3cli/internal/s3path"
 	"sort"
 	"strings"
 	"sync"
 	"sync/atomic"
 
-	"s3cli/internal/api"
-	myprint "s3cli/internal/fmtutil"
-	"s3cli/internal/i18n"
+	"github.com/onmk613/s3cli/internal/action/render"
+	"github.com/onmk613/s3cli/internal/api"
+	myprint "github.com/onmk613/s3cli/internal/fmtutil"
+	"github.com/onmk613/s3cli/internal/i18n"
+	"github.com/onmk613/s3cli/internal/s3path"
 )
 
 type DiffEndpoint struct {

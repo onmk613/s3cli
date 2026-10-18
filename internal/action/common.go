@@ -8,12 +8,13 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"s3cli/internal/action/render"
-	"s3cli/internal/api"
-	"s3cli/internal/i18n"
-	"s3cli/internal/s3path"
 	"strings"
 	"time"
+
+	"github.com/onmk613/s3cli/internal/action/render"
+	"github.com/onmk613/s3cli/internal/api"
+	"github.com/onmk613/s3cli/internal/i18n"
+	"github.com/onmk613/s3cli/internal/s3path"
 )
 
 // defaultConcurrency 是流式传输（get/put/cp/mv）与 mirror/diff 的默认并发数。

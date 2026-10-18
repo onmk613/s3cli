@@ -39,8 +39,31 @@
 | 附加校验和 | 新增 `internal/api/checksum.go`：`put --checksum` / `get --checksum`（CRC32/CRC32C/SHA1/SHA256），并贯通分片上传的每片校验和与 `CompleteMultipartUpload` 回传。 |
 | 全局 `--json` | `--json` 由 12 处逐命令声明改为根命令的持久 flag；支持的命令读 `config.G.F.JSON`，其余静默忽略。`policy get --json` 因语义不同改名为 `--raw`。**注意**：改持久 flag 后，每个命令都必须在自己的 `RunE` 里显式 `opt.JSON = config.G.F.JSON`；`find` / `diff` / `tag list` 曾漏掉这一句，导致 action 层的 JSON 分支永远走不到（`cmd/json_wiring_test.go` 现已锁定）。 |
 | 新增子资源命令 | `bucket acl`、`bucket object-lock`、`bucket replication`、`bucket public-access-block`、`object acl`、`object retention`、`object legal-hold` —— 这些后端能力此前已实现却无 CLI 入口。 |
-| 删除 e2e | `scripts/e2e-minio.sh` 与 CI 的 `e2e` job 已移除（MinIO 归档开源版并停止分发社区二进制，所有下载路径统一 `410 Gone`）。CI 工作流由 `e2e.yml` 更名为 `ci.yml`，只保留单元测试 / 静态检查 / 交叉编译三个 job。 |
+| e2e 迁移 | 原 `scripts/e2e-minio.sh` 与 `e2e` job 因 MinIO 停止分发社区二进制而移除；CI 工作流由 `e2e.yml` 更名为 `ci.yml`。2026-10 起改用 LocalStack 恢复真实 S3 端到端 job（见下）。 |
 | Go 1.27 | `go.mod` 升到 `go 1.27`；CI 与 release 工作流的 `go-version` 同步为 `1.27`。所有直接依赖经 `go get -u ./...` + `go mod tidy` 核对，均已是最新版。 |
+
+### 2026-10 契约修复（v1.3.0）
+
+| 变更 | 说明 |
+| --- | --- |
+| stdout/stderr 分离 | 新增 `fmtutil` 的 stderr Printer（`Err*` 系列）。错误、警告、交互提示、`--debug` dump、JSON 标题全部走 stderr；stdout 只保留命令结果。`--no-color` 同时作用于两个通道。 |
+| JSON 纯净性 | `info`、`bucket lifecycle list --json`、`mpu local-list --json`、桶/对象子资源 JSON 不再混入 `#` 标题或彩色转义；标题改到 stderr。 |
+| 路径语义 | `alias:`（带尾冒号）与 `alias` 等价，`ls alias:` 终于与 README/本文一致；非 `ls` 命令给出"缺少 bucket"的明确提示。 |
+| 数据安全 | `mirror --remove` 必须显式 `--force`（`--dry-run` 除外）；`sameEndpoint` 同时比较 AccessKey，避免同 endpoint 不同账号时用源凭证写目标桶。 |
+| 密钥输入 | `alias add ALIAS URL ACCESSKEY` 从 stdin 读取 secret（终端不回显）；4/5 参数可用 `-` 占位。密钥不再强制进入 argv / shell history。 |
+| 模块路径 | `module github.com/onmk613/s3cli`，支持 `go install github.com/onmk613/s3cli@latest`（v1.3.0+）。 |
+| 契约测试 | 新增 `main_test.go`：构建真实二进制 + 假 S3，覆盖退出码、stdout/stderr、JSON 合法性、README 语法。 |
+
+### 2026-10 长期项治理（v1.3.0）
+
+| 变更 | 说明 |
+| --- | --- |
+| 错误前缀本地化 | 新增 `i18n.LocalizeErrorText`：内部错误仍用英文上下文（保证测试/日志稳定），CLI 展示边界按受控规则翻译常见前缀，消除 `check s3 path: 路径...` 这类中英混排；API 返回的英文原文不动。 |
+| mirror 删除清单落盘 | `--remove` 的待删除 key 改为 JSON lines 临时文件 + 每 1000 条分批删除，内存从 O(删除数) 降到 O(batch)；`--max-delete` 仍在删除前做全量计数拦截。 |
+| bucket remove 二次确认 | 终端下 `bucket remove --force` 额外要求手输桶名，`--yes` 跳过；非终端（CI/脚本）保持 `--force` 即确认。 |
+| e2e 恢复 | CI 新增 LocalStack S3 service + `scripts/e2e-s3.sh`，覆盖 put/get/ls/stat/du/tree/checksum/tag/cp/mv/rm/multipart/mirror --remove/recursive rm。 |
+| 发布链加固 | 所有 GitHub Actions 按 commit SHA 固定；release 增加 CycloneDX SBOM、SHA256SUMS 的 cosign keyless 签名与证书；新增 Dependabot 配置。 |
+| 依赖升级 | `go-runewidth v0.0.30 → v0.0.31`（grapheme 宽度/非法 UTF-8/不可打印字符语义变化，新增 `table_test.go` 回归）、`x/sys v0.48.0 → v0.49.0`、`x/term v0.46.0 → v0.47.0`。 |
 
 ---
 
@@ -110,7 +133,7 @@ s3cli/
 │   │   ├── config.go        #     Config / Static / Flags 结构、默认值
 │   │   ├── readconf.go      #     读取配置文件
 │   │   ├── saveconf.go      #     保存配置文件
-│   │   ├── setconf.go       #   alias set / edit（交互式）
+│   │   ├── setconf.go       #   alias add / edit（交互式）
 │   │   ├── listconf.go      #   alias list
 │   │   └── delconf.go       #   alias del
 │   │
@@ -201,14 +224,18 @@ s3cli 用「别名（alias）」管理多个 S3 端点。配置文件默认在 `
 **方式一：交互式配置（推荐新手）**
 
 ```bash
-s3cli alias set my-s3
+s3cli alias add my-s3
 # 按提示输入 URL、AccessKey、SecretKey 等
 ```
 
-**方式二：一行命令配置**
+**方式二：命令行配置（密钥不回显）**
 
 ```bash
-s3cli alias set my-s3 https://s3.example.com AKIA... SECRET
+# 3 个参数: 从终端读取 secret（不回显，不进 shell history）
+s3cli alias add my-s3 https://s3.example.com AKIA...
+
+# 脚本 / CI: 从 stdin 读取
+printf '%s' "$SECRET" | s3cli alias add my-s3 https://s3.example.com AKIA... -
 ```
 
 **方式三：手动编辑配置文件**
@@ -277,7 +304,7 @@ s3cli mv my-s3:bucket/a.txt my-s3:bucket/b.txt
 
 # 镜像同步（可跨 endpoint）
 s3cli mirror my-s3:prod my-s3:backup           # 同端点（服务端零拷贝）
-s3cli mirror prod:bucket backup:bucket --remove # 删除目标多余对象
+s3cli mirror prod:bucket backup:bucket --remove --force # 删除目标多余对象（--force 确认）
 ```
 
 ### 2.6 退出码（脚本友好）
@@ -1435,7 +1462,7 @@ header "event-type"    = Records | Progress | Stats | End | Continuation
 #### `alias` - 管理别名
 
 ```bash
-s3cli alias add <name> [url] [ak] [sk] [token]   # 添加（1参数交互式，4-5参数非交互）
+s3cli alias add <name> [url] [ak] [sk] [token]   # 1 参数交互式；3 参数从 stdin 读 secret；4-5 参数非交互
 s3cli alias edit <name>                          # 交互式编辑（空输入保留原值）
 s3cli alias list [name] [-s]                     # 列出（-s 显示完整 secret）
 s3cli alias del <name>                           # 删除
@@ -1449,7 +1476,8 @@ s3cli alias del <name>                           # 删除
 
 ```bash
 s3cli bucket make <alias:name>                   # 创建桶
-s3cli bucket remove <alias:name>                 # 删除桶
+s3cli bucket remove <alias:name>                 # 删除空桶
+s3cli bucket remove <alias:name> --force --yes   # 清空并删除（终端下 --force 需手输桶名，--yes 跳过）
 ```
 
 桶子资源配置（每个都有 `set`/`get`/`del` 子命令）：
@@ -1491,7 +1519,7 @@ s3cli bucket remove <alias:name>                 # 删除桶
 | 命令 | 作用 | 关键 flag |
 | --- | --- | --- |
 | `put` | 上传 | `-r`, `--content-type`, `--storage-class`/`--sc`, `--metadata k=v`, `--tags`, `--overwrite`, `--dry-run`, `--include`/`--exclude`, `--checksum`, `-q` |
-| `get` | 下载 | `-r`, `--concurrency`, `--range`, `--overwrite`, `--version-id`, `-o`, `-t`, `-n`, `--dry-run`, `--include`/`--exclude`, `--checksum`, `-q` |
+| `get` | 下载 | `-r`, `--concurrency`, `--range`, `--overwrite`, `--version-id`, `-o`, `-t`, `-n`, `--dry-run`, `--include`/`--exclude`, `--checksum`（仅文件输出）, `-q` |
 | `cp` | 复制（同 endpoint） | `-r`, `--storage-class`, `--concurrency`, `--dry-run`, `--include`/`--exclude` |
 | `mv` | 移动（同 endpoint） | `-r`, `--storage-class`, `--concurrency`, `--dry-run`, `--include`/`--exclude` |
 | `rm` | 删除 | `-r --force`, `--versions`, `-I`(未完成上传), `--dry-run`, `--older-than`, `--newer-than`, `--stdin`, `--non-current` |
@@ -1514,14 +1542,15 @@ s3cli mirror <src> <tgt> [flags]
 
 | Flag | 作用 |
 | --- | --- |
-| `--remove` | 删除目标端多余对象 |
+| `--remove` | 删除目标端多余对象（必须同时给 `--force`） |
+| `--force` | 确认破坏性的 `--remove`（`--dry-run` 时不需要） |
 | `--overwrite` | 已存在时依据 ETag/Size 覆盖 |
 | `--dry-run` | 仅打印计划，不执行 |
 | `--concurrency` | 并发数（默认 10） |
 | `--part-size` | 分片大小 MB |
 | `--storage-class` | 目标存储类别 |
 | `--size-limit` | 单对象大小上限 |
-| `--max-delete` | 删除数量上限 |
+| `--max-delete` | 删除数量上限（超限时整体中止，不删任何对象；待删 key 落盘，按 1000 条分批） |
 | `--include`/`--exclude` | glob 过滤（可重复） |
 | `--manifest` + `--resume` | 断点续传 |
 | `-q` | 禁用进度条 |
@@ -1676,20 +1705,25 @@ s3cli share upload <alias:bucket/key> --expire 1h      # 上传 URL
 | 层级 | 范围 | 特点 |
 | --- | --- | --- |
 | 单元测试 | `go test ./...` | 自包含，无需真实 S3，用 mock 和 httptest |
+| 进程级契约测试 | `main_test.go` | 构建真实二进制 + 假 S3，断言退出码 / stdout/stderr 分离 / JSON 合法性 |
+| 真实 S3 e2e | `scripts/e2e-s3.sh` | CI 用 LocalStack；验证 SigV4、真实 HTTP、分页、MPU、CopyObject、checksum 等互操作性 |
 
-测试全部自包含：不依赖任何外部 S3 服务、不下载任何二进制，因此可在无网络环境下
-完整运行（含 `-race`）。
+单元测试与进程级契约测试完全自包含：不依赖任何外部 S3 服务、不下载任何二进制，
+因此可在无网络环境下完整运行（含 `-race`）。真实 S3 e2e 是独立的 CI job，
+需要 LocalStack service 或本地提供的 endpoint。
 
-> **关于端到端测试的移除**：项目曾有一个基于 MinIO 的 e2e 脚本
-> （`scripts/e2e-minio.sh`）与对应的 CI job。2025-10 起 MinIO 归档了开源版
-> Server/MC/KES 并停止从 `dl.min.io` 分发社区二进制（所有路径统一 `410 Gone`），
-> 该脚本的自动下载不再可用，CI job 必然失败。与其保留一个长期飘红、需要人工
-> 提供二进制的 job，不如直接删除：单元测试 + `httptest` 已经覆盖了线协议层
-> （签名、请求构造、错误解析、分页、厂商差异开关），e2e 的边际收益不足以抵消
-> 对外部二进制的强依赖。
+> **e2e 的演进**：项目曾有一个基于 MinIO 的 e2e 脚本；2025-10 起 MinIO
+> 停止从 `dl.min.io` 分发社区二进制（统一 `410 Gone`），该 job 被移除。
+> 2026-10 起改用 **LocalStack** 作为 CI service（Docker 镜像，不再依赖
+> 单一厂商下载站），由 `scripts/e2e-s3.sh` 执行黑盒矩阵：put/get/ls/stat/
+> du/tree/checksum/tag/cp/mv/rm/multipart/mirror `--remove`/recursive rm。
+> 它验证的是 SigV4 与真实 HTTP 的互操作性，是单元测试与进程级契约测试
+> 之外的一层独立保障。
 >
-> 若将来需要恢复端到端验证，建议改用可持续获取的后端（SeaweedFS / Garage /
-> Ceph RGW，或固定 digest 的容器镜像），而不是重新引入对单一厂商下载站的依赖。
+> `main_test.go` 仍然保留：构建真实二进制、指向内存假 S3，验证
+> `main → cobra → RunE → os.Exit` 全链路，包括退出码、stdout/stderr
+> 分离和 `--json` 可解析性。这类测试正是此前缺失、导致“单测全绿但
+> README 示例失败”的根因。
 
 ### 8.2 单元测试的关键 mock
 
@@ -1712,23 +1746,31 @@ type mockS3Server struct {
 
 ### 8.3 CI（`.github/workflows/ci.yml`）
 
-三个 job，全部在 `ubuntu-latest` + Go 1.27 上运行：
+四个 job，全部在 `ubuntu-latest` + Go 1.27 上运行：
 
 1. **单元测试**（`unit`）：
    - `gofmt -l main.go cmd internal` 检查格式
    - `go vet ./...` 静态检查
-   - `go test -race ./...` 带竞态检测的测试
+   - `go test -race ./...` 带竞态检测的测试（含 `main_test.go` 的进程级契约测试）
+   - 覆盖率报告写入 job summary 并上传 artifact
 
 2. **静态检查**（`lint`）：
    - `golangci-lint`（标准五件套：errcheck / govet / ineffassign / staticcheck / unused）
    - `govulncheck` 依赖漏洞扫描
+   - `scripts/check-actions-pinned.sh` 强制所有外部 Action 固定到 40 位 commit SHA
 
 3. **交叉编译冒烟**（`cross-build`）：
    - `bash build.sh all` 全平台编译，并校验五个产物均存在
 
+4. **真实 S3 端到端**（`e2e`）：
+   - GitHub Actions service 启动 `localstack/localstack:3.8`，只启用 S3
+   - `scripts/e2e-s3.sh` 覆盖对象/桶/标签/分段上传/镜像/递归删除
+   - checksum 用例在服务端不支持 `x-amz-checksum-mode` 时自动降级为 SKIP
+
 另有 `.github/workflows/release.yml`：打 `v*` tag 时先跑 test + vet，再全平台
-交叉编译、打包、生成 SHA256SUMS 并创建 GitHub Release（用 `SOURCE_DATE_EPOCH`
-保证可复现构建）。
+交叉编译、生成 CycloneDX SBOM、打包、生成 SHA256SUMS，并用 cosign keyless
+签名（`SHA256SUMS.sig` + `.pem`）后创建 GitHub Release（用 `SOURCE_DATE_EPOCH`
+保证可复现构建）。所有 Actions 均按 commit SHA 固定，Dependabot 负责升级。
 
 触发条件：push 到 main + 所有 PR（release 仅 tag）。
 
@@ -1753,13 +1795,13 @@ type mockS3Server struct {
 
 ```bash
 LDFLAGS="-s -w \
-  -X 's3cli/cmd.Version=${VERSION}' \
-  -X 's3cli/cmd.Commit=${COMMIT}' \
-  -X 's3cli/cmd.BuildDate=${DATE}' \
-  -X 's3cli/cmd.GoVersion=${GOVERSION}'"
+  -X 'github.com/onmk613/s3cli/cmd.Version=${VERSION}' \
+  -X 'github.com/onmk613/s3cli/cmd.Commit=${COMMIT}' \
+  -X 'github.com/onmk613/s3cli/cmd.BuildDate=${DATE}' \
+  -X 'github.com/onmk613/s3cli/cmd.GoVersion=${GOVERSION}'"
 ```
 
-> ⚠️ **历史坑**：包路径曾误写为 `internal/cmd`，链接器对不存在的符号静默忽略，导致版本信息从未注入。现已修正为 `s3cli/cmd`。
+> ⚠️ **历史坑**：包路径曾误写为 `internal/cmd`，链接器对不存在的符号静默忽略，导致版本信息从未注入。现已修正为 `github.com/onmk613/s3cli/cmd`。
 
 `-trimpath` 移除编译机器的路径信息，保证可复现构建。
 

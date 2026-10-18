@@ -13,7 +13,7 @@ import (
 	"testing"
 	"time"
 
-	"s3cli/internal/api"
+	"github.com/onmk613/s3cli/internal/api"
 )
 
 // TestRunPartPipelineReadErrAfterWorkersExited 验证: worker 因外层取消提前

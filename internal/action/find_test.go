@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"s3cli/internal/api"
+	"github.com/onmk613/s3cli/internal/api"
 )
 
 // findTestObj 描述 mock 返回的一个对象.

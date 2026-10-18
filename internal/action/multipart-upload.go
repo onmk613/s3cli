@@ -7,10 +7,10 @@ import (
 	"context"
 	"fmt"
 
-	"s3cli/internal/action/render"
-	"s3cli/internal/api"
-	myprint "s3cli/internal/fmtutil"
-	"s3cli/internal/i18n"
+	"github.com/onmk613/s3cli/internal/action/render"
+	"github.com/onmk613/s3cli/internal/api"
+	myprint "github.com/onmk613/s3cli/internal/fmtutil"
+	"github.com/onmk613/s3cli/internal/i18n"
 )
 
 // mpuListPageSize 是 ListMultipartUploads 的单页请求上限。
@@ -164,7 +164,7 @@ func (c *Action) MpuAbort(bucket, prefix, uploadID string) error {
 	var aborted, failed int
 	for _, u := range uploads {
 		if err := c.S3.AbortMultipartUpload(c.Ctx, bucket, u.Key, u.UploadID); err != nil {
-			myprint.PrintfRed("abort %s/%s: %s\n", bucket, u.Key, err)
+			myprint.ErrPrintfRed(i18n.T("abort %s/%s: %s\n", "中止 %s/%s：%s\n"), bucket, u.Key, i18n.LocalizeErrorText(err.Error()))
 			failed++
 			continue
 		}

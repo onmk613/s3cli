@@ -2,11 +2,11 @@ package config
 
 import (
 	"fmt"
-
-	myprint "s3cli/internal/fmtutil"
 	"slices"
 	"sort"
 	"strings"
+
+	myprint "github.com/onmk613/s3cli/internal/fmtutil"
 )
 
 // ListAliasConf 列出配置文件中的所有别名 (alias list)。
@@ -35,7 +35,7 @@ func ListAliasConf(alias []string) error {
 
 	if len(entries) == 0 {
 		myprint.PrintlnYellow("no aliases configured.")
-		myprint.Println("Hint: run `s3cli alias set <name> URL ACCESSKEY SECRETKEY` to create one.")
+		myprint.ErrPrintln("Hint: run `s3cli alias add <name> URL ACCESSKEY` to create one (the secret is read from stdin).")
 		return nil
 	}
 

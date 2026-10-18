@@ -13,9 +13,9 @@ import (
 	"strings"
 	"time"
 
-	"s3cli/internal/api"
-	myprint "s3cli/internal/fmtutil"
-	"s3cli/internal/i18n"
+	"github.com/onmk613/s3cli/internal/api"
+	myprint "github.com/onmk613/s3cli/internal/fmtutil"
+	"github.com/onmk613/s3cli/internal/i18n"
 )
 
 // DelOptions rm 命令参数.
@@ -191,7 +191,7 @@ func (c *Action) deleteFromStdin(bucket string, opt DelOptions) error {
 			continue
 		}
 		if err := c.deleteSingleObject(bucket, key); err != nil {
-			myprint.PrintfRed("%v\n", err)
+			myprint.ErrPrintfRed("%s\n", i18n.LocalizeErrorText(err.Error()))
 			failed++
 			continue
 		}
@@ -222,7 +222,7 @@ func (c *Action) deletePrefixIncomplete(bucket, prefix string, opt DelOptions) e
 			continue
 		}
 		if err := c.S3.AbortMultipartUpload(c.Ctx, bucket, u.Key, u.UploadID); err != nil {
-			myprint.PrintfRed("abort %s/%s: %s\n", bucket, u.Key, err)
+			myprint.ErrPrintfRed(i18n.T("abort %s/%s: %s\n", "中止 %s/%s：%s\n"), bucket, u.Key, i18n.LocalizeErrorText(err.Error()))
 			failed++
 			continue
 		}
@@ -267,7 +267,7 @@ func (c *Action) deleteObjectsWithPrefix(bucket, prefix string, opt DelOptions) 
 	}
 
 	// 规范化目录前缀：若 prefix 非空且不以 "/" 结尾，且 prefix+"/" 是一个真实目录，
-	// 则改用 prefix+"/" 作为删除前缀。否则 "s3cli/.git" 会把同级的 "s3cli/.gitignore"
+	// 则改用 prefix+"/" 作为删除前缀。否则 "github.com/onmk613/s3cli/.git" 会把同级的 "github.com/onmk613/s3cli/.gitignore"
 	// 一并误删（前缀匹配把 ".gitignore" 也命中了）。
 	//
 	// 使用 delimiter="/" 检测 CommonPrefixes (子目录) 和 Contents (对象)，

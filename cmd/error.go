@@ -3,9 +3,11 @@ package cmd
 import (
 	"context"
 	"errors"
-	"s3cli/internal/action"
-	"s3cli/internal/api"
-	myprint "s3cli/internal/fmtutil"
+
+	"github.com/onmk613/s3cli/internal/action"
+	"github.com/onmk613/s3cli/internal/api"
+	myprint "github.com/onmk613/s3cli/internal/fmtutil"
+	"github.com/onmk613/s3cli/internal/i18n"
 )
 
 // errAlreadyDisplayed 是一个哨兵错误：表示错误已通过 displayError 输出给用户，
@@ -19,7 +21,9 @@ var errAlreadyDisplayed = errors.New("error already displayed")
 // 既得到 "list objects: NoSuchBucket: ..." 这样完整的错误串, 又能让
 // exitCodeForError 通过 errors.As 穿透到 *api.ErrorResponse。
 func displayError(err error) {
-	myprint.PrintlnBoldRed(err)
+	// 错误必须写 stderr: stdout 是命令结果通道, 把错误混进去会让
+	// `get > file` / `--json | jq` / 管道下游收到脏数据。
+	myprint.ErrPrintlnBoldRed(i18n.LocalizeErrorText(err.Error()))
 }
 
 // isCanceled 判断错误是否由用户主动取消（Ctrl+C）引起。
