@@ -62,7 +62,7 @@
 | mirror 删除清单落盘 | `--remove` 的待删除 key 改为 JSON lines 临时文件 + 每 1000 条分批删除，内存从 O(删除数) 降到 O(batch)；`--max-delete` 仍在删除前做全量计数拦截。 |
 | bucket remove 二次确认 | 终端下 `bucket remove --force` 额外要求手输桶名，`--yes` 跳过；非终端（CI/脚本）保持 `--force` 即确认。 |
 | e2e 恢复 | CI 新增 LocalStack S3 service + `scripts/e2e-s3.sh`，覆盖 put/get/ls/stat/du/tree/checksum/tag/cp/mv/rm/multipart/mirror --remove/recursive rm。 |
-| 发布链加固 | 所有 GitHub Actions 按 commit SHA 固定；release 增加 CycloneDX SBOM、SHA256SUMS 的 cosign keyless 签名与证书；新增 Dependabot 配置。 |
+| 发布链加固 | 所有 GitHub Actions 按 commit SHA 固定；release 增加 CycloneDX SBOM、SHA256SUMS 的 cosign keyless 签名与证书；新增 Dependabot 配置（`open-pull-requests-limit: 0`，只做版本检查、不自动开 PR/分支，保持单 main 分支）。 |
 | 依赖升级 | `go-runewidth v0.0.30 → v0.0.31`（grapheme 宽度/非法 UTF-8/不可打印字符语义变化，新增 `table_test.go` 回归）、`x/sys v0.48.0 → v0.49.0`、`x/term v0.46.0 → v0.47.0`。 |
 
 ---

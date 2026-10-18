@@ -1,12 +1,15 @@
 version: 2
+# 本仓库只保留 main 分支，且不自动创建依赖升级 PR/分支。
+# 依赖升级由维护者手动执行；把 limit 设为 0 可让 Dependabot 继续做版本检查，
+# 但不会开 PR（需要恢复自动升级时把对应值改回 1-10）。
 updates:
   - package-ecosystem: gomod
     directory: "/"
     schedule:
       interval: weekly
-    open-pull-requests-limit: 5
+    open-pull-requests-limit: 0
   - package-ecosystem: github-actions
     directory: "/"
     schedule:
       interval: weekly
-    open-pull-requests-limit: 5
+    open-pull-requests-limit: 0
