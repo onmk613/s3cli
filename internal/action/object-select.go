@@ -1,8 +1,3 @@
-// object-select.go 实现 S3 Select SQL 查询 (sql 命令).
-//
-// 支持对 CSV / JSON / Parquet 对象执行 SQL, 序列化选项用
-// "rd=\\n,fh=USE,fd=;" 键值串描述 (缩写: rd/fd/fh/qc/qec/cc/qf, 详见 parseSelectOpts).
-
 package action
 
 import (
@@ -11,9 +6,9 @@ import (
 	"os"
 	"strings"
 
-	"github.com/onmk613/s3cli/internal/api"
-	myprint "github.com/onmk613/s3cli/internal/fmtutil"
-	"github.com/onmk613/s3cli/internal/i18n"
+	"github.com/onmk613/s3cli/pkg/api"
+	myprint "github.com/onmk613/s3cli/pkg/fmtutil"
+	"github.com/onmk613/s3cli/pkg/i18n"
 )
 
 // SelectOptions sql 命令参数.

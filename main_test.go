@@ -1,13 +1,3 @@
-// main_test.go 是进程级的 CLI 契约测试。
-//
-// 包内单测无法覆盖 main -> cobra -> os.Exit 这条真实路径, 也看不到
-// stdout/stderr 的分离与真实退出码。这里构建一次二进制, 用假 S3 服务端
-// 跑关键命令, 专门锁定这些"用户/脚本能看到"的契约:
-//   - 退出码 0/1/4;
-//   - stdout 只放数据, 错误/标题放 stderr;
-//   - --json 输出必须是合法 JSON;
-//   - README 里承诺的语法 (ls alias:) 真的可用。
-
 package main
 
 import (

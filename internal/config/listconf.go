@@ -6,7 +6,7 @@ import (
 	"sort"
 	"strings"
 
-	myprint "github.com/onmk613/s3cli/internal/fmtutil"
+	myprint "github.com/onmk613/s3cli/pkg/fmtutil"
 )
 
 // ListAliasConf 列出配置文件中的所有别名 (alias list)。

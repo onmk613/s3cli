@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/onmk613/s3cli/internal/fmtutil"
+	"github.com/onmk613/s3cli/pkg/fmtutil"
 )
 
 func TestS3Path(t *testing.T) {
@@ -92,8 +92,6 @@ func TestLsTableAddAndRenderDoesNotPanic(t *testing.T) {
 	tbl.Render()
 }
 
-// TestTreeFilesHiddenByDefault 断言默认只显示目录, 且目录/文件的统计口径与
-// 可见行一致 —— --json 的计数依赖同一份实现。
 func TestTreeFilesHiddenByDefault(t *testing.T) {
 	root := TreeNode{Children: []TreeNode{
 		{Name: "dir", Children: []TreeNode{
@@ -114,8 +112,6 @@ func TestTreeFilesHiddenByDefault(t *testing.T) {
 	}
 }
 
-// TestCountTreeMatchesPrintTree 是本文件最关键的断言: 统计与渲染必须同源,
-// 否则 --json 报的文件数会和文本模式看到的行数不一致。
 func TestCountTreeMatchesPrintTree(t *testing.T) {
 	root := TreeNode{Children: []TreeNode{
 		{Name: "a", Children: []TreeNode{
@@ -139,7 +135,6 @@ func TestCountTreeMatchesPrintTree(t *testing.T) {
 	}
 }
 
-// TestTreeNodeOrderDirsFirst 断言渲染顺序是"目录在前、文件在后, 同类按名"。
 func TestTreeNodeOrderDirsFirst(t *testing.T) {
 	n := TreeNode{Children: []TreeNode{
 		{Name: "zzz.txt", IsFile: true},

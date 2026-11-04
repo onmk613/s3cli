@@ -1,7 +1,3 @@
-// common.go 定义 action 包的核心: Action 类型、S3 路径格式化与存在性/目录探测
-// (S3Path / IsS3File / DestStateOf), 以及对象遍历器 forEachObject.
-// 取消判断、校验和算法解析与 MIME 注册等通用工具在 utils.go.
-
 package action
 
 import (
@@ -12,9 +8,9 @@ import (
 	"time"
 
 	"github.com/onmk613/s3cli/internal/action/render"
-	"github.com/onmk613/s3cli/internal/api"
-	"github.com/onmk613/s3cli/internal/i18n"
 	"github.com/onmk613/s3cli/internal/s3path"
+	"github.com/onmk613/s3cli/pkg/api"
+	"github.com/onmk613/s3cli/pkg/i18n"
 )
 
 // defaultConcurrency 是流式传输（get/put/cp/mv）与 mirror/diff 的默认并发数。
@@ -22,10 +18,9 @@ import (
 const defaultConcurrency = 10
 
 // Action 封装 S3 操作后端, 持有 alias 和 ctx.
-// S3 字段为 api.S3Operations 接口, 底层实现为自建请求的 api.Client
-// (由 client 包统一构造).
+// S3 字段为自建请求的 *api.Client (由 client 包统一构造).
 type Action struct {
-	S3    api.S3Operations
+	S3    *api.Client
 	Alias string
 	Ctx   context.Context
 }
@@ -169,7 +164,7 @@ type Cred struct {
 	BaseEndpoint    string
 }
 
-// GetS3Credentials 返回底层 S3 后端持有的凭证与 endpoint (经 S3Operations 访问器).
+// GetS3Credentials 返回底层 S3 后端持有的凭证与 endpoint (经 Client 访问器).
 func (c *Action) GetS3Credentials() (Cred, error) {
 	if c.S3 == nil {
 		return Cred{}, fmt.Errorf("s3 client is nil")

@@ -1,11 +1,9 @@
-// object-versions.go 实现对象版本列举 ListObjectVersions, 展示各版本与 delete-marker.
-
 package action
 
 import (
 	"github.com/onmk613/s3cli/internal/action/render"
-	myprint "github.com/onmk613/s3cli/internal/fmtutil"
-	"github.com/onmk613/s3cli/internal/i18n"
+	myprint "github.com/onmk613/s3cli/pkg/fmtutil"
+	"github.com/onmk613/s3cli/pkg/i18n"
 )
 
 // ListObjectVersions 列出对象版本 + delete-marker。

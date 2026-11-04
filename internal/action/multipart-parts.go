@@ -1,11 +1,3 @@
-// multipart-parts.go 实现分片上传的并行分片调度。
-//
-// 原实现是「读一片 -> 传一片」的串行循环: 单个大文件只能跑满一条连接, 是相对
-// mc / aws s3 cp 最明显的性能差距。RunStream 的并发是跨文件的, 对单文件无效。
-//
-// 这里把读取与上传解耦: 一个生产者顺序读分片 (Reader 不可并行读), N 个 worker
-// 并发上传。内存上界 = multipartConcurrency × partSize (默认 4 × 15MiB = 60MiB)。
-
 package action
 
 import (
@@ -16,7 +8,7 @@ import (
 	"sort"
 	"sync"
 
-	"github.com/onmk613/s3cli/internal/api"
+	"github.com/onmk613/s3cli/pkg/api"
 )
 
 // multipartConcurrency 是单个对象内部并发上传的分片数。

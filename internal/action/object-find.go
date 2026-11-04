@@ -1,9 +1,3 @@
-// object-find.go 实现对象条件搜索 FindObjects, 支持:
-// --name (glob) / --regex (RE2) / --path (目录名 glob) / --larger / --smaller /
-// --newer-than / --older-than (时长或绝对时间) / --min-depth/--max-depth /
-// --type / --storage-class / --include/--exclude / --ignore /
-// --sort/--reverse / --print / --limit.
-
 package action
 
 import (
@@ -17,9 +11,9 @@ import (
 	"time"
 
 	"github.com/onmk613/s3cli/internal/action/render"
-	"github.com/onmk613/s3cli/internal/api"
-	myprint "github.com/onmk613/s3cli/internal/fmtutil"
-	"github.com/onmk613/s3cli/internal/i18n"
+	"github.com/onmk613/s3cli/pkg/api"
+	myprint "github.com/onmk613/s3cli/pkg/fmtutil"
+	"github.com/onmk613/s3cli/pkg/i18n"
 )
 
 // FindOptions find 命令参数.

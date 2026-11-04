@@ -1,9 +1,3 @@
-// batch-delete.go 提供全代码库唯一的批量删除实现。
-//
-// 此前有三份几乎相同的实现 (object-del.go 的 deleteBatch、mirror-copy.go 的
-// deleteObjectsBatch、bucket-remove.go 的内联循环), 批大小在三处是裸字面量 1000、
-// 在另一处是常量, 而且都只报 Errors[0] —— 一次批量删除里其余失败项被静默丢弃。
-
 package action
 
 import (
@@ -11,7 +5,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/onmk613/s3cli/internal/api"
+	"github.com/onmk613/s3cli/pkg/api"
 )
 
 // s3DeleteBatchSize 是 DeleteObjects 单次请求的对象数上限 (S3 协议限制)。

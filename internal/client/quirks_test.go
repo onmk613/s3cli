@@ -1,8 +1,3 @@
-// quirks_test.go 验证别名配置里的厂商差异开关能一路贯通到线上请求:
-// config.Static --(newS3Client)--> api.Client --(实际 HTTP 请求)--> 服务端.
-//
-// 这是"适配新厂商 = 改配置, 不改代码"这条承诺的回归网: 任何一环断了都会在这里失败.
-
 package client
 
 import (
@@ -13,8 +8,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/onmk613/s3cli/internal/api"
 	"github.com/onmk613/s3cli/internal/config"
+	"github.com/onmk613/s3cli/pkg/api"
 )
 
 func TestAliasQuirksReachTheWire(t *testing.T) {

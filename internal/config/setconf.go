@@ -14,8 +14,8 @@ import (
 	"sync"
 	"syscall"
 
-	myprint "github.com/onmk613/s3cli/internal/fmtutil"
-	"github.com/onmk613/s3cli/internal/i18n"
+	myprint "github.com/onmk613/s3cli/pkg/fmtutil"
+	"github.com/onmk613/s3cli/pkg/i18n"
 	"golang.org/x/term"
 )
 

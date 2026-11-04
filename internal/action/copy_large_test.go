@@ -1,7 +1,3 @@
-// copy_large_test.go 覆盖 cp/mv 对 >5GiB 源对象的处理: 单次 CopyObject 会返回
-// EntityTooLarge, 此时必须自动改走 CreateMultipartUpload + UploadPartCopy,
-// 而不是把错误直接抛给用户 (mirror 早已支持, cp/mv 此前会必然失败)。
-
 package action
 
 import (
@@ -15,7 +11,7 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/onmk613/s3cli/internal/api"
+	"github.com/onmk613/s3cli/pkg/api"
 )
 
 // largeCopyServer 模拟: CopyObject 一律 EntityTooLarge, 分片复制路径可用。

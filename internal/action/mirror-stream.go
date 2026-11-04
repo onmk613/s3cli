@@ -1,6 +1,3 @@
-// mirror-stream.go 提供 mirror (双端镜像同步) 所需的流式列举、归并差异、
-// 过滤与 key 重映射原语. 这些函数以 channel 串联, 内存占用恒定, 不缓存全集.
-
 package action
 
 import (
@@ -9,7 +6,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/onmk613/s3cli/internal/api"
+	"github.com/onmk613/s3cli/pkg/api"
 )
 
 // =============== 对象信息 ===============

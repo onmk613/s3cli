@@ -2,8 +2,6 @@
 
 轻量、高性能、简单的 S3 命令行客户端
 
-中文 · [English](README.en.md)
-
 ## 特性
 
 - 零 AWS SDK 依赖：基于 `net/http` 自实现 S3 REST API 与 SigV4 签名，兼容任何 S3 服务
@@ -145,8 +143,6 @@ Use "s3cli [command] --help" for more information about a command.
 >
 > **stdout 只放命令结果，错误/警告/标题统一走 stderr**。因此
 > `s3cli ... --json | jq`、`s3cli get ... > file` 不会再被诊断信息污染。
->
-> 各命令的字段 schema 见 [docs/OUTPUT_SCHEMA.md](docs/OUTPUT_SCHEMA.md)。
 
 `policy get --raw` 是独立的本地参数（打印原始策略 JSON 而非分类结果），
 与全局 `--json` 语义不同，故意不复用同名。
@@ -197,8 +193,9 @@ tls_min_version = "1.2"     # 1.0 / 1.1 / 1.2 / 1.3，缺省 1.2；老式端点�
 
 ## S3 后端
 
-底层操作统一抽象为 `internal/api` 的 `S3Operations` 接口（`operations.go`），由同包的自建客户端
-`api.Client`（HTTP + SigV4 签名，零 SDK 依赖，兼容任何 S3 服务）实现。
+底层操作由 [pkg/api](pkg/api) 的自建客户端 `api.Client`（HTTP + SigV4 签名，零 SDK 依赖，
+兼容任何 S3 服务）实现。上层直接持有 `*api.Client`；`operations.go` 中的接口仅在包内
+用作编译期方法集合校验，不对外暴露。
 
 对接不同 S3 兼容厂商时，优先用上面的**厂商差异开关**适配，而不是引入另一套 SDK：差异写进
 别名配置即可生效，零值保持严格 AWS 语义，升级不会改变既有请求。

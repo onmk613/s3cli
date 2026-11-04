@@ -1,15 +1,12 @@
-// object-restore.go 实现 restore 命令的动作: 请求从归档存储类
-// (GLACIER / DEEP_ARCHIVE 等) 恢复对象的可访问副本.
-
 package action
 
 import (
 	"errors"
 	"fmt"
 
-	"github.com/onmk613/s3cli/internal/api"
-	myprint "github.com/onmk613/s3cli/internal/fmtutil"
-	"github.com/onmk613/s3cli/internal/i18n"
+	"github.com/onmk613/s3cli/pkg/api"
+	myprint "github.com/onmk613/s3cli/pkg/fmtutil"
+	"github.com/onmk613/s3cli/pkg/i18n"
 )
 
 // RestoreOptions 控制 restore 命令的参数.

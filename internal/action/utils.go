@@ -1,7 +1,3 @@
-// utils.go 提供 action 包内复用的通用工具: 取消判断 (IsCanceled)、
-// 校验和算法解析 (parseChecksumAlg)、MIME 类型注册 (AddMime)。
-// 字节单位换算与 JSON 输出分别由 fmtutil 与 action/render 提供。
-
 package action
 
 import (
@@ -11,8 +7,8 @@ import (
 	"mime"
 	"sync"
 
-	"github.com/onmk613/s3cli/internal/api"
-	"github.com/onmk613/s3cli/internal/i18n"
+	"github.com/onmk613/s3cli/pkg/api"
+	"github.com/onmk613/s3cli/pkg/i18n"
 )
 
 // IsCanceled 判断 err 是否由用户主动取消（Ctrl+C / SIGTERM）或超时引起。

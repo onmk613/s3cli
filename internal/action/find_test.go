@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/onmk613/s3cli/internal/api"
+	"github.com/onmk613/s3cli/pkg/api"
 )
 
 // findTestObj 描述 mock 返回的一个对象.
@@ -58,7 +58,7 @@ func newFindTestAction(t *testing.T, objs []findTestObj) *Action {
 	if err != nil {
 		t.Fatal(err)
 	}
-	return &Action{S3: api.S3Operations(cli), Alias: "test", Ctx: context.Background()}
+	return &Action{S3: cli, Alias: "test", Ctx: context.Background()}
 }
 
 func TestFindOlderThanMatchesOldObjects(t *testing.T) {
@@ -343,7 +343,7 @@ func newFindVersionsTestAction(t *testing.T, objs []findVersionObj) *Action {
 	if err != nil {
 		t.Fatal(err)
 	}
-	return &Action{S3: api.S3Operations(cli), Alias: "test", Ctx: context.Background()}
+	return &Action{S3: cli, Alias: "test", Ctx: context.Background()}
 }
 
 // TestFindVersionsOlderThanLatest 开启 versioning: 按最新版本时间过滤,

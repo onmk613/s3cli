@@ -1,14 +1,12 @@
-// bucket-versioning.go 实现桶版本控制状态管理: Set/GetBucketVersioning (Enabled / Suspended).
-
 package action
 
 import (
 	"errors"
 	"fmt"
 
-	"github.com/onmk613/s3cli/internal/api"
-	myprint "github.com/onmk613/s3cli/internal/fmtutil"
-	"github.com/onmk613/s3cli/internal/i18n"
+	"github.com/onmk613/s3cli/pkg/api"
+	myprint "github.com/onmk613/s3cli/pkg/fmtutil"
+	"github.com/onmk613/s3cli/pkg/i18n"
 )
 
 type VersioningOptions struct {

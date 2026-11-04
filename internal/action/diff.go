@@ -1,6 +1,3 @@
-// diff.go 实现本地 / S3 之间的内容差异比对 Diff: 自动识别文件 vs 目录,
-// 支持三种模式 (size / quick=size+mtime / md5=流式内容比对), 目录模式并发比对.
-
 package action
 
 import (
@@ -19,15 +16,15 @@ import (
 	"sync/atomic"
 
 	"github.com/onmk613/s3cli/internal/action/render"
-	"github.com/onmk613/s3cli/internal/api"
-	myprint "github.com/onmk613/s3cli/internal/fmtutil"
-	"github.com/onmk613/s3cli/internal/i18n"
 	"github.com/onmk613/s3cli/internal/s3path"
+	"github.com/onmk613/s3cli/pkg/api"
+	myprint "github.com/onmk613/s3cli/pkg/fmtutil"
+	"github.com/onmk613/s3cli/pkg/i18n"
 )
 
 type DiffEndpoint struct {
 	IsS3          bool
-	S3            api.S3Operations
+	S3            *api.Client
 	Ctx           context.Context
 	Alias         string
 	Bucket        string
@@ -81,7 +78,7 @@ type fileEntry struct {
 //   - 否则视为本地路径（不要求文件存在；后续会单独检查）
 //
 // 调用方需提供一个判断 alias 是否存在的回调（保持 action 包不依赖 config）。
-func ParseDiffArg(ctx context.Context, arg string, aliasExists func(string) bool, makeClient func(*s3path.Path) (api.S3Operations, error)) (*DiffEndpoint, error) {
+func ParseDiffArg(ctx context.Context, arg string, aliasExists func(string) bool, makeClient func(*s3path.Path) (*api.Client, error)) (*DiffEndpoint, error) {
 	// 先尝试 ParseS3Path
 	if colon := strings.Index(arg, ":"); colon > 0 {
 		alias := arg[:colon]
@@ -525,7 +522,7 @@ func listLocalDir(root string) ([]fileEntry, error) {
 	return out, nil
 }
 
-func listS3Dir(cli api.S3Operations, ctx context.Context, alias, bucket, prefix string) ([]fileEntry, error) {
+func listS3Dir(cli *api.Client, ctx context.Context, alias, bucket, prefix string) ([]fileEntry, error) {
 	// 规范化 prefix，确保 "目录" 风格
 	if prefix != "" && !strings.HasSuffix(prefix, "/") {
 		prefix += "/"

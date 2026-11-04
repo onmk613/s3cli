@@ -1,14 +1,12 @@
-// tag.go 实现桶/对象标签管理: Set/Get/DelTag, prefix 为空时操作桶标签, 否则操作对象标签.
-
 package action
 
 import (
 	"fmt"
 
 	"github.com/onmk613/s3cli/internal/action/render"
-	"github.com/onmk613/s3cli/internal/api"
-	myprint "github.com/onmk613/s3cli/internal/fmtutil"
-	"github.com/onmk613/s3cli/internal/i18n"
+	"github.com/onmk613/s3cli/pkg/api"
+	myprint "github.com/onmk613/s3cli/pkg/fmtutil"
+	"github.com/onmk613/s3cli/pkg/i18n"
 )
 
 // SetTag 设置桶或对象标签; prefix 为空时操作桶标签, 否则操作对象标签.

@@ -1,7 +1,3 @@
-// object-get.go 实现对象下载 GetObject: 单文件直传与目录递归下载,
-// 走 RunStream 并发框架, 默认跳过已存在本地文件 (--overwrite 强制覆盖),
-// 含路径穿越防护与临时文件原子替换.
-
 package action
 
 import (
@@ -16,9 +12,9 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/onmk613/s3cli/internal/api"
-	myprint "github.com/onmk613/s3cli/internal/fmtutil"
-	"github.com/onmk613/s3cli/internal/i18n"
+	"github.com/onmk613/s3cli/pkg/api"
+	myprint "github.com/onmk613/s3cli/pkg/fmtutil"
+	"github.com/onmk613/s3cli/pkg/i18n"
 )
 
 // GetOptions get 命令参数

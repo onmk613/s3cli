@@ -1,12 +1,3 @@
-// object-mirror.go 实现 mirror (双端镜像同步) 的主流程: 参数校验、计划解析、
-// 流式列举源/目标、归并差异、并发复制与删除多余对象.
-//
-// 列举/归并/过滤/重映射原语见 mirror-stream.go; 复制/删除原语见 mirror-copy.go;
-// 断点续传用的 manifest 见 mirror-manifest.go.
-//
-// 整体设计: 源与目标各自流式列举 (不缓存全集), 经 streamDiff 做有序归并产出
-// diffAction 流, 再由并发 worker 执行 copy/delete, 内存占用恒定.
-
 package action
 
 import (
@@ -17,11 +8,11 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/onmk613/s3cli/internal/api"
-	myprint "github.com/onmk613/s3cli/internal/fmtutil"
-	"github.com/onmk613/s3cli/internal/i18n"
-	"github.com/onmk613/s3cli/internal/progress"
 	"github.com/onmk613/s3cli/internal/s3path"
+	"github.com/onmk613/s3cli/pkg/api"
+	myprint "github.com/onmk613/s3cli/pkg/fmtutil"
+	"github.com/onmk613/s3cli/pkg/i18n"
+	"github.com/onmk613/s3cli/pkg/progress"
 )
 
 // =============== 配置 ===============

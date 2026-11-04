@@ -1,9 +1,3 @@
-// resume_checksum_test.go 锁定断点续传的分片校验和回填语义。
-//
-// 背景: 带 --checksum 的分片上传在断点续传时, 从 ListParts 重建的
-// CompletedPart 只带回 PartNumber+ETag。创建上传时声明了算法的服务端 (AWS)
-// 会在 Complete 阶段校验每个分片的校验和, 丢失它会导致 Complete 被拒绝
-// 或静默绕过整片校验。
 package action
 
 import (
@@ -17,7 +11,7 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/onmk613/s3cli/internal/api"
+	"github.com/onmk613/s3cli/pkg/api"
 )
 
 // TestResumeCarriesPartChecksumsToComplete: ListParts 返回的分片校验和

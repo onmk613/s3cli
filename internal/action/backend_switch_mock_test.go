@@ -1,9 +1,3 @@
-// backend_switch_mock_test.go 提供一致性测试的共享设施:
-// 内存版最小 S3 兼容服务 mockS3Server, 以及 runParityScenarios 操作断言集.
-//
-// 该文件不依赖任何具体后端实现, 只依赖 HTTP 线协议与 api.S3Operations 契约,
-// 因此无 build tag.
-
 package action
 
 import (
@@ -20,7 +14,7 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/onmk613/s3cli/internal/api"
+	"github.com/onmk613/s3cli/pkg/api"
 )
 
 // mockS3Server 提供 ListBuckets / ListObjectsV2 (含分页) / Head / Get / Put / Delete /
@@ -314,7 +308,7 @@ func containsStr(list []string, s string) bool {
 
 // runParityScenarios 用同一套操作断言跑单个后端, 验证 action 层与该后端的兼容性.
 // 由 api 后端测试文件 (backend_switch_test.go) 调用.
-func runParityScenarios(t *testing.T, name string, backend api.S3Operations) {
+func runParityScenarios(t *testing.T, name string, backend *api.Client) {
 	t.Helper()
 	t.Run(name, func(t *testing.T) {
 		server := httptest.NewServer(newMockS3Server())

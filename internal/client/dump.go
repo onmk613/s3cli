@@ -7,7 +7,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	myprint "github.com/onmk613/s3cli/internal/fmtutil"
+	myprint "github.com/onmk613/s3cli/pkg/fmtutil"
 )
 
 var globalSeq atomic.Int64

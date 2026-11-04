@@ -1,7 +1,3 @@
-// mirror-copy.go 提供 mirror 的对象复制与批量删除原语.
-// 复制分两种路径: 同 endpoint 走服务端 CopyObject (零拷贝); 跨 endpoint 走
-// download -> upload (小文件直传, 大文件 Range 分片). 批量删除按 S3 上限分批.
-
 package action
 
 import (
@@ -16,8 +12,8 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/onmk613/s3cli/internal/api"
-	myprint "github.com/onmk613/s3cli/internal/fmtutil"
+	"github.com/onmk613/s3cli/pkg/api"
+	myprint "github.com/onmk613/s3cli/pkg/fmtutil"
 )
 
 // sameEndpoint 判断源/目标是否同一 endpoint, 是的话可用服务端 CopyObject.

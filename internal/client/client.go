@@ -9,12 +9,12 @@ import (
 	"strings"
 	"time"
 
-	"github.com/onmk613/s3cli/internal/api"
 	"github.com/onmk613/s3cli/internal/config"
+	"github.com/onmk613/s3cli/pkg/api"
 )
 
 // newBackendClient 构造自建的 api.Client.
-func newBackendClient(static config.Static, flags config.Flags) (api.S3Operations, error) {
+func newBackendClient(static config.Static, flags config.Flags) (*api.Client, error) {
 	return newS3Client(static, flags)
 }
 

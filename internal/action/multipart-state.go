@@ -1,7 +1,3 @@
-// multipart-state.go 实现本地断点续传状态文件的持久化:
-// 状态按 (本地路径, bucket, key) 哈希命名, 记录 uploadId / 分片大小 / 文件指纹,
-// 续传前会与服务端 ListParts 对账, 本地状态从不作为权威.
-
 package action
 
 import (
@@ -16,8 +12,8 @@ import (
 	"time"
 
 	"github.com/onmk613/s3cli/internal/action/render"
-	myprint "github.com/onmk613/s3cli/internal/fmtutil"
-	"github.com/onmk613/s3cli/internal/i18n"
+	myprint "github.com/onmk613/s3cli/pkg/fmtutil"
+	"github.com/onmk613/s3cli/pkg/i18n"
 )
 
 // multipartState persists only the information required to safely reconnect a

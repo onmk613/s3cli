@@ -1,8 +1,3 @@
-// bucket-acl.go 实现桶级 ACL 的读取与设置: Get/SetBucketACL.
-//
-// GET ?acl 返回原始 XML, 直接展示 (可缩进) 或以 --json 包装为 {"acl": "<xml>"};
-// PUT ?acl 只支持 canned ACL 头 (x-amz-acl) 与 grant 头 (x-amz-grant-*), 见 api.ACLOptions.
-
 package action
 
 import (
@@ -14,9 +9,9 @@ import (
 	"strings"
 
 	"github.com/onmk613/s3cli/internal/action/render"
-	"github.com/onmk613/s3cli/internal/api"
-	myprint "github.com/onmk613/s3cli/internal/fmtutil"
-	"github.com/onmk613/s3cli/internal/i18n"
+	"github.com/onmk613/s3cli/pkg/api"
+	myprint "github.com/onmk613/s3cli/pkg/fmtutil"
+	"github.com/onmk613/s3cli/pkg/i18n"
 )
 
 // ACLGetOptions 控制 `bucket acl get` / `object acl get` 的参数.

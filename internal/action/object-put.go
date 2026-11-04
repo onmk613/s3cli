@@ -1,6 +1,3 @@
-// object-put.go 实现对象上传 PutObject: 单文件与目录递归上传,
-// 走 RunStream 并发框架, 大文件自动分片, 支持 MIME 探测与默认跳过已存在对象.
-
 package action
 
 import (
@@ -13,9 +10,9 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/onmk613/s3cli/internal/api"
-	myprint "github.com/onmk613/s3cli/internal/fmtutil"
-	"github.com/onmk613/s3cli/internal/i18n"
+	"github.com/onmk613/s3cli/pkg/api"
+	myprint "github.com/onmk613/s3cli/pkg/fmtutil"
+	"github.com/onmk613/s3cli/pkg/i18n"
 )
 
 // PutOptions put 命令参数

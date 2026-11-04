@@ -1,6 +1,3 @@
-// mirror-manifest.go 实现 mirror 断点续传用的清单文件: 仅追加记录已成功复制的相对 key,
-// --resume 时读入并跳过这些 key. 清单只是加速提示, 服务端 ListParts 仍是续传权威.
-
 package action
 
 import (
@@ -11,7 +8,7 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/onmk613/s3cli/internal/i18n"
+	"github.com/onmk613/s3cli/pkg/i18n"
 )
 
 // mirrorManifest is append-only: a key is recorded only after its copy

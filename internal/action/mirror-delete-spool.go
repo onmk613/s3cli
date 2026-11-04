@@ -1,10 +1,3 @@
-// mirror-delete-spool.go 把 mirror --remove 的待删除 key 落到临时文件,
-// 避免超大目标端把整份删除清单驻留内存。
-//
-// 删除阶段必须等所有复制成功后才能开始 (见 copyAndDelete 的围栏语义),
-// 因此不能边归并边删; 但也没必要把 key 全量放内存: JSON lines + 临时文件
-// 让内存占用降到 O(batch), 同时保留 --max-delete 的"全量计数后再删"语义。
-
 package action
 
 import (
@@ -15,7 +8,7 @@ import (
 	"io"
 	"os"
 
-	"github.com/onmk613/s3cli/internal/i18n"
+	"github.com/onmk613/s3cli/pkg/i18n"
 )
 
 type deleteSpool struct {

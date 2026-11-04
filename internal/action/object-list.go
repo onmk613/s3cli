@@ -1,7 +1,3 @@
-// object-list.go 实现对象列举 ListObjects (ls), 支持:
-// --recursive/-r 递归, --versions 列版本, --incomplete/-I 列进行中分片上传,
-// --summarize 汇总 (对象数/总大小). bucket 为空时列桶.
-
 package action
 
 import (
@@ -9,9 +5,9 @@ import (
 	"strings"
 
 	"github.com/onmk613/s3cli/internal/action/render"
-	"github.com/onmk613/s3cli/internal/api"
-	myprint "github.com/onmk613/s3cli/internal/fmtutil"
-	"github.com/onmk613/s3cli/internal/i18n"
+	"github.com/onmk613/s3cli/pkg/api"
+	myprint "github.com/onmk613/s3cli/pkg/fmtutil"
+	"github.com/onmk613/s3cli/pkg/i18n"
 )
 
 // ListOptions ls 命令参数.

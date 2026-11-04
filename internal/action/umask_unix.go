@@ -1,7 +1,5 @@
 //go:build !windows
 
-// umask_unix.go 提供下载文件权限放宽所需的 umask 读取 (unix)。
-
 package action
 
 import (

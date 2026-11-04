@@ -1,6 +1,3 @@
-// multipart-upload.go 实现远端分片上传管理: 列出 (MpuList) 与中止 (MpuAbort) 服务端
-// 进行中的 multipart upload.
-
 package action
 
 import (
@@ -8,9 +5,9 @@ import (
 	"fmt"
 
 	"github.com/onmk613/s3cli/internal/action/render"
-	"github.com/onmk613/s3cli/internal/api"
-	myprint "github.com/onmk613/s3cli/internal/fmtutil"
-	"github.com/onmk613/s3cli/internal/i18n"
+	"github.com/onmk613/s3cli/pkg/api"
+	myprint "github.com/onmk613/s3cli/pkg/fmtutil"
+	"github.com/onmk613/s3cli/pkg/i18n"
 )
 
 // mpuListPageSize 是 ListMultipartUploads 的单页请求上限。

@@ -12,7 +12,7 @@ import (
 //
 // 修复前: 各 worker 在 ctx 取消时是"提前 return"而非记 failCount (正确, 取消
 // 不该被当成传输失败), 扫描器同理。当列举早已结束 (典型场景: 列举很快、传输
-// 很久) scanErr 也是空的, 于是 RunStream 返回 nil —— 上层 cmd/root.go 以退出码
+// 很久) scanErr 也是空的, 于是 RunStream 返回 nil —— 上层 internal/cmd/root.go 以退出码
 // 0 结束, Ctrl+C 被报告成"传输成功", 脚本会据此认为数据已完整同步。
 // 实测: 对慢速服务端 `get -r` 中途发 SIGINT, 修复前退出 0, 修复后 130。
 //

@@ -1,7 +1,3 @@
-// json_output_test.go 验证 --json 各命令输出合法且 schema 稳定
-// (schema 文档: docs/OUTPUT_SCHEMA.md)。
-// 基于内存 mock S3 服务端 + 自建 api 后端跑真实请求路径。
-
 package action
 
 import (
@@ -13,8 +9,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/onmk613/s3cli/internal/api"
-	myprint "github.com/onmk613/s3cli/internal/fmtutil"
+	"github.com/onmk613/s3cli/pkg/api"
+	myprint "github.com/onmk613/s3cli/pkg/fmtutil"
 )
 
 // captureStdout 捕获 fn 期间写入 os.Stdout 以及全局 myprint writer 的全部内容。
@@ -76,7 +72,7 @@ func newJSONTestClient(t *testing.T) *Action {
 	if err != nil {
 		t.Fatal(err)
 	}
-	return &Action{S3: api.S3Operations(builtin), Alias: "test", Ctx: context.Background()}
+	return &Action{S3: builtin, Alias: "test", Ctx: context.Background()}
 }
 
 // jsonLines 把输出按行拆分并断言每行都是合法 JSON, 返回解码后的 map 列表。

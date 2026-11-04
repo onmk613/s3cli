@@ -1,8 +1,3 @@
-// bucket-cors.go 实现桶 CORS 配置管理: Set/Get/DelCors.
-// SetCors 支持两种模式:
-//   - 参数模式: --id/--origin/--method/--allowed-header/--expose-header/--max-age 直接生成规则, 不依赖文件
-//   - 文件模式: -f/--from-file 或位置参数指定 JSON / XML 配置文件
-
 package action
 
 import (
@@ -11,9 +6,9 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/onmk613/s3cli/internal/api"
-	myprint "github.com/onmk613/s3cli/internal/fmtutil"
-	"github.com/onmk613/s3cli/internal/i18n"
+	"github.com/onmk613/s3cli/pkg/api"
+	myprint "github.com/onmk613/s3cli/pkg/fmtutil"
+	"github.com/onmk613/s3cli/pkg/i18n"
 )
 
 // CorsOptions 控制 SetCors 的参数.

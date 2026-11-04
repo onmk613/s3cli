@@ -1,14 +1,11 @@
-// bucket-notification.go 实现桶事件通知配置管理: Set/Get/DelNotification,
-// 输入为 AWS CLI 兼容的 JSON.
-
 package action
 
 import (
 	"fmt"
 
-	"github.com/onmk613/s3cli/internal/api"
-	myprint "github.com/onmk613/s3cli/internal/fmtutil"
-	"github.com/onmk613/s3cli/internal/i18n"
+	"github.com/onmk613/s3cli/pkg/api"
+	myprint "github.com/onmk613/s3cli/pkg/fmtutil"
+	"github.com/onmk613/s3cli/pkg/i18n"
 )
 
 // SetNotification 设置桶事件通知 (JSON, AWS CLI 兼容)

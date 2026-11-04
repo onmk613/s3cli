@@ -1,15 +1,12 @@
-// bucket-make.go 实现桶创建 (MakeBuckets), 支持在创建的同时一次性套用
-// CORS / Policy / Lifecycle / Versioning 配置.
-
 package action
 
 import (
 	"errors"
 	"fmt"
 
-	"github.com/onmk613/s3cli/internal/api"
-	myprint "github.com/onmk613/s3cli/internal/fmtutil"
-	"github.com/onmk613/s3cli/internal/i18n"
+	"github.com/onmk613/s3cli/pkg/api"
+	myprint "github.com/onmk613/s3cli/pkg/fmtutil"
+	"github.com/onmk613/s3cli/pkg/i18n"
 )
 
 // 创建存储桶的同时设置cors、policy、lifecycle

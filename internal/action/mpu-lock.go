@@ -1,11 +1,3 @@
-// mpu-lock.go 串行化同一断点续传目标的跨进程并发上传。
-//
-// 状态文件按 sha256(absPath|bucket|key) 命名, 但没有任何互斥: 两个 s3cli
-// 进程同时上传同一 (文件, 桶, key) 时各自 CreateMultipartUpload、互相覆盖
-// 状态文件, 先写者的 uploadID 成为服务端孤儿分片 (持续占存储直到生命周期
-// 清理)。这里在状态文件旁放置 <state>.lock, 以系统级文件锁 (unix: flock,
-// windows: LockFileEx) 做非阻塞独占: 拿不到锁说明另一进程正在传同一目标,
-// 直接报错让用户决策, 而不是静默制造孤儿上传。
 package action
 
 import (

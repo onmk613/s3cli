@@ -1,6 +1,3 @@
-// stream.go 实现流式传输框架 RunStream: 扫描 -> 并发处理 -> 进度跟踪,
-// 统一支撑 put/get/cp/mv 的批量并发传输, 带可选的预统计 (Count) 与进度条.
-
 package action
 
 import (
@@ -11,10 +8,10 @@ import (
 	"sync"
 	"sync/atomic"
 
-	"github.com/onmk613/s3cli/internal/api"
-	"github.com/onmk613/s3cli/internal/fmtutil"
-	"github.com/onmk613/s3cli/internal/i18n"
-	"github.com/onmk613/s3cli/internal/progress"
+	"github.com/onmk613/s3cli/pkg/api"
+	"github.com/onmk613/s3cli/pkg/fmtutil"
+	"github.com/onmk613/s3cli/pkg/i18n"
+	"github.com/onmk613/s3cli/pkg/progress"
 )
 
 // StreamJob 流式操作中的一个任务。
@@ -215,7 +212,7 @@ func RunStream(ctx context.Context, cfg StreamConfig) error {
 	// 各 worker 在 ctx 取消时是"提前 return"而不是记 failCount (见上面的
 	// `if ctx.Err() != nil { return }`), 扫描器同理; 若列举早已结束 (典型场景:
 	// 列举很快、传输很久), scanErr 也是空的 —— 于是本函数会返回 nil, 上层
-	// cmd/root.go 便以退出码 0 结束。Ctrl+C 被报告成"传输成功", 脚本据此认为
+	// internal/cmd/root.go 便以退出码 0 结束。Ctrl+C 被报告成"传输成功", 脚本据此认为
 	// 数据已完整同步。这里补上唯一的权威判据: ctx 已取消就是未完成。
 	// 放在 scanErr 之前: 取消时的扫描错误通常是取消的副作用, 报 130 更准确。
 	if err := ctx.Err(); err != nil {

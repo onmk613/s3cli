@@ -1,6 +1,3 @@
-// object-mv.go 实现同 endpoint 内的对象移动 Mv (mv) = copy + delete 源;
-// 参数 (--recursive/-r / --storage-class/--sc / --tags / --metadata).
-
 package action
 
 import (
@@ -10,10 +7,10 @@ import (
 	"path"
 	"strings"
 
-	"github.com/onmk613/s3cli/internal/api"
-	myprint "github.com/onmk613/s3cli/internal/fmtutil"
-	"github.com/onmk613/s3cli/internal/i18n"
 	"github.com/onmk613/s3cli/internal/s3path"
+	"github.com/onmk613/s3cli/pkg/api"
+	myprint "github.com/onmk613/s3cli/pkg/fmtutil"
+	"github.com/onmk613/s3cli/pkg/i18n"
 )
 
 // Mv 移动对象 = copy + delete

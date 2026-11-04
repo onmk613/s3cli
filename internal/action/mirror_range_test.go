@@ -1,8 +1,3 @@
-// mirror_range_test.go 锁定跨端分片复制的 Range 响应校验语义。
-//
-// 背景: 旧实现发出 bytes=offset-end 后直接 io.ReadAll, 不校验 Content-Range
-// 与长度 —— 个别网关会忽略 Range 头返回 200 全量对象, 分片错位后最终对象
-// 静默损坏。这里用"忽略 Range 的服务端"复现该场景, 断言复制失败且 Abort 被调用。
 package action
 
 import (

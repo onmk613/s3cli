@@ -1,6 +1,3 @@
-// bucket-public-access_test.go 覆盖 `bucket public-access-block set`:
-// 命令行未设置的开关不得被"顺带打开" —— 只有显式给出的项才会写入请求体。
-
 package action
 
 import (

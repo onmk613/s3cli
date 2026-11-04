@@ -1,6 +1,3 @@
-// awsfile.go 提供 AWS CLI 兼容配置文件 (CORS/Lifecycle/Policy 等) 的读取与解析,
-// 自动识别 JSON / XML 并处理 BOM, 供各 bucket 子资源配置命令复用.
-
 package action
 
 import (
@@ -11,7 +8,7 @@ import (
 	"os"
 	"strings"
 
-	"github.com/onmk613/s3cli/internal/i18n"
+	"github.com/onmk613/s3cli/pkg/i18n"
 )
 
 // loadAWSConfigFile 读取 AWS 配置文件 (CORS/Lifecycle/Policy 等)

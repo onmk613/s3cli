@@ -1,8 +1,3 @@
-// lifecycle_flow_test.go 覆盖 bucket-lifecycle.go 的主流程 (set/rule/remove),
-// 此前该 854 行文件只有 parseLifecycleConfig 的解析单测。
-//
-// 手法: 有状态的生命周期 mock 服务端 (PUT ?lifecycle 存储、GET 回放、
-// DELETE 清空), 断言每次落库的规则集合与各入口的校验语义。
 package action
 
 import (
@@ -16,7 +11,7 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/onmk613/s3cli/internal/api"
+	"github.com/onmk613/s3cli/pkg/api"
 )
 
 // lifecycleServer 是一个只实现 lifecycle 子资源的有状态服务端。

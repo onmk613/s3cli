@@ -1,7 +1,3 @@
-// stat.go 实现元信息展示 (StatObjects):
-// 对象输出 Name/Date/Size/ETag/Type/Metadata; 桶输出属性 (Versioning/Location/
-// Anonymous/ILM) 与用量统计; 支持 --json 与 -r/--recursive.
-
 package action
 
 import (
@@ -12,9 +8,9 @@ import (
 	"time"
 
 	"github.com/onmk613/s3cli/internal/action/render"
-	"github.com/onmk613/s3cli/internal/api"
-	myprint "github.com/onmk613/s3cli/internal/fmtutil"
-	"github.com/onmk613/s3cli/internal/i18n"
+	"github.com/onmk613/s3cli/pkg/api"
+	myprint "github.com/onmk613/s3cli/pkg/fmtutil"
+	"github.com/onmk613/s3cli/pkg/i18n"
 )
 
 // StatOptions stat 命令参数.

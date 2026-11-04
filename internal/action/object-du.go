@@ -1,6 +1,3 @@
-// object-du.go 实现磁盘占用统计 DuObject:
-// 默认输出前缀总大小; --recursive/-r 按目录层级输出各前缀占用, --depth/-d 限制层级.
-
 package action
 
 import (
@@ -9,9 +6,9 @@ import (
 	"strings"
 
 	"github.com/onmk613/s3cli/internal/action/render"
-	"github.com/onmk613/s3cli/internal/api"
-	myprint "github.com/onmk613/s3cli/internal/fmtutil"
-	"github.com/onmk613/s3cli/internal/i18n"
+	"github.com/onmk613/s3cli/pkg/api"
+	myprint "github.com/onmk613/s3cli/pkg/fmtutil"
+	"github.com/onmk613/s3cli/pkg/i18n"
 )
 
 // DuOptions du 命令参数.

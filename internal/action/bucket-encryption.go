@@ -1,6 +1,3 @@
-// bucket-encryption.go 实现桶默认服务端加密配置管理:
-// Set/Get/DelEncryption, 支持命令行参数或 AWS CLI 兼容 JSON 文件两种输入方式.
-
 package action
 
 import (
@@ -8,9 +5,9 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/onmk613/s3cli/internal/api"
-	myprint "github.com/onmk613/s3cli/internal/fmtutil"
-	"github.com/onmk613/s3cli/internal/i18n"
+	"github.com/onmk613/s3cli/pkg/api"
+	myprint "github.com/onmk613/s3cli/pkg/fmtutil"
+	"github.com/onmk613/s3cli/pkg/i18n"
 )
 
 // EncryptionOptions set encryption 命令参数

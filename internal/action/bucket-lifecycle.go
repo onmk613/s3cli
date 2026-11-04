@@ -1,13 +1,3 @@
-// bucket-lifecycle.go 实现桶生命周期配置管理.
-//
-// 三个入口, 与其他桶配置命令 (cors/policy/encryption) 风格一致:
-//   - SetLifecycleRule    set     --id/--prefix/--expire-days/... upsert 单条规则;
-//                                 -f 文件整体替换整份配置
-//   - RemoveLifecycleRules remove --id 删单条; --all --force 清空
-//   - ListLifecycle       list    表格或 --json 输出整份配置
-//
-// 兼容保留: SetLifecycle (bucket create --set-lifecycle 使用).
-
 package action
 
 import (
@@ -25,9 +15,9 @@ import (
 	"time"
 
 	"github.com/onmk613/s3cli/internal/action/render"
-	"github.com/onmk613/s3cli/internal/api"
-	myprint "github.com/onmk613/s3cli/internal/fmtutil"
-	"github.com/onmk613/s3cli/internal/i18n"
+	"github.com/onmk613/s3cli/pkg/api"
+	myprint "github.com/onmk613/s3cli/pkg/fmtutil"
+	"github.com/onmk613/s3cli/pkg/i18n"
 )
 
 // LifecycleOptions 控制 SetLifecycle 的参数 (兼容旧入口).

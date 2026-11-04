@@ -1,11 +1,3 @@
-// object-lock.go 实现 Object Lock 相关动作:
-//   - 桶级默认保留配置: Get/SetObjectLockConfiguration (`bucket object-lock get|set`)
-//   - 对象级保留设置:   Get/SetObjectRetention      (`object retention get|set`)
-//   - 对象级法律留存:   Get/SetObjectLegalHold      (`object legal-hold get|set`)
-//
-// 注意: api.PutObjectRetention / PutObjectLegalHold 的签名不接收 bypass-governance
-// 开关, 因此命令行不提供 --bypass-governance (宁可不给, 也不静默忽略)。
-
 package action
 
 import (
@@ -15,9 +7,9 @@ import (
 	"time"
 
 	"github.com/onmk613/s3cli/internal/action/render"
-	"github.com/onmk613/s3cli/internal/api"
-	myprint "github.com/onmk613/s3cli/internal/fmtutil"
-	"github.com/onmk613/s3cli/internal/i18n"
+	"github.com/onmk613/s3cli/pkg/api"
+	myprint "github.com/onmk613/s3cli/pkg/fmtutil"
+	"github.com/onmk613/s3cli/pkg/i18n"
 )
 
 // ObjectLockConfigOptions 控制 `bucket object-lock set` 的参数.

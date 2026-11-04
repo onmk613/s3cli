@@ -1,8 +1,3 @@
-// object-del.go 实现对象删除 DeleteObjects, 支持:
-// --recursive/-r (需 --force), --versions, --version-id/--vid, --incomplete/-I,
-// --dry-run, --older-than/--newer-than, --stdin, --non-current.
-// 批量删除按 S3 上限分批, 并清理删除后变空的目录标记对象.
-
 package action
 
 import (
@@ -13,9 +8,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/onmk613/s3cli/internal/api"
-	myprint "github.com/onmk613/s3cli/internal/fmtutil"
-	"github.com/onmk613/s3cli/internal/i18n"
+	"github.com/onmk613/s3cli/pkg/api"
+	myprint "github.com/onmk613/s3cli/pkg/fmtutil"
+	"github.com/onmk613/s3cli/pkg/i18n"
 )
 
 // DelOptions rm 命令参数.

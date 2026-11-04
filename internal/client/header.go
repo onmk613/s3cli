@@ -1,10 +1,3 @@
-// header.go 解析 CLI 的 -H/--header 自定义请求头。
-//
-// 这些头由 api 层在 SigV4 签名之前注入 (api.Options.ExtraHeaders), 而不是通过
-// RoundTripper 在签名之后追加 —— 签名覆盖除 Authorization / User-Agent /
-// Accept-Encoding 之外的全部头, 事后注入会让服务端算出不同的规范请求, 结果是
-// 毫无线索的 SignatureDoesNotMatch。
-
 package client
 
 import (

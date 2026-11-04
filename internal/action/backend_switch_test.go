@@ -1,13 +1,10 @@
-// backend_switch_test.go 用自建请求后端 (api.Client) 跑双后端一致性断言.
-// 本文件基于内存 mock 服务端验证 api 后端的核心操作语义.
-
 package action
 
 import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/onmk613/s3cli/internal/api"
+	"github.com/onmk613/s3cli/pkg/api"
 )
 
 // TestActionParityS3API 用 api.Client 后端跑 runParityScenarios.
@@ -25,5 +22,5 @@ func TestActionParityS3API(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	runParityScenarios(t, "api-builtin", api.S3Operations(builtin))
+	runParityScenarios(t, "api-builtin", builtin)
 }

@@ -1,9 +1,3 @@
-// bucket-notification_test.go 覆盖 `bucket event set/get` 的端到端路径:
-// AWS CLI 兼容 JSON --(action 加载)--> DTO --(XML 线协议)--> 服务端 --(XML)--> DTO.
-//
-// 回归背景: 通知 DTO 此前没有 json tag, 用 aws s3api 导出的标准 JSON (LambdaFunctionArn /
-// Filter.Key) 会被忽略, 报"未找到通知配置"。
-
 package action
 
 import (
@@ -14,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/onmk613/s3cli/internal/api"
+	"github.com/onmk613/s3cli/pkg/api"
 )
 
 // testNotificationAction 构造一个指向内存 mock 服务端的 Action, 并返回 mock 以便

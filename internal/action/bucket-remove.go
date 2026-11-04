@@ -1,13 +1,11 @@
-// bucket-remove.go 实现桶删除 (RemoveBuckets); --force 时先清空全部对象与版本再删桶.
-
 package action
 
 import (
 	"fmt"
 
-	"github.com/onmk613/s3cli/internal/api"
-	myprint "github.com/onmk613/s3cli/internal/fmtutil"
-	"github.com/onmk613/s3cli/internal/i18n"
+	"github.com/onmk613/s3cli/pkg/api"
+	myprint "github.com/onmk613/s3cli/pkg/fmtutil"
+	"github.com/onmk613/s3cli/pkg/i18n"
 )
 
 type RemoveBucketOptions struct {

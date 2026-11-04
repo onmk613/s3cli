@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/onmk613/s3cli/internal/api"
+	"github.com/onmk613/s3cli/pkg/api"
 )
 
 func setupMpuHome(t *testing.T) string {

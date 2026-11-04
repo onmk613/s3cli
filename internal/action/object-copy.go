@@ -1,7 +1,3 @@
-// object-copy.go 实现同 endpoint 内的对象复制 CopyObjects (cp, 支持:
-// --recursive/-r / --storage-class/--sc / --tags / --metadata),
-// 单文件直传与目录递归 (走 RunStream), 目标 key 解析复用 s3path 规则.
-
 package action
 
 import (
@@ -11,10 +7,10 @@ import (
 	"path"
 	"strings"
 
-	"github.com/onmk613/s3cli/internal/api"
-	myprint "github.com/onmk613/s3cli/internal/fmtutil"
-	"github.com/onmk613/s3cli/internal/i18n"
 	"github.com/onmk613/s3cli/internal/s3path"
+	"github.com/onmk613/s3cli/pkg/api"
+	myprint "github.com/onmk613/s3cli/pkg/fmtutil"
+	"github.com/onmk613/s3cli/pkg/i18n"
 )
 
 // CopyOptions cp/mv 命令参数.

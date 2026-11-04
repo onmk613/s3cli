@@ -1,6 +1,3 @@
-// info.go 实现元信息查看 Info: 桶或对象均可, 输出 JSON.
-// 支持 --recursive/-r 遍历对象与 --version-id/--vid 指定版本.
-
 package action
 
 import (
@@ -8,9 +5,9 @@ import (
 	"fmt"
 
 	"github.com/onmk613/s3cli/internal/action/render"
-	"github.com/onmk613/s3cli/internal/api"
-	myprint "github.com/onmk613/s3cli/internal/fmtutil"
-	"github.com/onmk613/s3cli/internal/i18n"
+	"github.com/onmk613/s3cli/pkg/api"
+	myprint "github.com/onmk613/s3cli/pkg/fmtutil"
+	"github.com/onmk613/s3cli/pkg/i18n"
 )
 
 // InfoOptions info/stat 命令参数.

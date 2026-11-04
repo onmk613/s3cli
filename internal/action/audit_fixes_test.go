@@ -1,9 +1,3 @@
-// audit_fixes_test.go — 2026-08 全面审计后的回归测试:
-//  1. rm -r --force 桶根 (prefix="") 不得触发 DeleteBucket (空 key 的 DELETE /bucket)
-//  2. cp/mv 同桶前缀重叠守卫 (见 TestCopyMovePrefixOverlapGuard)
-//  3. 断点续传放弃旧 uploadID 前 Abort 服务端分片上传
-//  4. rm --stdin / rm -I / mpu abort 批量部分失败返回错误
-//  5. 目录复制到已存在文件对象时报错 (不再坍缩覆盖)
 package action
 
 import (

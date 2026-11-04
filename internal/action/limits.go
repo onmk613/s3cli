@@ -1,23 +1,9 @@
-// limits.go 集中定义并校验用户可调的数值型参数上界。
-//
-// 背景: --concurrency 与 --part-size 直接决定 channel 容量、goroutine 数量与
-// 分片缓冲区大小。此前二者都没有上界校验:
-//   - `get -r a:b/ out --concurrency 9223372036854775807` 在
-//     make(chan StreamJob, cfg.Concurrency*2) 处直接 panic (makechan: size out
-//     of range) 并把 goroutine 栈回溯打给用户;
-//   - 稍小的值 (如 10^8) 不 panic 但会尝试申请同等规模的缓冲区, 直接 OOM;
-//   - `--part-size` 只被钳到 S3 协议上限 5GiB, 配合每对象 4 路并发分片
-//     (multipartConcurrency), 峰值内存可达 ~20GiB。
-//
-// 这些值全部来自用户输入 (flag / 别名配置 / 环境变量), 属于必须在边界处
-// fail-fast 的范畴。上界取"远超任何合理用法、但不会打爆进程"的量级。
-
 package action
 
 import (
 	"fmt"
 
-	"github.com/onmk613/s3cli/internal/i18n"
+	"github.com/onmk613/s3cli/pkg/i18n"
 )
 
 const (

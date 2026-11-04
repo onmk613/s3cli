@@ -1,10 +1,3 @@
-// bucket-cors_test.go 覆盖 `bucket cors set --from-file/get` 的端到端路径:
-// AWS CLI 兼容 JSON --(action 加载)--> DTO --(XML 线协议)--> 服务端 --(XML)--> DTO。
-//
-// 回归背景: CorsRule 的 json tag 曾是单数 (AllowedOrigin), 与 AWS CLI 的复数键
-// (AllowedOrigins) 不一致, 于是从 aws s3api 复制来的 AWS 风格 JSON 会被解析成空壳规则
-// (只剩 ID/MaxAgeSeconds), 却一路"成功"发到服务端。
-
 package action
 
 import (

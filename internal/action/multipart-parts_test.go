@@ -1,8 +1,3 @@
-// multipart-parts_test.go 锁定 runPartPipeline 的错误传播与并发语义。
-//
-// 重点: 生产者读错误 readErr 的写 -> 读同步。历史上 worker 在取消时存在
-// 不经 jobs 关闭的提前退出路径, wg.Wait() 可能先于生产者写 readErr 返回,
-// 构成数据竞争 (go test -race 可检出); 修复方式是把生产者纳入同一 WaitGroup。
 package action
 
 import (
@@ -13,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/onmk613/s3cli/internal/api"
+	"github.com/onmk613/s3cli/pkg/api"
 )
 
 // TestRunPartPipelineReadErrAfterWorkersExited 验证: worker 因外层取消提前

@@ -1,0 +1,128 @@
+package api
+
+import (
+	"bytes"
+	"context"
+	"encoding/xml"
+	"io"
+	"net/http"
+	"net/url"
+)
+
+// EncodeTagging 把标签集合编码为 x-amz-tagging 头使用的 "k1=v1&k2=v2" 形式.
+//
+// 用于需要把标签集合转成请求头的场景, 例如分片上传 / 分片复制只能在
+// CreateMultipartUpload 阶段指定标签。
+func EncodeTagging(tags []Tagging) string {
+	if len(tags) == 0 {
+		return ""
+	}
+	q := make(url.Values, len(tags))
+	for _, t := range tags {
+		q.Set(t.Key, t.Value)
+	}
+	return q.Encode()
+}
+
+// SetObjectTagging 设置对象的标签集合.
+//
+// 可选 versionID 指定版本.
+func (c *Client) SetObjectTagging(ctx context.Context, bucket, key string, tags []Tagging, versionID string) error {
+	cfg := taggingConfig{}
+	cfg.TagSet.Tag = tags
+	body, err := xml.Marshal(&cfg)
+	if err != nil {
+		return err
+	}
+	body = append([]byte(xml.Header), body...)
+
+	urlValues := make(url.Values)
+	urlValues.Set("tagging", "")
+	if versionID != "" {
+		urlValues.Set("versionId", versionID)
+	}
+
+	reqMeta := requestMetadata{
+		bucketName:       bucket,
+		objectName:       key,
+		queryValues:      urlValues,
+		contentBody:      bytes.NewReader(body),
+		contentLength:    int64(len(body)),
+		contentMD5Base64: sumMD5Base64(body),
+		contentSHA256Hex: sumSHA256Hex(body),
+		customHeader: http.Header{
+			"Content-Type": []string{"application/xml"},
+		},
+	}
+
+	resp, err := c.Do(ctx, http.MethodPut, reqMeta)
+	if err != nil {
+		return err
+	}
+	defer func(Body io.ReadCloser) {
+		_ = Body.Close()
+	}(resp.Body)
+	return nil
+}
+
+// GetObjectTagging 获取对象的标签集合.
+//
+// 可选 versionID 指定版本.
+func (c *Client) GetObjectTagging(ctx context.Context, bucket, key, versionID string) ([]Tagging, error) {
+	urlValues := make(url.Values)
+	urlValues.Set("tagging", "")
+	if versionID != "" {
+		urlValues.Set("versionId", versionID)
+	}
+
+	reqMeta := requestMetadata{
+		bucketName:  bucket,
+		objectName:  key,
+		queryValues: urlValues,
+	}
+
+	resp, err := c.Do(ctx, http.MethodGet, reqMeta)
+	if err != nil {
+		// 多数实现返回 200 + 空 TagSet; 少数在无标签时回 404 NoSuchTagSet,
+		// 与桶标签保持一致, 统一归一为空集合。
+		if HasCode(err, "NoSuchTagSet") {
+			return nil, nil
+		}
+		return nil, err
+	}
+	defer func(Body io.ReadCloser) {
+		_ = Body.Close()
+	}(resp.Body)
+
+	var result taggingConfig
+	if err := xmlDecoder(resp.Body, &result); err != nil {
+		return nil, err
+	}
+	return result.TagSet.Tag, nil
+}
+
+// DeleteObjectTagging 删除对象的标签集合.
+//
+// 可选 versionID 指定版本.
+func (c *Client) DeleteObjectTagging(ctx context.Context, bucket, key, versionID string) error {
+	urlValues := make(url.Values)
+	urlValues.Set("tagging", "")
+	if versionID != "" {
+		urlValues.Set("versionId", versionID)
+	}
+
+	reqMeta := requestMetadata{
+		bucketName:  bucket,
+		objectName:  key,
+		queryValues: urlValues,
+	}
+
+	resp, err := c.Do(ctx, http.MethodDelete, reqMeta)
+	if err != nil {
+		return err
+	}
+	defer func(Body io.ReadCloser) {
+		_ = Body.Close()
+	}(resp.Body)
+	return nil
+}

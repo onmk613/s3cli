@@ -1,4 +1,3 @@
-// Package s3path 提供对 "alias:bucket/key" 形态 S3 路径的解析与目标 key 解析。
 package s3path
 
 import (

@@ -1,11 +1,3 @@
-// mirror_flow_test.go 覆盖 Mirror 主流程 (此前 Mirror / streamObjects / dryRun
-// 均为 0% 覆盖)。
-//
-// mirror 是 README 的头号同步特性, 而且它的"复制阶段"与"删除阶段"之间有数据
-// 安全围栏: 只要有任何一个对象复制失败, 就绝不能进入 --remove 的删除阶段 ——
-// 否则一次网络抖动就会把目标端"看起来多余"的对象成批删掉, 而那些对象本该被
-// 失败的那次复制更新。本文件把这个围栏锁进测试。
-
 package action
 
 import (
@@ -21,7 +13,7 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/onmk613/s3cli/internal/api"
+	"github.com/onmk613/s3cli/pkg/api"
 )
 
 // mirrorServer 是一个双 bucket 的内存 S3 服务端, 支持 mirror 需要的
@@ -178,7 +170,7 @@ func mirrorAction(t *testing.T, s *mirrorServer, alias string) *Action {
 	if err != nil {
 		t.Fatal(err)
 	}
-	return &Action{S3: api.S3Operations(builtin), Alias: alias, Ctx: context.Background()}
+	return &Action{S3: builtin, Alias: alias, Ctx: context.Background()}
 }
 
 func mirrorOpts(t *testing.T, s *mirrorServer) MirrorOptions {

@@ -1,5 +1,3 @@
-// share.go 实现预签名 URL 生成 Share, 同时支持 SigV4 (默认, 最长 7 天) 与 SigV2 (--v2, 兼容旧服务).
-
 package action
 
 import (
@@ -7,9 +5,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/onmk613/s3cli/internal/api"
-	myprint "github.com/onmk613/s3cli/internal/fmtutil"
-	"github.com/onmk613/s3cli/internal/i18n"
+	"github.com/onmk613/s3cli/pkg/api"
+	myprint "github.com/onmk613/s3cli/pkg/fmtutil"
+	"github.com/onmk613/s3cli/pkg/i18n"
 )
 
 // ShareOptions Share 参数

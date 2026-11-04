@@ -5,8 +5,6 @@ set -euo pipefail
 #   ./build.sh        编译当前平台
 #   ./build.sh all    全平台交叉编译
 
-# 构建脚本不应有副作用: 不在构建时改写源码 (gofmt -w) 或依赖清单 (go mod tidy)。
-# 格式化交给开发者/CI 的 gofmt -l 检查, tidy 交给 go mod tidy -diff。
 rm -rf bin/
 
 ALL=""
@@ -32,13 +30,13 @@ else
 fi
 GOVERSION=$(go version | awk '{print $3}')
 
-# 版本变量位于 cmd/root.go（包路径 s3cli/cmd）。
-# 此前误写为 internal/cmd，链接器对不存在的符号静默忽略，导致版本信息从未注入。
+# 版本变量位于 internal/cmd/root.go（包路径 internal/cmd）。
+# 链接器对不存在的符号静默忽略，因此这里的包路径必须与源码保持一致。
 LDFLAGS="-s -w \
-  -X 'github.com/onmk613/s3cli/cmd.Version=${VERSION}' \
-  -X 'github.com/onmk613/s3cli/cmd.Commit=${COMMIT}' \
-  -X 'github.com/onmk613/s3cli/cmd.BuildDate=${DATE}' \
-  -X 'github.com/onmk613/s3cli/cmd.GoVersion=${GOVERSION}'"
+  -X 'github.com/onmk613/s3cli/internal/cmd.Version=${VERSION}' \
+  -X 'github.com/onmk613/s3cli/internal/cmd.Commit=${COMMIT}' \
+  -X 'github.com/onmk613/s3cli/internal/cmd.BuildDate=${DATE}' \
+  -X 'github.com/onmk613/s3cli/internal/cmd.GoVersion=${GOVERSION}'"
 
 ENTRY=.
 

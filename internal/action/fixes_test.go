@@ -1,14 +1,3 @@
-// fixes_test.go — 针对本轮修复的回归测试:
-//  1. mirror 删除失败不再被吞 (copyAndDelete 返回删除错误)
-//  2. 跨端分片复制失败/取消时用 WithoutCancel 清理服务端分片上传
-//  3. MPU 服务端列举翻页 (MpuList / MpuAbort / findUploadKey / rm -I)
-//  4. stat 用量统计不再静默吞掉列举错误
-//  5. put 目录扫描感知取消; RunStream 返回前 join 全部扫描协程
-//  6. cp/mv 目录复制跳过 0 字节目录占位对象
-//  7. 断点续传 NoSuchUpload 自愈 + 其它 ListParts 错误提示 local-clear
-//  8. rm --include/--exclude 按相对参数前缀的相对 key 匹配 (与 mirror 一致)
-//  9. checkIfDirectory 不再把同名前缀文件误判为目录
-
 package action
 
 import (
@@ -26,7 +15,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/onmk613/s3cli/internal/api"
+	"github.com/onmk613/s3cli/pkg/api"
 )
 
 // =============== Fix 1: mirror 删除失败传播 ===============

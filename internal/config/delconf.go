@@ -7,8 +7,8 @@ import (
 	"os"
 	"strings"
 
-	myprint "github.com/onmk613/s3cli/internal/fmtutil"
-	"github.com/onmk613/s3cli/internal/i18n"
+	myprint "github.com/onmk613/s3cli/pkg/fmtutil"
+	"github.com/onmk613/s3cli/pkg/i18n"
 )
 
 // DelConf 从配置文件中删除指定别名 section (alias del)。

@@ -1,14 +1,11 @@
-// bucket-config-common.go 提供桶子资源 (CORS/Lifecycle/Encryption/Notification 等)
-// 配置命令的通用辅助: pretty-JSON 打印、删除样板、AWS CLI 兼容 JSON 加载.
-
 package action
 
 import (
 	"fmt"
 
 	"github.com/onmk613/s3cli/internal/action/render"
-	myprint "github.com/onmk613/s3cli/internal/fmtutil"
-	"github.com/onmk613/s3cli/internal/i18n"
+	myprint "github.com/onmk613/s3cli/pkg/fmtutil"
+	"github.com/onmk613/s3cli/pkg/i18n"
 )
 
 // printBucketConfigJSON 把桶级配置以 pretty JSON 打印, 统一了各 GetXxx 的输出样板。

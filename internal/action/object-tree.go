@@ -1,6 +1,3 @@
-// object-tree.go 实现对象树形展示 TreeObjects: 把扁平 key 组织成目录树,
-// 支持最大深度与叶子大小展示.
-
 package action
 
 import (
@@ -9,9 +6,9 @@ import (
 	"strings"
 
 	"github.com/onmk613/s3cli/internal/action/render"
-	"github.com/onmk613/s3cli/internal/api"
-	myprint "github.com/onmk613/s3cli/internal/fmtutil"
-	"github.com/onmk613/s3cli/internal/i18n"
+	"github.com/onmk613/s3cli/pkg/api"
+	myprint "github.com/onmk613/s3cli/pkg/fmtutil"
+	"github.com/onmk613/s3cli/pkg/i18n"
 )
 
 // TreeOptions tree 命令参数.

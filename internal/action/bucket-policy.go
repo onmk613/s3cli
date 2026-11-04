@@ -1,15 +1,3 @@
-// bucket-policy.go 实现桶访问策略 (Bucket Policy) 管理:
-// SetPolicy (permission 参数直接生成策略, 不依赖文件) / GetPolicy / DelPolicy.
-//
-// permission 取值: private / download / upload / public.
-// 兼容旧名: none -> private, public-read -> download, public-write -> upload,
-// public-read-write -> public. 预定义策略语句结构:
-//
-//	download: GetBucketLocation + ListBucket + GetObject
-//	upload:   GetBucketLocation + ListBucketMultipartUploads + Put/Delete/Abort/ListParts
-//	public:   以上并集
-//	private:  删除策略
-
 package action
 
 import (
@@ -20,9 +8,9 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/onmk613/s3cli/internal/api"
-	myprint "github.com/onmk613/s3cli/internal/fmtutil"
-	"github.com/onmk613/s3cli/internal/i18n"
+	"github.com/onmk613/s3cli/pkg/api"
+	myprint "github.com/onmk613/s3cli/pkg/fmtutil"
+	"github.com/onmk613/s3cli/pkg/i18n"
 )
 
 // PolicyOptions 控制 SetPolicy 的参数.

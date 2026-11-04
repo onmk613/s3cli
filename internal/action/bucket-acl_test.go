@@ -1,9 +1,3 @@
-// bucket-acl_test.go 覆盖 `bucket acl set` / `object acl set` 的参数校验与
-// 实际发出的 HTTP 请求 (路径 / 查询参数 / x-amz-acl 与 x-amz-grant-* 头)。
-//
-// 校验必须在本地完成: 一个"什么都没设置"的 PUT ?acl 会静默失败或被服务端拒绝,
-// 不如直接报错并指明缺少哪些 flag。
-
 package action
 
 import (

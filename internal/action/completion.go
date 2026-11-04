@@ -1,12 +1,9 @@
-// completion.go 提供 shell 补全所需的桶/对象列举 (CompleteBucket / CompleteKey),
-// 仅返回候选列表不做任何打印, 供 cobra ValidArgsFunction 调用.
-
 package action
 
 import (
 	"strings"
 
-	"github.com/onmk613/s3cli/internal/api"
+	"github.com/onmk613/s3cli/pkg/api"
 )
 
 // CompleteBucket 返回当前 alias 下所有 bucket 名（已按 prefix 过滤，最多 max 个）。

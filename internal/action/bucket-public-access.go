@@ -1,6 +1,3 @@
-// bucket-public-access.go 实现桶级公共访问阻断 (Public Access Block) 配置管理:
-// Get/Set/DelPublicAccessBlock.
-
 package action
 
 import (
@@ -8,9 +5,9 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/onmk613/s3cli/internal/api"
-	myprint "github.com/onmk613/s3cli/internal/fmtutil"
-	"github.com/onmk613/s3cli/internal/i18n"
+	"github.com/onmk613/s3cli/pkg/api"
+	myprint "github.com/onmk613/s3cli/pkg/fmtutil"
+	"github.com/onmk613/s3cli/pkg/i18n"
 )
 
 // PublicAccessBlockOptions 控制 `bucket public-access-block set` 的参数.

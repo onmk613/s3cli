@@ -3,7 +3,7 @@ package render
 import (
 	"sort"
 
-	"github.com/onmk613/s3cli/internal/fmtutil"
+	"github.com/onmk613/s3cli/pkg/fmtutil"
 )
 
 // TreeNode 是树形渲染所需的最小节点视图。调用方负责把业务对象
@@ -22,16 +22,16 @@ type TreeOptions struct {
 	MaxDepth int  // 最大深度, 0 = 不限
 }
 
-// TreeStats 是渲染过程中统计出的规模信息。
+// TreeStats 是渲染过程中统计出的规模信息
 type TreeStats struct {
 	Files     int
 	Dirs      int
 	TotalSize int64
 }
 
-// sortedChildren 返回排序后的子节点: 目录在前、文件在后, 同类按名称。
+// sortedChildren 返回排序后的子节点: 目录在前、文件在后, 同类按名称
 // 这个顺序是 tree 输出的既有约定, 渲染层与统计层必须共用同一份实现,
-// 否则 --json 的计数会与文本模式的可见行不一致。
+// 否则 --json 的计数会与文本模式的可见行不一致
 func (n *TreeNode) sortedChildren() []TreeNode {
 	out := make([]TreeNode, len(n.Children))
 	copy(out, n.Children)
@@ -44,7 +44,7 @@ func (n *TreeNode) sortedChildren() []TreeNode {
 	return out
 }
 
-// PrintTree 从 root 开始绘制目录树并返回统计结果。
+// PrintTree 从 root 开始绘制目录树并返回统计结果
 func PrintTree(root TreeNode, opt TreeOptions) TreeStats {
 	var st TreeStats
 	printNode(&root, "", opt, 1, &st)
@@ -88,7 +88,7 @@ func printNode(n *TreeNode, prefix string, opt TreeOptions, depth int, st *TreeS
 }
 
 // CountTree 只统计不渲染: 与 PrintTree 共享同一套深度/文件可见性规则,
-// 保证 --json 模式下的计数与文本模式完全一致。
+// 保证 --json 模式下的计数与文本模式完全一致
 func CountTree(root TreeNode, opt TreeOptions) TreeStats {
 	var st TreeStats
 	countNode(&root, opt, 1, &st)

@@ -1,16 +1,11 @@
-// object-acl.go 实现对象级 ACL 的读取与设置: Get/SetObjectACL.
-//
-// 与桶级 ACL 共用 ACLGetOptions / ACLSetOptions 与 printACL,
-// 区别仅在于路径带对象 key, 并可选 --version-id 指定版本。
-
 package action
 
 import (
 	"errors"
 	"fmt"
 
-	myprint "github.com/onmk613/s3cli/internal/fmtutil"
-	"github.com/onmk613/s3cli/internal/i18n"
+	myprint "github.com/onmk613/s3cli/pkg/fmtutil"
+	"github.com/onmk613/s3cli/pkg/i18n"
 )
 
 // GetObjectACL 读取并打印对象 ACL (可指定 versionID)。
