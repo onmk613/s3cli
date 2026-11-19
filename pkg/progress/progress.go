@@ -39,13 +39,21 @@ type Tracker struct {
 	failed        atomic.Int64 // 失败任务计数
 	failedStrings []string     // 失败任务列表, 结束后打印
 
-	// 显示相关（除 quiet 外均在 mu 保护下读写）
-	label   string      // 进度条标签（如 "Uploading"）
-	startAt time.Time   // 开始时间，用于计算总耗时
-	style   *Style      // 进度条填充物
-	color   *Colors     // 统计信息颜色
-	quiet   atomic.Bool // 直接输出原始信息而不显示进度条
-	stopped atomic.Bool // Stop 后为 true: 各 Add* 不再渲染, 防止汇总后继续写终端
+	// 显示相关（除 quiet/statsOnly 外均在 mu 保护下读写）
+	label     string      // 进度条标签（如 "Uploading"）
+	startAt   time.Time   // 开始时间，用于计算总耗时
+	style     *Style      // 进度条填充物
+	color     *Colors     // 统计信息颜色
+	quiet     atomic.Bool // 直接输出原始信息而不显示进度条
+	statsOnly atomic.Bool // 只输出文字统计，不绘制填充条（单文件传输）
+	stopped   atomic.Bool // Stop 后为 true: 各 Add* 不再渲染, 防止汇总后继续写终端
+	rendered  atomic.Bool // 是否已写出过至少一帧（用于判断结束时是否需要换行）
+
+	// 统计模式的定时刷新（在 mu 保护下读写）：
+	// 单文件传输在两块数据之间可能长时间没有字节回调（如服务端分片复制），
+	// 仅靠 Add* 触发会让耗时/ETA 停住，需要按固定节奏重绘。
+	tickerStop chan struct{}
+	tickerDone chan struct{}
 }
 
 // New 创建一个新的进度条
@@ -65,6 +73,32 @@ func New() *Tracker {
 		pt.quiet.Store(true)
 	}
 	return pt
+}
+
+// NewSingleFile 创建单文件传输用的进度跟踪器。
+//
+// 与批量传输的进度条不同，它不绘制任何填充物，只输出一行统计文字：
+//
+//	put | 3.13GB/23.37GB | 13.27MB/s |  13% | 4m02s | 26m01s
+//
+// 非终端环境同样自动降级为 quiet（由调用方用 Enabled 判断是否真的可见）。
+func NewSingleFile(label string) *Tracker {
+	pt := New()
+	pt.SetStatsOnly()
+	pt.SetLabel(label)
+	return pt
+}
+
+// SetStatsOnly 切换为纯统计模式：不绘制进度条填充物，只显示文字统计。
+// 该模式下若没有任务计数（单文件传输），Stop 只结束当前行，不输出批量汇总。
+func (pt *Tracker) SetStatsOnly() {
+	pt.statsOnly.Store(true)
+}
+
+// Enabled 报告进度是否真的会渲染（非 quiet 模式）。
+// 调用方可在非终端场景下据此跳过额外的 HEAD 探测等只为进度服务的开销。
+func (pt *Tracker) Enabled() bool {
+	return !pt.quiet.Load()
 }
 
 // SetOutput 设置输出目标（默认 os.Stdout）。设置后渲染帧、quiet 模式的
@@ -129,11 +163,63 @@ func (pt *Tracker) SetQuiet() {
 	pt.quiet.Store(true)
 }
 
-// Start 主要为开始计时
+// startRefreshInterval 是统计模式的定时刷新间隔。
+// 数据传输本身会频繁调用 Add*，这里只负责在"没有新字节"的空窗期
+// 继续推进耗时/ETA，500ms 足够让用户看到进度仍在走。
+const startRefreshInterval = 500 * time.Millisecond
+
+// Start 开始计时；统计模式（SetStatsOnly）下还会启动定时刷新。
+// 调用方必须保证最终调用 Stop，否则定时刷新的 goroutine 不会退出。
 func (pt *Tracker) Start() {
 	pt.mu.Lock()
+	defer pt.mu.Unlock()
+	// Stop 之后不再启动计时/刷新（幂等保护：避免泄漏一个永不停止的 ticker）。
+	if pt.stopped.Load() {
+		return
+	}
 	pt.startAt = time.Now()
+	if !pt.statsOnly.Load() || pt.quiet.Load() || pt.tickerStop != nil {
+		return
+	}
+	stop := make(chan struct{})
+	done := make(chan struct{})
+	pt.tickerStop = stop
+	pt.tickerDone = done
+	go func() {
+		defer close(done)
+		t := time.NewTicker(startRefreshInterval)
+		defer t.Stop()
+		for {
+			select {
+			case <-stop:
+				return
+			case <-t.C:
+				// 与 Stop 的最终帧互斥：stopped 置位后不再渲染，
+				// 避免汇总行之后又冒出一帧。
+				if pt.stopped.Load() || pt.quiet.Load() {
+					continue
+				}
+				pt.mu.Lock()
+				if !pt.stopped.Load() && !pt.quiet.Load() {
+					pt.render(false)
+				}
+				pt.mu.Unlock()
+			}
+		}
+	}()
+}
+
+// stopRefresh 停止 Start 启动的定时刷新，并等待 goroutine 退出。
+func (pt *Tracker) stopRefresh() {
+	pt.mu.Lock()
+	stop, done := pt.tickerStop, pt.tickerDone
+	pt.tickerStop, pt.tickerDone = nil, nil
 	pt.mu.Unlock()
+	if stop == nil {
+		return
+	}
+	close(stop)
+	<-done
 }
 
 // Stop 输出最终统计信息
@@ -143,10 +229,17 @@ func (pt *Tracker) Stop() {
 	if pt.stopped.Swap(true) {
 		return
 	}
+	// 先停定时刷新，保证最终帧是最后一笔终端输出。
+	pt.stopRefresh()
+
 	// 在锁内：强制刷新最后一帧（显示真实终态），并快照后续打印所需字段。
 	// failed 计数与 failedStrings 明细必须同锁快照，避免两者不一致。
+	//
+	// 未 Start 的 tracker（典型：请求在拿到响应头之前就失败、小文件被静默）
+	// 没有有效起点，不能画帧 —— 否则耗时会是 time.Since(zero) 的天文数字。
 	pt.mu.Lock()
-	if !pt.quiet.Load() {
+	started := !pt.startAt.IsZero()
+	if started && !pt.quiet.Load() {
 		pt.render(true)
 	}
 	startAt := pt.startAt
@@ -155,6 +248,7 @@ func (pt *Tracker) Stop() {
 	failedStrings := append([]string(nil), pt.failedStrings...)
 	f := pt.failed.Load()
 	out := pt.out
+	statsOnly := pt.statsOnly.Load()
 	pt.mu.Unlock()
 
 	// 计算统计信息
@@ -163,6 +257,18 @@ func (pt *Tracker) Stop() {
 	t := pt.total.Load()
 	dsz := pt.doneSz.Load()
 	tsz := pt.totalSz.Load()
+
+	// 单文件统计模式没有任务计数：进度行本身就是最终结果，
+	// 只需换行结束它，不能再追加 "0/0 total" 这种批量汇总。
+	if statsOnly && t == 0 {
+		// 只有真正画出过进度帧才需要换行结束该行；极短传输或启动即失败时
+		// tracker 可能一帧都没写，此时不能凭空多出一个空行。
+		if started && pt.rendered.Load() {
+			_, _ = fmt.Fprintln(out)
+		}
+		pt.printFailed(doneColor, failedStrings)
+		return
+	}
 
 	// 计算速率
 	rate := "0 B/s"
@@ -187,7 +293,11 @@ func (pt *Tracker) Stop() {
 	// 换行打印统计信息
 	_, _ = fmt.Fprintln(out, "\n "+summary)
 
-	// 打印失败任务列表（失败明细固定写 stderr; 同样遵循统一颜色开关）
+	pt.printFailed(doneColor, failedStrings)
+}
+
+// printFailed 打印失败任务明细（固定写 stderr; 遵循统一颜色开关）。
+func (pt *Tracker) printFailed(doneColor *Colors, failedStrings []string) {
 	for _, s := range failedStrings {
 		str := fmt.Sprintf(" failed: %s", s)
 		if doneColor != nil {

@@ -107,18 +107,22 @@ func (c *Action) uploadMultipart(ctx context.Context, bucket, key string, r io.R
 
 // uploadUnknownSize avoids retaining an unbounded stdin stream. Small input
 // remains a single PUT; once the first complete part is seen it switches to MPU.
-func (c *Action) uploadUnknownSize(ctx context.Context, bucket, key string, r io.Reader, partSizeMB int, opts *api.PutObjectOptions) error {
+// report 可为 nil，非 nil 时按已上传字节增量回调（单文件进度）。
+func (c *Action) uploadUnknownSize(ctx context.Context, bucket, key string, r io.Reader, partSizeMB int, opts *api.PutObjectOptions, report func(int64)) error {
 	partSize := multipartPartSize(partSizeMB, 0)
 	first := make([]byte, partSize)
 	n, err := io.ReadFull(r, first)
 	if err == io.EOF || err == io.ErrUnexpectedEOF {
 		_, putErr := c.S3.PutObject(ctx, bucket, key, first[:n], opts)
+		if putErr == nil && report != nil && n > 0 {
+			report(int64(n))
+		}
 		return putErr
 	}
 	if err != nil {
 		return fmt.Errorf("read stdin: %w", err)
 	}
-	return c.uploadMultipart(ctx, bucket, key, io.MultiReader(bytes.NewReader(first), r), 0, partSizeMB, opts, nil)
+	return c.uploadMultipart(ctx, bucket, key, io.MultiReader(bytes.NewReader(first), r), 0, partSizeMB, opts, report)
 }
 
 // uploadMultipartFile resumes a matching local-file upload when possible. The
@@ -214,6 +218,12 @@ func (c *Action) uploadMultipartFile(ctx context.Context, bucket, key, localPath
 	nextOffset := int64(len(parts)) * partSize
 	if _, err := file.Seek(nextOffset, io.SeekStart); err != nil {
 		return fmt.Errorf("seek resumable multipart upload: %w", err)
+	}
+	// 续传时服务端已有分片不会再产生 UploadPart 回调，但它们在进度里已经
+	// 属于"已完成"；先补齐这部分字节，否则进度会永远停在本次新传的比例上。
+	// 对批量上传同样正确：reported 累计后成功对账的差额为 0。
+	if report != nil && nextOffset > 0 {
+		report(nextOffset)
 	}
 	total := info.Size()
 	done := false

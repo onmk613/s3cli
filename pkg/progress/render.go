@@ -64,7 +64,9 @@ func (pt *Tracker) AddTotalSize(sz int64) {
 	if pt.quiet.Load() || pt.stopped.Load() {
 		return
 	}
-	if pt.total.Load() == 0 {
+	// 单文件统计模式没有任务计数，总量一旦设置就应立刻渲染初始帧；
+	// 批量模式仍等第一个任务派发后再画进度条，避免 0/0 的空帧。
+	if pt.total.Load() == 0 && !pt.statsOnly.Load() {
 		return
 	}
 	pt.mu.Lock()
@@ -79,6 +81,24 @@ func (pt *Tracker) AddTotalSize(sz int64) {
 // AddTotalSizeDone 增加已完成任务大小
 func (pt *Tracker) AddTotalSizeDone(sz int64) {
 	pt.doneSz.Add(sz)
+	if pt.quiet.Load() || pt.stopped.Load() {
+		return
+	}
+
+	pt.mu.Lock()
+	defer pt.mu.Unlock()
+	// 持锁后二次检查: 防止 Stop 在无锁读与加锁之间完成, 导致汇总行之后又渲染一帧
+	if pt.stopped.Load() {
+		return
+	}
+	pt.render(false)
+}
+
+// SetDoneSize 把已完成字节数直接设为 n。
+// 用于单文件传输结束后的精确对账（例如断点续传已上报过部分字节、
+// 或服务端复制回退到整对象 CopyObject 时补齐进度）。
+func (pt *Tracker) SetDoneSize(n int64) {
+	pt.doneSz.Store(n)
 	if pt.quiet.Load() || pt.stopped.Load() {
 		return
 	}
@@ -141,4 +161,5 @@ func (pt *Tracker) render(force bool) {
 	// 清空当前行并打印进度条显示的字符串（合并为一次 write，减少 syscall）
 	bar := pt.buildBar(pt.width)
 	_, _ = fmt.Fprint(pt.out, clearLine+bar)
+	pt.rendered.Store(true)
 }

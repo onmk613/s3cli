@@ -78,12 +78,51 @@ func isEntityTooLarge(err error) bool {
 		strings.Contains(apiErr.Code, "TooLarge")
 }
 
+// isCopyNotImplemented 报告错误是否表示端点不支持 UploadPartCopy。
+// 仅这类错误允许从"带进度的分片复制"回退到单次 CopyObject；
+// 权限/网络等错误必须原样上报，否则会掩盖真实故障。
+func isCopyNotImplemented(err error) bool {
+	apiErr := api.ErrorOf(err)
+	if apiErr == nil {
+		return false
+	}
+	switch apiErr.Code {
+	case "NotImplemented", "NotSupported", "MethodNotAllowed":
+		return true
+	}
+	return apiErr.StatusCode == http.StatusNotImplemented || apiErr.StatusCode == http.StatusMethodNotAllowed
+}
+
+// multipartCopyPartSize 为"带进度的服务端分片复制"选择分片大小。
+//
+// 常规 256MiB：对象越大片数越多，进度越平滑；同时把片数控制在 10000 以内
+// （对象极大时抬高分片），并受协议单片的 5GiB 上限约束。
+func multipartCopyPartSize(total int64) int64 {
+	const preferred = int64(256 << 20)
+	size := preferred
+	if total > 0 {
+		if minimum := (total + maxMultipartParts - 1) / maxMultipartParts; size < minimum {
+			size = minimum
+		}
+	}
+	if size > maxMultipartPartSize {
+		size = maxMultipartPartSize
+	}
+	return size
+}
+
 // copyMultipartSameEndpoint 同 endpoint 大对象分片复制: 每片用 UploadPartCopy
 // 从源对象按 Range 截取, 全程服务端完成、零下载。失败/取消时 Abort 已创建的上传。
 //
 // 分片复制的元数据/标签只能在 CreateMultipartUpload 阶段指定, 因此这里把
 // opts 中的 Metadata / Tagging / StorageClass 透传给初始化请求。
 func (c *Action) copyMultipartSameEndpoint(srcBucket, srcKey, tgtBucket, tgtKey string, head *api.HeadObjectOutput, opts *api.CopyObjectOptions) (err error) {
+	return c.copyMultipartSameEndpointParts(srcBucket, srcKey, tgtBucket, tgtKey, head, opts, maxCopyObjectSize, nil)
+}
+
+// copyMultipartSameEndpointParts 是分片复制的实现：partSize 决定单片覆盖的
+// 字节数，report 非 nil 时在每片完成后上报该片字节数（用于单文件进度）。
+func (c *Action) copyMultipartSameEndpointParts(srcBucket, srcKey, tgtBucket, tgtKey string, head *api.HeadObjectOutput, opts *api.CopyObjectOptions, partSize int64, report func(int64)) (err error) {
 	putOpts := &api.PutObjectOptions{
 		ContentType:        head.ContentType,
 		ContentEncoding:    head.ContentEncoding,
@@ -119,9 +158,11 @@ func (c *Action) copyMultipartSameEndpoint(srcBucket, srcKey, tgtBucket, tgtKey 
 		}
 	}()
 
-	// 分片大小取协议上限 (5GiB): UploadPartCopy 是纯服务端操作, 分片越大
-	// 请求数越少。10000 片上限对应 50000 GiB, 实际不可达, 保留判断只为兜底。
-	partSize := int64(maxCopyObjectSize)
+	// partSize 由调用方决定：兼容回退路径取协议上限 (5GiB, 请求数最少)，
+	// 带进度的路径取更小的片以提供更细的进度。10000 片上限仍在此兜底。
+	if partSize <= 0 {
+		partSize = maxCopyObjectSize
+	}
 	var completed []api.CompletedPart
 	for partNum, offset := 1, int64(0); offset < head.ContentLength; partNum, offset = partNum+1, offset+partSize {
 		if partNum > int(maxMultipartParts) {
@@ -139,6 +180,9 @@ func (c *Action) copyMultipartSameEndpoint(srcBucket, srcKey, tgtBucket, tgtKey 
 			return err
 		}
 		completed = append(completed, api.CompletedPart{PartNumber: partNum, ETag: part.ETag})
+		if report != nil {
+			report(end - offset + 1)
+		}
 	}
 	if len(completed) == 0 {
 		err = fmt.Errorf("copy %s: source object is empty", c.S3Path(tgtBucket, tgtKey))

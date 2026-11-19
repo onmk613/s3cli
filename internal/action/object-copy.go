@@ -58,7 +58,7 @@ func (c *Action) CopyObjects(opt CopyOptions, srcBucket, srcKey, destBucket, des
 			c.dryRunReport(i18n.T("cp", "复制"), c.S3Path(srcBucket, srcKey), c.S3Path(destBucket, dst), size)
 			return nil
 		}
-		if err := c.copyObject(opt, srcBucket, srcKey, destBucket, dst); err != nil {
+		if err := c.copySingleObject(opt, "cp", srcBucket, srcKey, destBucket, dst); err != nil {
 			return err
 		}
 		myprint.PrintfGreen(i18n.T("cp: %s -> %s\n", "复制：%s -> %s\n"), c.S3Path(srcBucket, srcKey), c.S3Path(destBucket, dst))
@@ -121,11 +121,8 @@ func (c *Action) dryRunReport(verb, src, dst string, size int64) {
 		verb, src, dst, myprint.FormatBytes(size))
 }
 
-// copyObject 单对象复制, 透传存储级别/标签/元数据参数。
-//
-// 与 mirror 共用同一条服务端复制路径: 超过 5GiB 的源对象会自动改走
-// UploadPartCopy 分片复制, 而不是直接失败 EntityTooLarge。
-func (c *Action) copyObject(opt CopyOptions, srcBucket, srcKey, destBucket, destKey string) error {
+// buildCopyObjectOptions 把 CLI 选项转换为服务端复制参数 (cp/mv 共用).
+func buildCopyObjectOptions(opt CopyOptions) *api.CopyObjectOptions {
 	copyOpts := &api.CopyObjectOptions{
 		StorageClass: opt.StorageClass,
 	}
@@ -137,7 +134,53 @@ func (c *Action) copyObject(opt CopyOptions, srcBucket, srcKey, destBucket, dest
 		copyOpts.Metadata = opt.Metadata
 		copyOpts.MetadataDirective = "REPLACE"
 	}
-	return c.copyObjectSameEndpoint(srcBucket, srcKey, destBucket, destKey, copyOpts)
+	return copyOpts
+}
+
+// copyObject 单对象复制, 透传存储级别/标签/元数据参数。
+//
+// 与 mirror 共用同一条服务端复制路径: 超过 5GiB 的源对象会自动改走
+// UploadPartCopy 分片复制, 而不是直接失败 EntityTooLarge。
+func (c *Action) copyObject(opt CopyOptions, srcBucket, srcKey, destBucket, destKey string) error {
+	return c.copyObjectSameEndpoint(srcBucket, srcKey, destBucket, destKey, buildCopyObjectOptions(opt))
+}
+
+// copySingleObject 复制单个对象；大对象在终端上显示统计式进度（无填充条）。
+//
+// 服务端 CopyObject 无法提供传输中的字节进度，因此大对象改走
+// UploadPartCopy 分片复制（每片完成后上报字节）。小对象、--quiet 或非终端
+// 场景仍走原来的单次 CopyObject 路径，不额外 HEAD、也不显示进度。
+func (c *Action) copySingleObject(opt CopyOptions, label, srcBucket, srcKey, destBucket, destKey string) error {
+	pt := newSingleFileTracker(label, opt.NoProgress)
+	if pt == nil {
+		return c.copyObject(opt, srcBucket, srcKey, destBucket, destKey)
+	}
+	head, err := c.S3.HeadObject(c.Ctx, srcBucket, srcKey, "")
+	if err != nil {
+		// 进度只是增强，不应让原本可完成的复制因探测大小而失败；
+		// 回退到原路径，由它给出准确的错误。
+		return c.copyObject(opt, srcBucket, srcKey, destBucket, destKey)
+	}
+	if head.ContentLength < singleProgressMinSize {
+		return c.copyObject(opt, srcBucket, srcKey, destBucket, destKey)
+	}
+
+	pt.Start()
+	pt.AddTotalSize(head.ContentLength)
+	defer pt.Stop()
+
+	err = c.copyMultipartSameEndpointParts(srcBucket, srcKey, destBucket, destKey, head,
+		buildCopyObjectOptions(opt), multipartCopyPartSize(head.ContentLength), singleFileReport(pt))
+	if err != nil && head.ContentLength <= maxCopyObjectSize && isCopyNotImplemented(err) {
+		// 兼容不支持 UploadPartCopy 的端点：回退到单次 CopyObject。
+		// 分片上传的 defer 已 Abort，服务端不会残留分片。
+		if copyErr := c.copyObject(opt, srcBucket, srcKey, destBucket, destKey); copyErr != nil {
+			return copyErr
+		}
+		pt.SetDoneSize(head.ContentLength)
+		return nil
+	}
+	return err
 }
 
 // copyDirStreaming 流式列出并并发复制，带进度条。

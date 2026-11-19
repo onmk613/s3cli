@@ -25,8 +25,8 @@ func (pt *Tracker) buildBar(wd int) string {
 	}
 
 	// 2. 计算 ETA 与耗时
-	var eta string
 	elapsedStr := formatDuration(startAt)
+	etaStr := ""
 	// 条件：已传输数据 > 0 且 运行超过 0.1 秒（防止除以 0）
 	if dsz > 0 && tsz > dsz && startAt.Seconds() > 0.1 {
 		// 1. 计算总平均速率 (Byte/s)
@@ -39,10 +39,20 @@ func (pt *Tracker) buildBar(wd int) string {
 
 			// 3. 转换为 Duration 并格式化
 			etaDuration := time.Duration(etaSec * float64(time.Second))
-			etaStr := formatDuration(etaDuration)
-
-			eta = fmt.Sprintf("%s | %s", elapsedStr, etaStr)
+			etaStr = formatDuration(etaDuration)
 		}
+	}
+
+	statsOnly := pt.statsOnly.Load()
+	// 单文件统计模式在完成时显式给出 0s 的剩余时间，保持六段字段完整：
+	// label | 已传/总量 | 速率 | 百分比 | 耗时 | 剩余
+	if statsOnly && etaStr == "" && tsz > 0 && dsz >= tsz {
+		etaStr = "0s"
+	}
+
+	var eta string
+	if etaStr != "" {
+		eta = fmt.Sprintf("%s | %s", elapsedStr, etaStr)
 	} else {
 		eta = elapsedStr
 	}
@@ -54,6 +64,15 @@ func (pt *Tracker) buildBar(wd int) string {
 	}
 	if pct > 100 {
 		pct = 100
+	}
+
+	// 单文件传输不画填充物：只输出一行统计文字，且不显示任务计数。
+	if statsOnly {
+		line := pt.buildStatsLine(rate, elapsedStr, etaStr)
+		if wd > 2 {
+			line = fmtutil.TruncateDisplay(line, wd-2)
+		}
+		return pt.colorizeIf(pt.color.Stats, " "+line+" ")
 	}
 
 	// 4. 构建右侧文本
@@ -118,6 +137,43 @@ func (pt *Tracker) buildBar(wd int) string {
 	sb.WriteString(" ") // 2. 右侧留空 1 格
 
 	return pt.colorizeIf(pt.color.Stats, sb.String())
+}
+
+// buildStatsLine 构建单文件统计行（无填充物、无任务计数）：
+//
+//	put | 3.13GB/23.37GB | 13.27MB/s |  13% | 4m02s | 26m01s
+//
+// 总量已知时显示 "已传/总量"、速率、百分比、耗时与预计剩余；
+// 总量未知（如 stdin 上传）时退化为 "已传 | 速率 | 耗时"。
+func (pt *Tracker) buildStatsLine(rate, elapsed, eta string) string {
+	dsz := pt.doneSz.Load()
+	tsz := pt.totalSz.Load()
+
+	parts := make([]string, 0, 6)
+	if tsz > 0 {
+		parts = append(parts, fmt.Sprintf("%s/%s", formatBytes(dsz), formatBytes(tsz)))
+	} else {
+		parts = append(parts, formatBytes(dsz))
+	}
+	parts = append(parts, rate)
+	if tsz > 0 {
+		pct := float64(dsz) * 100 / float64(tsz)
+		if pct > 100 {
+			pct = 100
+		}
+		// %3d%%: 9% -> 10% 时字段宽度不变，整行不会左右抖动
+		parts = append(parts, fmt.Sprintf("%3d%%", int(pct)))
+	}
+	parts = append(parts, elapsed)
+	if eta != "" {
+		parts = append(parts, eta)
+	}
+
+	line := strings.Join(parts, " | ")
+	if pt.label != "" {
+		line = pt.label + " | " + line
+	}
+	return line
 }
 
 // buildStyledBar 按给定样式绘制进度条主体（含边框与着色）。

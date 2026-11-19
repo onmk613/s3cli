@@ -114,8 +114,26 @@ func (c *Action) PutObject(opt PutOptions, bucket, prefix, localPath string, isS
 			return nil
 		}
 	}
-	if err := c.uploadFile(c.Ctx, opt, mimeType, bucket, dstKey, localPath, nil); err != nil {
-		return err
+	// 大文件上传：只显示统计文字的进度行（无填充条）。
+	// 与批量上传不同，单文件没有任务计数，进度分母固定为文件大小。
+	pt := newSingleFileTracker("put", opt.NoProgress)
+	if pt != nil && fi.Size() < uploadProgressMinSize {
+		pt = nil
+	}
+	var report func(int64)
+	if pt != nil {
+		pt.Start()
+		pt.AddTotalSize(fi.Size())
+		report = singleFileReport(pt)
+	}
+
+	uploadErr := c.uploadFile(c.Ctx, opt, mimeType, bucket, dstKey, localPath, report)
+	// 必须先结束进度行再打印结果行，否则最终进度帧会覆盖成功提示。
+	if pt != nil {
+		pt.Stop()
+	}
+	if uploadErr != nil {
+		return uploadErr
 	}
 	myprint.Printf(i18n.T("put: %s --> %s  (%s)\n", "上传：%s --> %s  (%s)\n"), localPath, c.S3Path(bucket, dstKey), mimeType)
 	return nil
@@ -269,7 +287,16 @@ func (c *Action) putStdin(opt PutOptions, bucket, key string) error {
 		return nil
 	}
 	putOpts := putObjectOptions(opt, mimeType, alg)
-	if err := c.uploadUnknownSize(c.Ctx, bucket, key, os.Stdin, opt.PartSizeMB, putOpts); err != nil {
+	// stdin 的大小未知：进度行只显示已传字节与速率，不显示百分比/ETA。
+	pt := newSingleFileTracker("put", opt.NoProgress)
+	if pt != nil {
+		pt.Start()
+	}
+	err := c.uploadUnknownSize(c.Ctx, bucket, key, os.Stdin, opt.PartSizeMB, putOpts, singleFileReport(pt))
+	if pt != nil {
+		pt.Stop()
+	}
+	if err != nil {
 		return fmt.Errorf("stdin upload %s: %w", c.S3Path(bucket, key), err)
 	}
 	myprint.PrintfBoldGreen(i18n.T("put: stdin --> %s  (%s)\n", "上传：stdin --> %s  (%s)\n"), c.S3Path(bucket, key), mimeType)

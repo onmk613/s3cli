@@ -15,6 +15,7 @@ import (
 	"github.com/onmk613/s3cli/pkg/api"
 	myprint "github.com/onmk613/s3cli/pkg/fmtutil"
 	"github.com/onmk613/s3cli/pkg/i18n"
+	"github.com/onmk613/s3cli/pkg/progress"
 )
 
 // GetOptions get 命令参数
@@ -203,7 +204,7 @@ func (c *Action) downloadDirectory(opt GetOptions, bucket, key, localPath string
 					return nil
 				}
 			}
-			_, err := c.downloadFile(job.Src, job.Dst, bucket, report, "", alg)
+			_, err := c.downloadFile(job.Src, job.Dst, bucket, report, nil, "", alg)
 			return err
 		},
 	})
@@ -233,9 +234,17 @@ func (c *Action) downloadSingleFile(opt GetOptions, bucket, key, localPath strin
 		return nil
 	}
 
+	// 单文件下载：大对象的进度行只显示统计文字（无填充条）。
+	// 小文件或非终端场景由 downloadFile 内部静默，不产生额外输出。
+	pt := newSingleFileTracker("get", opt.NoProgress)
+
 	// --range 直接走 GetObject (显式字节范围, 始终覆盖)
 	if opt.Range != "" {
-		return c.rangeGetObject(bucket, key, localFilePath, opt.Range, opt.VersionID)
+		err := c.rangeGetObject(bucket, key, localFilePath, opt.Range, opt.VersionID, pt)
+		if pt != nil {
+			pt.Stop()
+		}
+		return err
 	}
 
 	// 默认不覆盖: 本地文件已存在则跳过, 仅 --overwrite 时强制下载。
@@ -246,17 +255,22 @@ func (c *Action) downloadSingleFile(opt GetOptions, bucket, key, localPath strin
 		}
 	}
 
-	myprint.Printf(i18n.T("get: %s --> %s ", "下载：%s --> %s "), c.S3Path(bucket, key), localFilePath)
-	size, err := c.downloadFile(key, localFilePath, bucket, nil, opt.VersionID, alg)
+	size, err := c.downloadFile(key, localFilePath, bucket, nil, pt, opt.VersionID, alg)
+	// 先结束进度行，结果行必须落在它下面（否则会被最终进度帧覆盖）。
+	if pt != nil {
+		pt.Stop()
+	}
 	if err != nil {
-		myprint.PrintlnRed(i18n.T("FAILED", "失败"))
+		myprint.PrintfRed(i18n.T("get: %s --> %s FAILED\n", "下载：%s --> %s 失败\n"),
+			c.S3Path(bucket, key), localFilePath)
 		return fmt.Errorf("download: %w", err)
 	}
-	myprint.Printf("(%s)\n", myprint.FormatBytes(size))
+	myprint.Printf(i18n.T("get: %s --> %s (%s)\n", "下载：%s --> %s（%s）\n"),
+		c.S3Path(bucket, key), localFilePath, myprint.FormatBytes(size))
 	return nil
 }
 
-func (c *Action) rangeGetObject(bucket, key, localFilePath, rng, versionID string) error {
+func (c *Action) rangeGetObject(bucket, key, localFilePath, rng, versionID string, pt *progress.Tracker) error {
 	if err := os.MkdirAll(filepath.Dir(localFilePath), 0o755); err != nil {
 		return fmt.Errorf("mkdir: %w", err)
 	}
@@ -281,7 +295,19 @@ func (c *Action) rangeGetObject(bucket, key, localFilePath, rng, versionID strin
 		_ = file.Close()
 	}(file)
 
-	written, err := file.ReadFrom(out.Body)
+	// Range 响应的 ContentLength 就是本次要下载的字节数，作为进度总量。
+	var body io.Reader = out.Body
+	if pt != nil {
+		if out.ContentLength < singleProgressMinSize {
+			pt.SetQuiet()
+		} else {
+			pt.Start()
+			pt.AddTotalSize(out.ContentLength)
+			body = &countingReader{r: out.Body, report: singleFileReport(pt)}
+		}
+	}
+
+	written, err := file.ReadFrom(body)
 	if err != nil {
 		return fmt.Errorf("write file: %w", err)
 	}
@@ -301,7 +327,7 @@ func (c *Action) rangeGetObject(bucket, key, localFilePath, rng, versionID strin
 // checksumAlg 非空时: 请求服务端返回附加校验和 (x-amz-checksum-mode: ENABLED),
 // 下载完成后在临时文件上重算并比对, 不一致则中止 (不 rename, 不留半个文件)。
 // 服务端未返回该校验和时明确报错, 而不是静默当作通过。
-func (c *Action) downloadFile(key, localPath, bucket string, report func(n int64), versionID string, checksumAlg api.ChecksumAlgorithm) (int64, error) {
+func (c *Action) downloadFile(key, localPath, bucket string, report func(n int64), pt *progress.Tracker, versionID string, checksumAlg api.ChecksumAlgorithm) (int64, error) {
 	if err := os.MkdirAll(filepath.Dir(localPath), 0o755); err != nil {
 		return 0, fmt.Errorf("mkdir: %w", err)
 	}
@@ -326,6 +352,21 @@ func (c *Action) downloadFile(key, localPath, bucket string, report func(n int64
 	defer func(Body io.ReadCloser) {
 		_ = Body.Close()
 	}(out.Body)
+
+	// 单文件进度：响应头里的 Content-Length 就是精确的总量。
+	// 小文件不显示进度（避免一闪而过的进度行），把 tracker 静默掉，
+	// 不 Start 也不渲染，Stop 不会再输出任何内容。
+	if pt != nil {
+		if out.ContentLength < singleProgressMinSize {
+			pt.SetQuiet()
+		} else {
+			// 拿到响应头后再开始计时：小文件不会画出任何帧，
+			// 大文件的速率/ETA 也只统计真正的传输阶段。
+			pt.Start()
+			pt.AddTotalSize(out.ContentLength)
+			report = singleFileReport(pt)
+		}
+	}
 
 	// 有进度回调时，用计数 reader 包装 body 流。
 	var body io.Reader = out.Body

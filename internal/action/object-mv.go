@@ -107,7 +107,7 @@ func (c *Action) mvObject(opt CopyOptions, srcBucket, srcKey, destBucket, destKe
 	if err := checkSameObject(srcBucket, srcKey, destBucket, destKey); err != nil {
 		return err
 	}
-	if err := c.copyObject(opt, srcBucket, srcKey, destBucket, destKey); err != nil {
+	if err := c.copySingleObject(opt, "mv", srcBucket, srcKey, destBucket, destKey); err != nil {
 		return err
 	}
 

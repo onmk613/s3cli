@@ -48,7 +48,7 @@ func TestDownloadFileAtomicallyReplacesOnlyAfterSuccess(t *testing.T) {
 		t.Fatal(err)
 	}
 	client := &Action{S3: actionTestClient(t, server.URL, nil), Ctx: context.Background()}
-	if _, err := client.downloadFile("key", path, "bucket", nil, "", ""); err != nil {
+	if _, err := client.downloadFile("key", path, "bucket", nil, nil, "", ""); err != nil {
 		t.Fatal(err)
 	}
 	data, _ := os.ReadFile(path)
@@ -62,7 +62,7 @@ func TestDownloadFileAtomicallyReplacesOnlyAfterSuccess(t *testing.T) {
 	if err := os.WriteFile(path, []byte("preserved"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := failing.downloadFile("key", path, "bucket", nil, "", ""); err == nil {
+	if _, err := failing.downloadFile("key", path, "bucket", nil, nil, "", ""); err == nil {
 		t.Fatal("expected download failure")
 	}
 	data, _ = os.ReadFile(path)
